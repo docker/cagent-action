@@ -54,6 +54,9 @@ outputs:
   exit-code:
     description: 'Exit code from cagent run'
     value: ${{ steps.run-agent.outputs.exit-code }}
+  output-file:
+    description: 'Path to the output log file'
+    value: ${{ steps.run-agent.outputs.output-file }}
 
 runs:
   using: 'composite'
@@ -112,8 +115,12 @@ runs:
         fi
 
         echo "Running: $CMD"
-        eval $CMD
-        EXIT_CODE=$?
+
+        # Capture output to both console and file
+        OUTPUT_FILE="/tmp/cagent-output-$$.log"
+        eval $CMD 2>&1 | tee "$OUTPUT_FILE"
+        EXIT_CODE=${PIPESTATUS[0]}
 
         echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
+        echo "output-file=$OUTPUT_FILE" >> $GITHUB_OUTPUT
         exit $EXIT_CODE

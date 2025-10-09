@@ -1,0 +1,81 @@
+name: Test CAgent Action
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test-pirate-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run pirate agent
+        id: pirate
+        uses: ./
+        with:
+          agent: agentcatalog/pirate
+          prompt: "What do we ship today?"
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Validate output and exit code
+        run: |
+          OUTPUT_FILE="${{ steps.pirate.outputs.output-file }}"
+
+          # Check that exit code is 0 (success)
+          if [ "${{ steps.pirate.outputs.exit-code }}" != "0" ]; then
+            echo "❌ Agent failed with exit code: ${{ steps.pirate.outputs.exit-code }}"
+            exit 1
+          fi
+          echo "✅ Agent completed successfully with exit code 0"
+
+          # Check that output file exists
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "❌ Output file not found: $OUTPUT_FILE"
+            exit 1
+          fi
+          echo "✅ Output file found: $OUTPUT_FILE"
+
+          # Display the output for debugging
+          echo "--- Agent Output ---"
+          cat "$OUTPUT_FILE"
+          echo "--- End Output ---"
+
+          # Check that output contains "--- Agent: root ---"
+          if ! grep -q "--- Agent: root ---" "$OUTPUT_FILE"; then
+            echo "❌ Output does not contain '--- Agent: root ---'"
+            exit 1
+          fi
+          echo "✅ Found '--- Agent: root ---' in output"
+
+          # Check that there is text after "--- Agent: root ---"
+          # Extract everything after "--- Agent: root ---" and check if it has non-empty content
+          AFTER_AGENT=$(sed -n '/--- Agent: root ---/,$p' "$OUTPUT_FILE" | tail -n +2 | grep -v '^$' | grep -v 'Cleaning up')
+
+          if [ -z "$AFTER_AGENT" ]; then
+            echo "❌ No output found after '--- Agent: root ---'"
+            exit 1
+          fi
+
+          echo "✅ Found agent response after '--- Agent: root ---'"
+          echo "Response preview: $(echo "$AFTER_AGENT" | head -n 1)"
+
+      - name: Test should fail on invalid agent
+        id: invalid-agent
+        continue-on-error: true
+        uses: ./
+        with:
+          agent: agentcatalog/nonexistent
+          prompt: "This should fail"
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Verify invalid agent failed
+        run: |
+          if [ "${{ steps.invalid-agent.outputs.exit-code }}" == "0" ]; then
+            echo "❌ Invalid agent should have failed but succeeded"
+            exit 1
+          fi
+          echo "✅ Invalid agent correctly failed"
