@@ -1,4 +1,4 @@
-# CAgent GitHub Action
+# cagent GitHub Action
 
 A GitHub Action for running [CAgent](https://github.com/docker/cagent) AI agents in your workflows. This action simplifies the setup and execution of CAgent, handling binary downloads and environment configuration automatically.
 
