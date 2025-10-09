@@ -1,4 +1,4 @@
-name: Test Pirate Agent
+name: Manual basic test agent
 
 on:
   workflow_dispatch:

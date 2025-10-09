@@ -1,4 +1,4 @@
-name: Test GitHub Agent
+name: Manual test mcp agent
 
 on:
   workflow_dispatch:

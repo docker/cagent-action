@@ -1,4 +1,4 @@
-name: Test CAgent Action
+name: Test cagent-action
 
 on:
   pull_request:
@@ -10,16 +10,12 @@ jobs:
   test-pirate-agent:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run pirate agent
+      - name: Run test
         id: pirate
         uses: ./
         with:
           agent: agentcatalog/pirate
           prompt: "What do we ship today?"
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Validate output and exit code
         run: |
