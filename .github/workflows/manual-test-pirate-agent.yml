@@ -12,3 +12,4 @@ jobs:
         with:
           agent: agentcatalog/pirate
           prompt: "What do we ship today?"
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
