@@ -12,4 +12,4 @@ jobs:
         with:
           agent: agentcatalog/pirate
           prompt: "What do we ship today?"
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
