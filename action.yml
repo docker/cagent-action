@@ -33,10 +33,6 @@ inputs:
   google-api-key:
     description: 'Google API key for Gemini (defaults to GOOGLE_API_KEY secret)'
     required: false
-  github-token:
-    description: 'GitHub token for API access (defaults to GITHUB_TOKEN)'
-    required: false
-    default: ${{ github.token }}
   working-directory:
     description: 'Working directory to run the agent in'
     required: false
@@ -91,7 +87,6 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key || env.OPENAI_API_KEY }}
         GOOGLE_API_KEY: ${{ inputs.google-api-key || env.GOOGLE_API_KEY }}
         GITHUB_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-token }}
-        GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         # Build the command
         CMD="$GITHUB_WORKSPACE/cagent run"

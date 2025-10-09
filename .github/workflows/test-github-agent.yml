@@ -11,6 +11,5 @@ jobs:
         uses: docker/cagent-action@main
         with:
           agent: agentcatalog/github
-          prompt: "Who is jeanlaurent on github?"
-          mcp-gateway-version: v0.22.0
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "Who is the user jeanlaurent on github?"
+          mcp-gateway: true

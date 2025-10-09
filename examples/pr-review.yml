@@ -15,13 +15,9 @@ jobs:
       issues: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Run CAgent PR Reviewer
         uses: docker/cagent-action@v1
         with:
           agent: jeanlaurent/pr-reviewer
+          mcp-gateway: true
           prompt: "check PR ${{ github.event.number }} in repository ${{ github.repository }} and add a review to the pull request comments"
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
