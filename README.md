@@ -68,6 +68,7 @@ jobs:
     agent: jeanlaurent/pr-reviewer
     prompt: "Review this PR"
     cagent-version: v1.6.6
+    mcp-gateway: true  # Set to true to install mcp-gateway
     mcp-gateway-version: v0.20.0
     yolo: false  # Require manual approval
     tui: true    # Enable terminal UI
@@ -84,6 +85,7 @@ jobs:
 | `agent` | Agent identifier (e.g., `jeanlaurent/pr-reviewer`) or path to `.yaml` file | Yes | - |
 | `prompt` | Prompt to pass to the agent | No | - |
 | `cagent-version` | Version of cagent to use | No | `v1.6.6` |
+| `mcp-gateway` | Install mcp-gateway (`true`/`false`) | No | `false` |
 | `mcp-gateway-version` | Version of mcp-gateway to use | No | `v0.20.0` |
 | `anthropic-api-key` | Anthropic API key | No | `$ANTHROPIC_API_KEY` env var |
 | `openai-api-key` | OpenAI API key | No | `$OPENAI_API_KEY` env var |

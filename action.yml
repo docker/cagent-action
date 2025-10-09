@@ -16,6 +16,10 @@ inputs:
     description: 'Version of cagent to use'
     required: false
     default: 'v1.6.6'
+  mcp-gateway:
+    description: 'Install mcp-gateway (true/false)'
+    required: false
+    default: 'false'
   mcp-gateway-version:
     description: 'Version of mcp-gateway to use'
     required: false
@@ -67,6 +71,7 @@ runs:
         ./cagent version
 
     - name: Download mcp-gateway binary
+      if: ${{ inputs.mcp-gateway == 'true' }}
       shell: bash
       run: |
         echo "Downloading mcp-gateway ${{ inputs.mcp-gateway-version }}..."
