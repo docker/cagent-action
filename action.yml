@@ -1,0 +1,111 @@
+name: 'CAgent Runner'
+description: 'Run a CAgent AI agent with a single line'
+author: 'Docker'
+branding:
+  icon: 'cpu'
+  color: 'blue'
+
+inputs:
+  agent:
+    description: 'Agent identifier (e.g., jeanlaurent/pr-reviewer or path to .yaml file)'
+    required: true
+  prompt:
+    description: 'Prompt to pass to the agent. If not provided, uses a default based on the agent type'
+    required: false
+  cagent-version:
+    description: 'Version of cagent to use'
+    required: false
+    default: 'v1.3.6'
+  mcp-gateway-version:
+    description: 'Version of mcp-gateway to use'
+    required: false
+    default: 'v0.20.0'
+  anthropic-api-key:
+    description: 'Anthropic API key (defaults to ANTHROPIC_API_KEY secret)'
+    required: false
+  github-token:
+    description: 'GitHub token for API access (defaults to GITHUB_TOKEN)'
+    required: false
+    default: ${{ github.token }}
+  working-directory:
+    description: 'Working directory to run the agent in'
+    required: false
+    default: '.'
+  tui:
+    description: 'Enable TUI mode (true/false)'
+    required: false
+    default: 'false'
+  yolo:
+    description: 'Enable yolo mode - auto-approve all prompts (true/false)'
+    required: false
+    default: 'true'
+  extra-args:
+    description: 'Additional arguments to pass to cagent run'
+    required: false
+    default: ''
+
+outputs:
+  exit-code:
+    description: 'Exit code from cagent run'
+    value: ${{ steps.run-agent.outputs.exit-code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Download cagent binary
+      shell: bash
+      run: |
+        echo "Downloading cagent ${{ inputs.cagent-version }}..."
+        curl -L -o cagent "https://github.com/docker/cagent/releases/download/${{ inputs.cagent-version }}/cagent-linux-amd64"
+        chmod +x cagent
+        ./cagent version
+
+    - name: Download mcp-gateway binary
+      shell: bash
+      run: |
+        echo "Downloading mcp-gateway ${{ inputs.mcp-gateway-version }}..."
+        curl -L -o mcp-gateway.tar.gz "https://github.com/docker/mcp-gateway/releases/download/${{ inputs.mcp-gateway-version }}/docker-mcp-linux-amd64.tar.gz"
+        tar -xzf mcp-gateway.tar.gz
+        chmod +x docker-mcp
+        mkdir -p ~/.docker/cli-plugins
+        cp docker-mcp ~/.docker/cli-plugins/docker-mcp
+        docker mcp version
+
+    - name: Run CAgent
+      id: run-agent
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key || env.ANTHROPIC_API_KEY }}
+        GITHUB_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-token }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        # Build the command
+        CMD="$GITHUB_WORKSPACE/cagent run"
+
+        # Add flags
+        if [ "${{ inputs.yolo }}" = "true" ]; then
+          CMD="$CMD --yolo"
+        fi
+
+        CMD="$CMD --tui=${{ inputs.tui }}"
+
+        # Add extra args if provided
+        if [ -n "${{ inputs.extra-args }}" ]; then
+          CMD="$CMD ${{ inputs.extra-args }}"
+        fi
+
+        # Add agent
+        CMD="$CMD ${{ inputs.agent }}"
+
+        # Add prompt if provided
+        if [ -n "${{ inputs.prompt }}" ]; then
+          CMD="$CMD \"${{ inputs.prompt }}\""
+        fi
+
+        echo "Running: $CMD"
+        eval $CMD
+        EXIT_CODE=$?
+
+        echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
+        exit $EXIT_CODE
