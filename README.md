@@ -1,14 +1,6 @@
 # cagent GitHub Action
 
-A GitHub Action for running [CAgent](https://github.com/docker/cagent) AI agents in your workflows. This action simplifies the setup and execution of CAgent, handling binary downloads and environment configuration automatically.
-
-## Features
-
-- 🚀 Single-line agent execution
-- 📦 Automatic download of cagent and mcp-gateway binaries
-- 🔧 Configurable versions for both dependencies
-- 🎯 Built-in support for common agent patterns
-- 🔐 Secure secret handling
+A GitHub Action for running [cagent](https://github.com/docker/cagent) AI agents in your workflows. This action simplifies the setup and execution of CAgent, handling binary downloads and environment configuration automatically.
 
 ## Usage
 
@@ -189,30 +181,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-## Troubleshooting
-
-### Missing API Key
-
-If you see an error about missing API keys:
-1. Go to your repository Settings → Secrets and variables → Actions
-2. Add the appropriate secret for your AI provider:
-   - `ANTHROPIC_API_KEY` for Claude models
-   - `OPENAI_API_KEY` for GPT models
-   - `GOOGLE_API_KEY` for Gemini models
-
-### Permission Denied
-
-If the agent cannot comment on PRs:
-1. Check that your workflow has `pull-requests: write` permission
-2. Ensure `GITHUB_TOKEN` has appropriate scopes
-
-### Binary Download Failures
-
-If binary downloads fail:
-- Check your network connectivity
-- Verify the specified versions exist in the releases
-- Try using different versions with `cagent-version` and `mcp-gateway-version` inputs
-
 ## Contributing
 
 Contributions are welcome! Please open an issue or pull request on [GitHub](https://github.com/docker/cagent-action).
@@ -225,4 +193,3 @@ MIT License - see LICENSE file for details.
 
 - [CAgent Repository](https://github.com/docker/cagent)
 - [MCP Gateway Repository](https://github.com/docker/mcp-gateway)
-- [Documentation](https://github.com/docker/cagent-action)
