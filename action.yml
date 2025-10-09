@@ -21,9 +21,9 @@ inputs:
     required: false
     default: 'false'
   mcp-gateway-version:
-    description: 'Version of mcp-gateway to use'
+    description: 'Version of mcp-gateway to use (specifying this will enable mcp-gateway installation)'
     required: false
-    default: 'v0.20.0'
+    default: 'v0.22.0'
   anthropic-api-key:
     description: 'Anthropic API key (defaults to ANTHROPIC_API_KEY secret)'
     required: false
@@ -71,7 +71,7 @@ runs:
         ./cagent version
 
     - name: Download mcp-gateway binary
-      if: ${{ inputs.mcp-gateway == 'true' }}
+      if: ${{ inputs.mcp-gateway == 'true' || inputs.mcp-gateway-version != 'v0.22.0' }}
       shell: bash
       run: |
         echo "Downloading mcp-gateway ${{ inputs.mcp-gateway-version }}..."

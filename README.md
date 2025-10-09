@@ -69,7 +69,7 @@ jobs:
     prompt: "Review this PR"
     cagent-version: v1.6.6
     mcp-gateway: true  # Set to true to install mcp-gateway
-    mcp-gateway-version: v0.20.0
+    mcp-gateway-version: v0.22.0
     yolo: false  # Require manual approval
     tui: true    # Enable terminal UI
     working-directory: ./src
@@ -86,7 +86,7 @@ jobs:
 | `prompt` | Prompt to pass to the agent | No | - |
 | `cagent-version` | Version of cagent to use | No | `v1.6.6` |
 | `mcp-gateway` | Install mcp-gateway (`true`/`false`) | No | `false` |
-| `mcp-gateway-version` | Version of mcp-gateway to use | No | `v0.20.0` |
+| `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No | `v0.22.0` |
 | `anthropic-api-key` | Anthropic API key | No | `$ANTHROPIC_API_KEY` env var |
 | `openai-api-key` | OpenAI API key | No | `$OPENAI_API_KEY` env var |
 | `google-api-key` | Google API key for Gemini | No | `$GOOGLE_API_KEY` env var |

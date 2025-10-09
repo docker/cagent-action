@@ -12,5 +12,5 @@ jobs:
         with:
           agent: agentcatalog/github
           prompt: "Who is jeanlaurent on github?"
-          mcp-gateway: true
+          mcp-gateway-version: v0.22.0
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
