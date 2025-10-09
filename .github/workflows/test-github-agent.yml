@@ -1,0 +1,15 @@
+name: Test GitHub Agent
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-github:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask github agent about user
+        uses: jeanlaurent/cagent-action@main
+        with:
+          agent: agentcatalog/github
+          prompt: "Who is jeanlaurent on github?"
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}

@@ -67,7 +67,7 @@ jobs:
   with:
     agent: jeanlaurent/pr-reviewer
     prompt: "Review this PR"
-    cagent-version: v1.3.6
+    cagent-version: v1.6.6
     mcp-gateway-version: v0.20.0
     yolo: false  # Require manual approval
     tui: true    # Enable terminal UI
@@ -83,9 +83,11 @@ jobs:
 |-------|-------------|----------|---------|
 | `agent` | Agent identifier (e.g., `jeanlaurent/pr-reviewer`) or path to `.yaml` file | Yes | - |
 | `prompt` | Prompt to pass to the agent | No | - |
-| `cagent-version` | Version of cagent to use | No | `v1.3.6` |
+| `cagent-version` | Version of cagent to use | No | `v1.6.6` |
 | `mcp-gateway-version` | Version of mcp-gateway to use | No | `v0.20.0` |
 | `anthropic-api-key` | Anthropic API key | No | `$ANTHROPIC_API_KEY` env var |
+| `openai-api-key` | OpenAI API key | No | `$OPENAI_API_KEY` env var |
+| `google-api-key` | Google API key for Gemini | No | `$GOOGLE_API_KEY` env var |
 | `github-token` | GitHub token for API access | No | `${{ github.token }}` |
 | `working-directory` | Working directory to run the agent in | No | `.` |
 | `tui` | Enable TUI mode (`true`/`false`) | No | `false` |
@@ -100,9 +102,11 @@ jobs:
 
 ## Environment Variables
 
-The action requires the following environment variables:
+The action supports the following environment variables for different AI providers:
 
-- `ANTHROPIC_API_KEY`: Your Anthropic API key for Claude access
+- `ANTHROPIC_API_KEY`: Your Anthropic API key for Claude models
+- `OPENAI_API_KEY`: Your OpenAI API key for GPT models
+- `GOOGLE_API_KEY`: Your Google API key for Gemini models
 - `GITHUB_TOKEN`: Automatically provided by GitHub Actions (for GitHub API access)
 
 ## Permissions
@@ -187,9 +191,12 @@ jobs:
 
 ### Missing API Key
 
-If you see an error about missing `ANTHROPIC_API_KEY`:
+If you see an error about missing API keys:
 1. Go to your repository Settings → Secrets and variables → Actions
-2. Add a new secret named `ANTHROPIC_API_KEY` with your Anthropic API key
+2. Add the appropriate secret for your AI provider:
+   - `ANTHROPIC_API_KEY` for Claude models
+   - `OPENAI_API_KEY` for GPT models
+   - `GOOGLE_API_KEY` for Gemini models
 
 ### Permission Denied
 

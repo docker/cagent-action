@@ -1,0 +1,15 @@
+name: Test Pirate Agent
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-pirate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask pirate agent about shipments
+        uses: jeanlaurent/cagent-action@main
+        with:
+          agent: agentcatalog/pirate
+          prompt: "What do we ship today?"
+          api_key: ${{ secrets.ANTHROPIC_API_KEY }}

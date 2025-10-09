@@ -15,13 +15,19 @@ inputs:
   cagent-version:
     description: 'Version of cagent to use'
     required: false
-    default: 'v1.3.6'
+    default: 'v1.6.6'
   mcp-gateway-version:
     description: 'Version of mcp-gateway to use'
     required: false
     default: 'v0.20.0'
   anthropic-api-key:
     description: 'Anthropic API key (defaults to ANTHROPIC_API_KEY secret)'
+    required: false
+  openai-api-key:
+    description: 'OpenAI API key (defaults to OPENAI_API_KEY secret)'
+    required: false
+  google-api-key:
+    description: 'Google API key for Gemini (defaults to GOOGLE_API_KEY secret)'
     required: false
   github-token:
     description: 'GitHub token for API access (defaults to GITHUB_TOKEN)'
@@ -77,6 +83,8 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key || env.ANTHROPIC_API_KEY }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key || env.OPENAI_API_KEY }}
+        GOOGLE_API_KEY: ${{ inputs.google-api-key || env.GOOGLE_API_KEY }}
         GITHUB_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-token }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
