@@ -12,4 +12,4 @@ jobs:
         with:
           agent: agentcatalog/github
           prompt: "Who is jeanlaurent on github?"
-          api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
