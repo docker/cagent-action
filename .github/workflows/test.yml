@@ -45,7 +45,7 @@ jobs:
           echo "--- End Output ---"
 
           # Check that output contains "--- Agent: root ---"
-          if ! grep -q "--- Agent: root ---" "$OUTPUT_FILE"; then
+          if ! grep -qF "--- Agent: root ---" "$OUTPUT_FILE"; then
             echo "❌ Output does not contain '--- Agent: root ---'"
             exit 1
           fi
@@ -53,7 +53,7 @@ jobs:
 
           # Check that there is text after "--- Agent: root ---"
           # Extract everything after "--- Agent: root ---" and check if it has non-empty content
-          AFTER_AGENT=$(sed -n '/--- Agent: root ---/,$p' "$OUTPUT_FILE" | tail -n +2 | grep -v '^$' | grep -v 'Cleaning up')
+          AFTER_AGENT=$(sed -n '/--- Agent: root ---/,$p' "$OUTPUT_FILE" | tail -n +2 | grep -v '^$' | grep -v 'Cleaning up' | head -n 5)
 
           if [ -z "$AFTER_AGENT" ]; then
             echo "❌ No output found after '--- Agent: root ---'"
