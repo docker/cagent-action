@@ -69,6 +69,15 @@ outputs:
   output-file:
     description: 'Path to the output log file'
     value: ${{ steps.run-agent.outputs.output-file }}
+  cagent-version:
+    description: 'Version of cagent that was used'
+    value: ${{ steps.setup-binaries.outputs.cagent-version }}
+  mcp-gateway-installed:
+    description: 'Whether mcp-gateway was installed (true/false)'
+    value: ${{ steps.setup-binaries.outputs.mcp-installed }}
+  execution-time:
+    description: 'Agent execution time in seconds'
+    value: ${{ steps.run-agent.outputs.execution-time }}
 
 runs:
   using: 'composite'
