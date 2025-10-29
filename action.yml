@@ -1,86 +1,85 @@
-name: 'CAgent Runner'
-description: 'Run a CAgent AI agent with a single line'
-author: 'Docker'
+name: "CAgent Runner"
+description: "Run a CAgent AI agent with a single line"
+author: "Docker"
 branding:
-  icon: 'cpu'
-  color: 'blue'
+  icon: "cpu"
+  color: "blue"
 
 inputs:
   agent:
-    description: 'Agent identifier (e.g., jeanlaurent/pr-reviewer or path to .yaml file)'
+    description: "Agent identifier (e.g., jeanlaurent/pr-reviewer or path to .yaml file)"
     required: true
   prompt:
-    description: 'Prompt to pass to the agent. If not provided, uses a default based on the agent type'
+    description: "Prompt to pass to the agent. If not provided, uses a default based on the agent type"
     required: false
   cagent-version:
-    description: 'Version of cagent to use'
+    description: "Version of cagent to use"
     required: false
-    default: 'v1.6.6'
+    default: "v1.6.6"
   mcp-gateway:
-    description: 'Install mcp-gateway (true/false)'
+    description: "Install mcp-gateway (true/false)"
     required: false
-    default: 'false'
+    default: "false"
   mcp-gateway-version:
-    description: 'Version of mcp-gateway to use (specifying this will enable mcp-gateway installation)'
+    description: "Version of mcp-gateway to use (specifying this will enable mcp-gateway installation)"
     required: false
-    default: 'v0.22.0'
+    default: "v0.22.0"
   anthropic-api-key:
-    description: 'Anthropic API key (defaults to ANTHROPIC_API_KEY secret)'
+    description: "Anthropic API key (defaults to ANTHROPIC_API_KEY secret)"
     required: false
   openai-api-key:
-    description: 'OpenAI API key (defaults to OPENAI_API_KEY secret)'
+    description: "OpenAI API key (defaults to OPENAI_API_KEY secret)"
     required: false
   google-api-key:
-    description: 'Google API key for Gemini (defaults to GOOGLE_API_KEY secret)'
+    description: "Google API key for Gemini (defaults to GOOGLE_API_KEY secret)"
     required: false
   github-token:
-    description: 'GitHub token for API access'
+    description: "GitHub token for API access (defaults to GITHUB_TOKEN env var)"
     required: false
-    default: ${{ github.token }}
   timeout:
-    description: 'Timeout in seconds for agent execution (0 for no timeout)'
+    description: "Timeout in seconds for agent execution (0 for no timeout)"
     required: false
-    default: '0'
+    default: "0"
   debug:
-    description: 'Enable debug mode with verbose logging (true/false)'
+    description: "Enable debug mode with verbose logging (true/false)"
     required: false
-    default: 'false'
+    default: "false"
   working-directory:
-    description: 'Working directory to run the agent in'
+    description: "Working directory to run the agent in"
     required: false
-    default: '.'
+    default: "."
   tui:
-    description: 'Enable TUI mode (true/false)'
+    description: "Enable TUI mode (true/false)"
     required: false
-    default: 'false'
+    default: "false"
   yolo:
-    description: 'Enable yolo mode - auto-approve all prompts (true/false)'
+    description: "Enable yolo mode - auto-approve all prompts (true/false)"
     required: false
-    default: 'true'
+    default: "true"
   extra-args:
-    description: 'Additional arguments to pass to cagent run'
+    description: "Additional arguments to pass to cagent run"
     required: false
-    default: ''
+    default: ""
 
 outputs:
   exit-code:
-    description: 'Exit code from cagent run'
+    description: "Exit code from cagent run"
     value: ${{ steps.run-agent.outputs.exit-code }}
   output-file:
-    description: 'Path to the output log file'
+    description: "Path to the output log file"
     value: ${{ steps.run-agent.outputs.output-file }}
   cagent-version:
-    description: 'Version of cagent that was used'
+    description: "Version of cagent that was used"
     value: ${{ steps.setup-binaries.outputs.cagent-version }}
   mcp-gateway-installed:
-    description: 'Whether mcp-gateway was installed (true/false)'
+    description: "Whether mcp-gateway was installed (true/false)"
     value: ${{ steps.setup-binaries.outputs.mcp-installed }}
   execution-time:
-    description: 'Agent execution time in seconds'
+    description: "Agent execution time in seconds"
     value: ${{ steps.run-agent.outputs.execution-time }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Validate versions
       shell: bash
@@ -108,7 +107,7 @@ runs:
 
     - name: Cache cagent binary
       id: cache-cagent
-      uses: actions/cache@v4
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
         path: ${{ github.workspace }}/cagent
         key: cagent-${{ runner.os }}-${{ inputs.cagent-version }}
@@ -116,7 +115,7 @@ runs:
     - name: Cache mcp-gateway binary
       id: cache-mcp
       if: ${{ inputs.mcp-gateway == 'true' }}
-      uses: actions/cache@v4
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
         path: ~/.docker/cli-plugins/docker-mcp
         key: mcp-gateway-${{ runner.os }}-${{ inputs.mcp-gateway-version }}
@@ -206,7 +205,7 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key || env.ANTHROPIC_API_KEY }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key || env.OPENAI_API_KEY }}
         GOOGLE_API_KEY: ${{ inputs.google-api-key || env.GOOGLE_API_KEY }}
-        GITHUB_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-token }}
+        GITHUB_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         set -e
 
