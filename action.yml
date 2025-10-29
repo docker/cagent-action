@@ -33,6 +33,10 @@ inputs:
   google-api-key:
     description: 'Google API key for Gemini (defaults to GOOGLE_API_KEY secret)'
     required: false
+  github-token:
+    description: 'GitHub token for API access'
+    required: false
+    default: ${{ github.token }}
   working-directory:
     description: 'Working directory to run the agent in'
     required: false
