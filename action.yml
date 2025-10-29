@@ -82,6 +82,30 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Validate versions
+      shell: bash
+      run: |
+        # Validate cagent version format
+        if ! [[ "${{ inputs.cagent-version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+          echo "::error::Invalid cagent version format '${{ inputs.cagent-version }}'. Expected format: v1.2.3"
+          exit 1
+        fi
+
+        # Validate mcp-gateway version format if it will be installed
+        if [[ "${{ inputs.mcp-gateway }}" == "true" ]]; then
+          if ! [[ "${{ inputs.mcp-gateway-version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+            echo "::error::Invalid mcp-gateway version format '${{ inputs.mcp-gateway-version }}'. Expected format: v1.2.3"
+            exit 1
+          fi
+        fi
+
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          echo "::debug::Version validation passed"
+          echo "::debug::cagent version: ${{ inputs.cagent-version }}"
+          echo "::debug::mcp-gateway version: ${{ inputs.mcp-gateway-version }}"
+          echo "::debug::mcp-gateway install: ${{ inputs.mcp-gateway }}"
+        fi
+
     - name: Download cagent binary
       shell: bash
       run: |
