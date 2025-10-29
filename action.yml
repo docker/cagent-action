@@ -208,6 +208,14 @@ runs:
         GOOGLE_API_KEY: ${{ inputs.google-api-key || env.GOOGLE_API_KEY }}
         GITHUB_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-token }}
       run: |
+        set -e
+
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          set -x
+          echo "::debug::Working directory: $(pwd)"
+          echo "::debug::GitHub workspace: $GITHUB_WORKSPACE"
+        fi
+
         # Build the command
         CMD="$GITHUB_WORKSPACE/cagent run"
 
@@ -234,10 +242,72 @@ runs:
         echo "Running: $CMD"
 
         # Capture output to both console and file
-        OUTPUT_FILE="/tmp/cagent-output-$$.log"
-        eval $CMD 2>&1 | tee "$OUTPUT_FILE"
-        EXIT_CODE=${PIPESTATUS[0]}
+        OUTPUT_FILE=$(mktemp /tmp/cagent-output.XXXXXX.log)
 
+        # Track execution time
+        START_TIME=$(date +%s)
+
+        # Run with timeout if specified
+        set +e  # Don't exit on command failure
+        if [ "${{ inputs.timeout }}" != "0" ]; then
+          timeout "${{ inputs.timeout }}" bash -c "eval $CMD 2>&1 | tee '$OUTPUT_FILE'"
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -eq 124 ]; then
+            echo "::error::Agent execution timed out after ${{ inputs.timeout }} seconds"
+          fi
+        else
+          eval $CMD 2>&1 | tee "$OUTPUT_FILE"
+          EXIT_CODE=${PIPESTATUS[0]}
+        fi
+        set -e
+
+        END_TIME=$(date +%s)
+        EXECUTION_TIME=$((END_TIME - START_TIME))
+
+        # Set outputs
         echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
         echo "output-file=$OUTPUT_FILE" >> $GITHUB_OUTPUT
+        echo "execution-time=$EXECUTION_TIME" >> $GITHUB_OUTPUT
+
+        # Create job summary
+        {
+          echo "## CAgent Execution Summary"
+          echo ""
+          echo "| Property | Value |"
+          echo "|----------|-------|"
+          echo "| Agent | \`${{ inputs.agent }}\` |"
+          echo "| Exit Code | $EXIT_CODE |"
+          echo "| Execution Time | ${EXECUTION_TIME}s |"
+          echo "| CAgent Version | ${{ inputs.cagent-version }} |"
+          echo "| MCP Gateway | ${{ steps.setup-binaries.outputs.mcp-installed }} |"
+          if [ "${{ inputs.timeout }}" != "0" ]; then
+            echo "| Timeout | ${{ inputs.timeout }}s |"
+          fi
+          echo ""
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "✅ **Status:** Success"
+          elif [ $EXIT_CODE -eq 124 ]; then
+            echo "⏱️ **Status:** Timeout"
+          else
+            echo "❌ **Status:** Failed"
+          fi
+          echo ""
+
+          echo "<details>"
+          echo "<summary>Agent Output (click to expand)</summary>"
+          echo ""
+          echo "\`\`\`"
+          # Show last 100 lines of output
+          tail -n 100 "$OUTPUT_FILE"
+          echo "\`\`\`"
+          echo "</details>"
+        } >> $GITHUB_STEP_SUMMARY
+
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          echo "::debug::Exit code: $EXIT_CODE"
+          echo "::debug::Execution time: ${EXECUTION_TIME}s"
+          echo "::debug::Output file: $OUTPUT_FILE"
+        fi
+
         exit $EXIT_CODE
