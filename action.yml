@@ -37,6 +37,14 @@ inputs:
     description: 'GitHub token for API access'
     required: false
     default: ${{ github.token }}
+  timeout:
+    description: 'Timeout in seconds for agent execution (0 for no timeout)'
+    required: false
+    default: '0'
+  debug:
+    description: 'Enable debug mode with verbose logging (true/false)'
+    required: false
+    default: 'false'
   working-directory:
     description: 'Working directory to run the agent in'
     required: false
