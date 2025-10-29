@@ -106,25 +106,97 @@ runs:
           echo "::debug::mcp-gateway install: ${{ inputs.mcp-gateway }}"
         fi
 
-    - name: Download cagent binary
-      shell: bash
-      run: |
-        echo "Downloading cagent ${{ inputs.cagent-version }}..."
-        curl -L -o cagent "https://github.com/docker/cagent/releases/download/${{ inputs.cagent-version }}/cagent-linux-amd64"
-        chmod +x cagent
-        ./cagent version
+    - name: Cache cagent binary
+      id: cache-cagent
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/cagent
+        key: cagent-${{ runner.os }}-${{ inputs.cagent-version }}
 
-    - name: Download mcp-gateway binary
-      if: ${{ inputs.mcp-gateway == 'true' || inputs.mcp-gateway-version != 'v0.22.0' }}
+    - name: Cache mcp-gateway binary
+      id: cache-mcp
+      if: ${{ inputs.mcp-gateway == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: ~/.docker/cli-plugins/docker-mcp
+        key: mcp-gateway-${{ runner.os }}-${{ inputs.mcp-gateway-version }}
+
+    - name: Setup binaries
+      id: setup-binaries
       shell: bash
       run: |
-        echo "Downloading mcp-gateway ${{ inputs.mcp-gateway-version }}..."
-        curl -L -o mcp-gateway.tar.gz "https://github.com/docker/mcp-gateway/releases/download/${{ inputs.mcp-gateway-version }}/docker-mcp-linux-amd64.tar.gz"
-        tar -xzf mcp-gateway.tar.gz
-        chmod +x docker-mcp
-        mkdir -p ~/.docker/cli-plugins
-        cp docker-mcp ~/.docker/cli-plugins/docker-mcp
-        docker mcp version
+        set -e
+        MCP_INSTALLED="false"
+
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          set -x
+        fi
+
+        # Function to retry downloads
+        retry_download() {
+          local url=$1
+          local output=$2
+          local max_attempts=3
+          local attempt=1
+
+          while [ $attempt -le $max_attempts ]; do
+            echo "Attempt $attempt of $max_attempts: Downloading $url"
+            if curl -fL -o "$output" "$url"; then
+              echo "Download successful"
+              return 0
+            fi
+            echo "Download failed, retrying..."
+            attempt=$((attempt + 1))
+            sleep 2
+          done
+
+          echo "::error::Failed to download after $max_attempts attempts: $url"
+          return 1
+        }
+
+        # Download cagent if not cached
+        if [[ "${{ steps.cache-cagent.outputs.cache-hit }}" != "true" ]]; then
+          echo "Downloading cagent ${{ inputs.cagent-version }}..."
+          retry_download \
+            "https://github.com/docker/cagent/releases/download/${{ inputs.cagent-version }}/cagent-linux-amd64" \
+            "${{ github.workspace }}/cagent"
+          chmod +x "${{ github.workspace }}/cagent"
+        else
+          echo "Using cached cagent binary"
+        fi
+
+        # Verify cagent works
+        if ! "${{ github.workspace }}/cagent" version; then
+          echo "::error::cagent binary verification failed"
+          exit 1
+        fi
+
+        # Download mcp-gateway if needed and not cached
+        if [[ "${{ inputs.mcp-gateway }}" == "true" ]]; then
+          if [[ "${{ steps.cache-mcp.outputs.cache-hit }}" != "true" ]]; then
+            echo "Downloading mcp-gateway ${{ inputs.mcp-gateway-version }}..."
+            retry_download \
+              "https://github.com/docker/mcp-gateway/releases/download/${{ inputs.mcp-gateway-version }}/docker-mcp-linux-amd64.tar.gz" \
+              "mcp-gateway.tar.gz"
+            tar -xzf mcp-gateway.tar.gz
+            chmod +x docker-mcp
+            mkdir -p ~/.docker/cli-plugins
+            cp docker-mcp ~/.docker/cli-plugins/docker-mcp
+          else
+            echo "Using cached mcp-gateway binary"
+          fi
+
+          # Verify mcp-gateway works
+          if ! docker mcp version; then
+            echo "::error::mcp-gateway binary verification failed"
+            exit 1
+          fi
+          MCP_INSTALLED="true"
+        fi
+
+        # Set outputs
+        echo "cagent-version=${{ inputs.cagent-version }}" >> $GITHUB_OUTPUT
+        echo "mcp-installed=$MCP_INSTALLED" >> $GITHUB_OUTPUT
 
     - name: Run CAgent
       id: run-agent
