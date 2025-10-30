@@ -1,85 +1,201 @@
-name: 'CAgent Runner'
-description: 'Run a CAgent AI agent with a single line'
-author: 'Docker'
+name: "CAgent Runner"
+description: "Run a CAgent AI agent with a single line"
+author: "Docker"
 branding:
-  icon: 'cpu'
-  color: 'blue'
+  icon: "cpu"
+  color: "blue"
 
 inputs:
   agent:
-    description: 'Agent identifier (e.g., jeanlaurent/pr-reviewer or path to .yaml file)'
+    description: "Agent identifier (e.g., jeanlaurent/pr-reviewer or path to .yaml file)"
     required: true
   prompt:
-    description: 'Prompt to pass to the agent. If not provided, uses a default based on the agent type'
+    description: "Prompt to pass to the agent. If not provided, uses a default based on the agent type"
     required: false
   cagent-version:
-    description: 'Version of cagent to use'
+    description: "Version of cagent to use"
     required: false
-    default: 'v1.6.6'
+    default: "v1.6.6"
   mcp-gateway:
-    description: 'Install mcp-gateway (true/false)'
+    description: "Install mcp-gateway (true/false)"
     required: false
-    default: 'false'
+    default: "false"
   mcp-gateway-version:
-    description: 'Version of mcp-gateway to use (specifying this will enable mcp-gateway installation)'
+    description: "Version of mcp-gateway to use (specifying this will enable mcp-gateway installation)"
     required: false
-    default: 'v0.22.0'
+    default: "v0.22.0"
   anthropic-api-key:
-    description: 'Anthropic API key (defaults to ANTHROPIC_API_KEY secret)'
+    description: "Anthropic API key (defaults to ANTHROPIC_API_KEY secret)"
     required: false
   openai-api-key:
-    description: 'OpenAI API key (defaults to OPENAI_API_KEY secret)'
+    description: "OpenAI API key (defaults to OPENAI_API_KEY secret)"
     required: false
   google-api-key:
-    description: 'Google API key for Gemini (defaults to GOOGLE_API_KEY secret)'
+    description: "Google API key for Gemini (defaults to GOOGLE_API_KEY secret)"
     required: false
+  github-token:
+    description: "GitHub token for API access (defaults to GITHUB_TOKEN env var)"
+    required: false
+  timeout:
+    description: "Timeout in seconds for agent execution (0 for no timeout)"
+    required: false
+    default: "0"
+  debug:
+    description: "Enable debug mode with verbose logging (true/false)"
+    required: false
+    default: "false"
   working-directory:
-    description: 'Working directory to run the agent in'
+    description: "Working directory to run the agent in"
     required: false
-    default: '.'
+    default: "."
   tui:
-    description: 'Enable TUI mode (true/false)'
+    description: "Enable TUI mode (true/false)"
     required: false
-    default: 'false'
+    default: "false"
   yolo:
-    description: 'Enable yolo mode - auto-approve all prompts (true/false)'
+    description: "Enable yolo mode - auto-approve all prompts (true/false)"
     required: false
-    default: 'true'
+    default: "true"
   extra-args:
-    description: 'Additional arguments to pass to cagent run'
+    description: "Additional arguments to pass to cagent run"
     required: false
-    default: ''
+    default: ""
 
 outputs:
   exit-code:
-    description: 'Exit code from cagent run'
+    description: "Exit code from cagent run"
     value: ${{ steps.run-agent.outputs.exit-code }}
   output-file:
-    description: 'Path to the output log file'
+    description: "Path to the output log file"
     value: ${{ steps.run-agent.outputs.output-file }}
+  cagent-version:
+    description: "Version of cagent that was used"
+    value: ${{ steps.setup-binaries.outputs.cagent-version }}
+  mcp-gateway-installed:
+    description: "Whether mcp-gateway was installed (true/false)"
+    value: ${{ steps.setup-binaries.outputs.mcp-installed }}
+  execution-time:
+    description: "Agent execution time in seconds"
+    value: ${{ steps.run-agent.outputs.execution-time }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
-    - name: Download cagent binary
+    - name: Validate versions
       shell: bash
       run: |
-        echo "Downloading cagent ${{ inputs.cagent-version }}..."
-        curl -L -o cagent "https://github.com/docker/cagent/releases/download/${{ inputs.cagent-version }}/cagent-linux-amd64"
-        chmod +x cagent
-        ./cagent version
+        # Validate cagent version format
+        if ! [[ "${{ inputs.cagent-version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+          echo "::error::Invalid cagent version format '${{ inputs.cagent-version }}'. Expected format: v1.2.3"
+          exit 1
+        fi
 
-    - name: Download mcp-gateway binary
-      if: ${{ inputs.mcp-gateway == 'true' || inputs.mcp-gateway-version != 'v0.22.0' }}
+        # Validate mcp-gateway version format if it will be installed
+        if [[ "${{ inputs.mcp-gateway }}" == "true" ]]; then
+          if ! [[ "${{ inputs.mcp-gateway-version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+            echo "::error::Invalid mcp-gateway version format '${{ inputs.mcp-gateway-version }}'. Expected format: v1.2.3"
+            exit 1
+          fi
+        fi
+
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          echo "::debug::Version validation passed"
+          echo "::debug::cagent version: ${{ inputs.cagent-version }}"
+          echo "::debug::mcp-gateway version: ${{ inputs.mcp-gateway-version }}"
+          echo "::debug::mcp-gateway install: ${{ inputs.mcp-gateway }}"
+        fi
+
+    - name: Cache cagent binary
+      id: cache-cagent
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        path: ${{ github.workspace }}/cagent
+        key: cagent-${{ runner.os }}-${{ inputs.cagent-version }}
+
+    - name: Cache mcp-gateway binary
+      id: cache-mcp
+      if: ${{ inputs.mcp-gateway == 'true' }}
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        path: ~/.docker/cli-plugins/docker-mcp
+        key: mcp-gateway-${{ runner.os }}-${{ inputs.mcp-gateway-version }}
+
+    - name: Setup binaries
+      id: setup-binaries
       shell: bash
       run: |
-        echo "Downloading mcp-gateway ${{ inputs.mcp-gateway-version }}..."
-        curl -L -o mcp-gateway.tar.gz "https://github.com/docker/mcp-gateway/releases/download/${{ inputs.mcp-gateway-version }}/docker-mcp-linux-amd64.tar.gz"
-        tar -xzf mcp-gateway.tar.gz
-        chmod +x docker-mcp
-        mkdir -p ~/.docker/cli-plugins
-        cp docker-mcp ~/.docker/cli-plugins/docker-mcp
-        docker mcp version
+        set -e
+        MCP_INSTALLED="false"
+
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          set -x
+        fi
+
+        # Function to retry downloads
+        retry_download() {
+          local url=$1
+          local output=$2
+          local max_attempts=3
+          local attempt=1
+
+          while [ $attempt -le $max_attempts ]; do
+            echo "Attempt $attempt of $max_attempts: Downloading $url"
+            if curl -fL -o "$output" "$url"; then
+              echo "Download successful"
+              return 0
+            fi
+            echo "Download failed, retrying..."
+            attempt=$((attempt + 1))
+            sleep 2
+          done
+
+          echo "::error::Failed to download after $max_attempts attempts: $url"
+          return 1
+        }
+
+        # Download cagent if not cached
+        if [[ "${{ steps.cache-cagent.outputs.cache-hit }}" != "true" ]]; then
+          echo "Downloading cagent ${{ inputs.cagent-version }}..."
+          retry_download \
+            "https://github.com/docker/cagent/releases/download/${{ inputs.cagent-version }}/cagent-linux-amd64" \
+            "${{ github.workspace }}/cagent"
+          chmod +x "${{ github.workspace }}/cagent"
+        else
+          echo "Using cached cagent binary"
+        fi
+
+        # Verify cagent works
+        if ! "${{ github.workspace }}/cagent" version; then
+          echo "::error::cagent binary verification failed"
+          exit 1
+        fi
+
+        # Download mcp-gateway if needed and not cached
+        if [[ "${{ inputs.mcp-gateway }}" == "true" ]]; then
+          if [[ "${{ steps.cache-mcp.outputs.cache-hit }}" != "true" ]]; then
+            echo "Downloading mcp-gateway ${{ inputs.mcp-gateway-version }}..."
+            retry_download \
+              "https://github.com/docker/mcp-gateway/releases/download/${{ inputs.mcp-gateway-version }}/docker-mcp-linux-amd64.tar.gz" \
+              "mcp-gateway.tar.gz"
+            tar -xzf mcp-gateway.tar.gz
+            chmod +x docker-mcp
+            mkdir -p ~/.docker/cli-plugins
+            cp docker-mcp ~/.docker/cli-plugins/docker-mcp
+          else
+            echo "Using cached mcp-gateway binary"
+          fi
+
+          # Verify mcp-gateway works
+          if ! docker mcp version; then
+            echo "::error::mcp-gateway binary verification failed"
+            exit 1
+          fi
+          MCP_INSTALLED="true"
+        fi
+
+        # Set outputs
+        echo "cagent-version=${{ inputs.cagent-version }}" >> $GITHUB_OUTPUT
+        echo "mcp-installed=$MCP_INSTALLED" >> $GITHUB_OUTPUT
 
     - name: Run CAgent
       id: run-agent
@@ -89,8 +205,16 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key || env.ANTHROPIC_API_KEY }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key || env.OPENAI_API_KEY }}
         GOOGLE_API_KEY: ${{ inputs.google-api-key || env.GOOGLE_API_KEY }}
-        GITHUB_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-token }}
+        GITHUB_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
+        set -e
+
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          set -x
+          echo "::debug::Working directory: $(pwd)"
+          echo "::debug::GitHub workspace: $GITHUB_WORKSPACE"
+        fi
+
         # Build the command
         CMD="$GITHUB_WORKSPACE/cagent run"
 
@@ -117,10 +241,72 @@ runs:
         echo "Running: $CMD"
 
         # Capture output to both console and file
-        OUTPUT_FILE="/tmp/cagent-output-$$.log"
-        eval $CMD 2>&1 | tee "$OUTPUT_FILE"
-        EXIT_CODE=${PIPESTATUS[0]}
+        OUTPUT_FILE=$(mktemp /tmp/cagent-output.XXXXXX.log)
 
+        # Track execution time
+        START_TIME=$(date +%s)
+
+        # Run with timeout if specified
+        set +e  # Don't exit on command failure
+        if [ "${{ inputs.timeout }}" != "0" ]; then
+          timeout "${{ inputs.timeout }}" bash -c "eval $CMD 2>&1 | tee '$OUTPUT_FILE'"
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -eq 124 ]; then
+            echo "::error::Agent execution timed out after ${{ inputs.timeout }} seconds"
+          fi
+        else
+          eval $CMD 2>&1 | tee "$OUTPUT_FILE"
+          EXIT_CODE=${PIPESTATUS[0]}
+        fi
+        set -e
+
+        END_TIME=$(date +%s)
+        EXECUTION_TIME=$((END_TIME - START_TIME))
+
+        # Set outputs
         echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
         echo "output-file=$OUTPUT_FILE" >> $GITHUB_OUTPUT
+        echo "execution-time=$EXECUTION_TIME" >> $GITHUB_OUTPUT
+
+        # Create job summary
+        {
+          echo "## CAgent Execution Summary"
+          echo ""
+          echo "| Property | Value |"
+          echo "|----------|-------|"
+          echo "| Agent | \`${{ inputs.agent }}\` |"
+          echo "| Exit Code | $EXIT_CODE |"
+          echo "| Execution Time | ${EXECUTION_TIME}s |"
+          echo "| CAgent Version | ${{ inputs.cagent-version }} |"
+          echo "| MCP Gateway | ${{ steps.setup-binaries.outputs.mcp-installed }} |"
+          if [ "${{ inputs.timeout }}" != "0" ]; then
+            echo "| Timeout | ${{ inputs.timeout }}s |"
+          fi
+          echo ""
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "✅ **Status:** Success"
+          elif [ $EXIT_CODE -eq 124 ]; then
+            echo "⏱️ **Status:** Timeout"
+          else
+            echo "❌ **Status:** Failed"
+          fi
+          echo ""
+
+          echo "<details>"
+          echo "<summary>Agent Output (click to expand)</summary>"
+          echo ""
+          echo "\`\`\`"
+          # Show last 100 lines of output
+          tail -n 100 "$OUTPUT_FILE"
+          echo "\`\`\`"
+          echo "</details>"
+        } >> $GITHUB_STEP_SUMMARY
+
+        if [[ "${{ inputs.debug }}" == "true" ]]; then
+          echo "::debug::Exit code: $EXIT_CODE"
+          echo "::debug::Execution time: ${EXECUTION_TIME}s"
+          echo "::debug::Output file: $OUTPUT_FILE"
+        fi
+
         exit $EXIT_CODE

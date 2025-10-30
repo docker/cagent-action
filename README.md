@@ -64,10 +64,39 @@ jobs:
     mcp-gateway-version: v0.22.0
     yolo: false  # Require manual approval
     tui: true    # Enable terminal UI
+    timeout: 600  # 10 minute timeout
+    debug: true   # Enable debug logging
     working-directory: ./src
     extra-args: "--verbose"
   env:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+### Using Outputs
+
+```yaml
+- name: Run CAgent
+  id: agent
+  uses: docker/cagent-action@v1
+  with:
+    agent: jeanlaurent/pr-reviewer
+    prompt: "Review this pull request"
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+- name: Check execution time
+  run: |
+    echo "Agent took ${{ steps.agent.outputs.execution-time }} seconds"
+    if [ "${{ steps.agent.outputs.execution-time }}" -gt 300 ]; then
+      echo "Warning: Agent took longer than 5 minutes"
+    fi
+
+- name: Upload output log
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: agent-output
+    path: ${{ steps.agent.outputs.output-file }}
 ```
 
 ## Inputs
@@ -82,7 +111,9 @@ jobs:
 | `anthropic-api-key` | Anthropic API key | No | `$ANTHROPIC_API_KEY` env var |
 | `openai-api-key` | OpenAI API key | No | `$OPENAI_API_KEY` env var |
 | `google-api-key` | Google API key for Gemini | No | `$GOOGLE_API_KEY` env var |
-| `github-token` | GitHub token for API access | No | `${{ github.token }}` |
+| `github-token` | GitHub token for API access | No | Auto-provided by GitHub Actions |
+| `timeout` | Timeout in seconds for agent execution (0 for no timeout) | No | `0` |
+| `debug` | Enable debug mode with verbose logging (`true`/`false`) | No | `false` |
 | `working-directory` | Working directory to run the agent in | No | `.` |
 | `tui` | Enable TUI mode (`true`/`false`) | No | `false` |
 | `yolo` | Auto-approve all prompts (`true`/`false`) | No | `true` |
@@ -93,6 +124,10 @@ jobs:
 | Output | Description |
 |--------|-------------|
 | `exit-code` | Exit code from the cagent run |
+| `output-file` | Path to the output log file |
+| `cagent-version` | Version of cagent that was used |
+| `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`) |
+| `execution-time` | Agent execution time in seconds |
 
 ## Environment Variables
 
