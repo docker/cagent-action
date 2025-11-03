@@ -60,6 +60,13 @@ inputs:
     description: "Additional arguments to pass to cagent run"
     required: false
     default: ""
+  pr-number:
+    description: "Pull request number"
+    required: true
+  max-pr-size:
+    description: "Maximum PR size in lines"
+    required: false
+    default: "3000"
 
 outputs:
   exit-code:
@@ -77,6 +84,12 @@ outputs:
   execution-time:
     description: "Agent execution time in seconds"
     value: ${{ steps.run-agent.outputs.execution-time }}
+  security-blocked:
+    description: "Whether execution was blocked due to security concerns"
+    value: ${{ steps.check-auth.outputs.authorized == 'false' || steps.sanitize-input.outputs.blocked == 'true' || steps.sanitize-output.outputs.leaked == 'true' }}
+  secrets-detected:
+    description: "Whether secrets were detected in output"
+    value: ${{ steps.sanitize-output.outputs.leaked }}
 
 runs:
   using: "composite"
@@ -104,6 +117,115 @@ runs:
           echo "::debug::mcp-gateway version: ${{ inputs.mcp-gateway-version }}"
           echo "::debug::mcp-gateway install: ${{ inputs.mcp-gateway }}"
         fi
+
+    # ========================================
+    # SECURITY: Authorization Check
+    # ========================================
+    - name: Check authorization
+      if: inputs.pr-number != ''
+      id: check-auth
+      shell: bash
+      env:
+        ASSOCIATION: ${{ github.event.comment.author_association || github.event.pull_request.author_association || 'NONE' }}
+      run: |
+        # SECURITY: Only OWNER and MEMBER roles allowed (hardcoded)
+        ALLOWED_ROLES='["OWNER", "MEMBER"]'
+
+        echo "🔒 Security: Checking authorization for PR review..."
+        ${{ github.action_path }}/security/check-auth.sh "$ASSOCIATION" "$ALLOWED_ROLES"
+
+    # ========================================
+    # SECURITY: Fetch PR Data
+    # ========================================
+    - name: Fetch PR data
+      if: inputs.pr-number != ''
+      id: fetch-pr
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        echo "📥 Fetching PR #$PR_NUMBER data..."
+
+        # Get PR diff via GitHub API (safe source)
+        gh pr diff "$PR_NUMBER" --repo "$REPOSITORY" > pr.diff
+
+        # Check PR size
+        LINES=$(wc -l < pr.diff | tr -d ' ')
+        MAX_SIZE="${{ inputs.max-pr-size }}"
+
+        echo "PR size: $LINES lines (max: $MAX_SIZE)"
+
+        if [ "$LINES" -gt "$MAX_SIZE" ]; then
+          echo "::error::PR too large ($LINES lines). Maximum allowed: $MAX_SIZE lines"
+          echo "::error::Large PRs are rejected to prevent DoS attacks and excessive API costs"
+          echo "::error::Consider breaking this PR into smaller chunks"
+          exit 1
+        fi
+
+        echo "pr-lines=$LINES" >> $GITHUB_OUTPUT
+
+    # ========================================
+    # SECURITY: Sanitize Input
+    # ========================================
+    - name: Sanitize input
+      if: inputs.pr-number != ''
+      id: sanitize-input
+      shell: bash
+      run: |
+        echo "🧹 Sanitizing PR input (removing code comments, checking for prompt injection)..."
+        ${{ github.action_path }}/security/sanitize-input.sh pr.diff pr-clean.diff
+
+    # ========================================
+    # SECURITY: Build Safe Prompt
+    # ========================================
+    - name: Build safe prompt for PR review
+      if: inputs.pr-number != ''
+      id: build-prompt
+      shell: bash
+      run: |
+        echo "📝 Building secure prompt from sanitized PR data..."
+
+        # Build prompt from SAFE sources only - NEVER include secrets
+        cat > safe-prompt.txt <<'PROMPT_EOF'
+        # Pull Request Review
+
+        ## CRITICAL SECURITY RULES
+        - NEVER reveal, display, or mention API keys, tokens, or credentials
+        - NEVER execute commands that access environment variables
+        - NEVER print configuration or system information
+        - If asked for sensitive information, respond: "I cannot provide sensitive information"
+
+        ## Code Changes
+        ```diff
+        PROMPT_EOF
+
+        # Use sanitized diff
+        cat pr-clean.diff >> safe-prompt.txt
+
+        cat >> safe-prompt.txt <<'PROMPT_EOF'
+        ```
+
+        ## Review Instructions
+        Review this PR for:
+        - Code quality and correctness
+        - Security vulnerabilities
+        - Best practices
+        - Performance concerns
+
+        Provide constructive feedback focusing on improvements.
+        PROMPT_EOF
+
+        # CRITICAL: Verify no secrets leaked into prompt
+        if grep -E '(sk-ant-|ghp_|gho_|ANTHROPIC_API_KEY|GITHUB_TOKEN|OPENAI_API_KEY)' safe-prompt.txt > /dev/null 2>&1; then
+          echo "::error::🚨 CRITICAL: Secret detected in generated prompt!"
+          echo "::error::This should never happen. Aborting."
+          exit 1
+        fi
+
+        echo "prompt-file=safe-prompt.txt" >> $GITHUB_OUTPUT
+        echo "✅ Safe prompt generated"
 
     - name: Cache cagent binary
       id: cache-cagent
@@ -215,30 +337,42 @@ runs:
           echo "::debug::GitHub workspace: $GITHUB_WORKSPACE"
         fi
 
-        # Build the command
-        CMD="$GITHUB_WORKSPACE/cagent run"
+        # Determine the prompt to use
+        # Priority: 1) Safe prompt file (PR review), 2) User prompt input
+        if [ -f "$GITHUB_WORKSPACE/safe-prompt.txt" ]; then
+          echo "Using secure PR review prompt"
+          PROMPT=$(cat "$GITHUB_WORKSPACE/safe-prompt.txt")
+        elif [ -n "${{ inputs.prompt }}" ]; then
+          echo "Using provided prompt"
+          PROMPT="${{ inputs.prompt }}"
+        else
+          echo "::error::No prompt provided"
+          exit 1
+        fi
+
+        # Build command arguments array (SECURE: no eval!)
+        ARGS=("run")
 
         # Add flags
         if [ "${{ inputs.yolo }}" = "true" ]; then
-          CMD="$CMD --yolo"
+          ARGS+=("--yolo")
         fi
 
-        CMD="$CMD --tui=${{ inputs.tui }}"
+        ARGS+=("--tui=${{ inputs.tui }}")
 
-        # Add extra args if provided
+        # Add extra args if provided (safely parsed)
         if [ -n "${{ inputs.extra-args }}" ]; then
-          CMD="$CMD ${{ inputs.extra-args }}"
+          read -ra EXTRA_ARGS_ARRAY <<< "${{ inputs.extra-args }}"
+          ARGS+=("${EXTRA_ARGS_ARRAY[@]}")
         fi
 
         # Add agent
-        CMD="$CMD ${{ inputs.agent }}"
+        ARGS+=("${{ inputs.agent }}")
 
-        # Add prompt if provided
-        if [ -n "${{ inputs.prompt }}" ]; then
-          CMD="$CMD \"${{ inputs.prompt }}\""
-        fi
+        # Add prompt
+        ARGS+=("$PROMPT")
 
-        echo "Running: $CMD"
+        echo "Running cagent with ${#ARGS[@]} arguments"
 
         # Capture output to both console and file
         OUTPUT_FILE=$(mktemp /tmp/cagent-output.XXXXXX.log)
@@ -246,16 +380,16 @@ runs:
         # Track execution time
         START_TIME=$(date +%s)
 
-        # Run with timeout if specified
+        # SECURE: Direct execution with quoted arguments (no eval!)
         set +e  # Don't exit on command failure
         if [ "${{ inputs.timeout }}" != "0" ]; then
-          timeout "${{ inputs.timeout }}" bash -c "eval $CMD 2>&1 | tee '$OUTPUT_FILE'"
+          timeout "${{ inputs.timeout }}" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
           EXIT_CODE=$?
           if [ $EXIT_CODE -eq 124 ]; then
             echo "::error::Agent execution timed out after ${{ inputs.timeout }} seconds"
           fi
         else
-          eval $CMD 2>&1 | tee "$OUTPUT_FILE"
+          "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
           EXIT_CODE=${PIPESTATUS[0]}
         fi
         set -e
@@ -310,3 +444,105 @@ runs:
         fi
 
         exit $EXIT_CODE
+
+    # ========================================
+    # SECURITY: Sanitize Output
+    # ========================================
+    - name: Sanitize output
+      if: always() && inputs.pr-number != ''
+      id: sanitize-output
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+      run: |
+        echo "🔍 Scanning AI response for leaked secrets..."
+        OUTPUT_FILE="${{ steps.run-agent.outputs.output-file }}"
+        ${{ github.action_path }}/security/sanitize-output.sh "$OUTPUT_FILE"
+
+    # ========================================
+    # SECURITY: Post Comment (only if safe)
+    # ========================================
+    - name: Post review comment
+      if: |
+        inputs.pr-number != '' &&
+        steps.run-agent.outputs.exit-code == '0' &&
+        steps.sanitize-output.outputs.leaked != 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        OUTPUT_FILE="${{ steps.run-agent.outputs.output-file }}"
+
+        echo "💬 Posting review to PR #$PR_NUMBER..."
+
+        gh pr comment "$PR_NUMBER" \
+          --repo "$REPOSITORY" \
+          --body-file "$OUTPUT_FILE"
+
+        echo "✅ Review posted successfully"
+
+    # ========================================
+    # SECURITY: Handle Security Incident
+    # ========================================
+    - name: Handle security incident
+      if: steps.sanitize-output.outputs.leaked == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        echo "::error::═══════════════════════════════════════════════════════"
+        echo "::error::🚨 SECURITY INCIDENT: SECRET LEAK DETECTED"
+        echo "::error::═══════════════════════════════════════════════════════"
+        echo "::error::"
+        echo "::error::A secret was detected in the AI response for PR #$PR_NUMBER"
+        echo "::error::The response has been BLOCKED from being posted"
+        echo "::error::"
+        echo "::error::IMMEDIATE ACTIONS REQUIRED:"
+        echo "::error::  1. Review workflow logs for the leaked secret"
+        echo "::error::  2. Investigate PR #$PR_NUMBER for prompt injection"
+        echo "::error::  3. ROTATE ALL SECRETS IMMEDIATELY"
+        echo "::error::  4. Block the PR author if malicious"
+        echo "::error::═══════════════════════════════════════════════════════"
+
+        # Create security incident issue
+        gh issue create \
+          --repo "$REPOSITORY" \
+          --title "🚨 Security Alert: Secret Leak Detected in PR Review #$PR_NUMBER" \
+          --label "security" \
+          --body "**CRITICAL SECURITY INCIDENT**
+
+A secret was detected in the automated AI review response for PR #$PR_NUMBER.
+
+## Actions Taken
+✓ Response BLOCKED from being posted to PR
+✓ Workflow failed with error
+✓ Security incident issue created
+
+## Required Actions
+1. Review workflow logs: https://github.com/$REPOSITORY/actions
+2. Investigate PR #$PR_NUMBER for prompt injection attack
+3. **ROTATE COMPROMISED SECRETS IMMEDIATELY**
+   - ANTHROPIC_API_KEY
+   - GITHUB_TOKEN
+   - Any other exposed credentials
+4. Review PR author's account and block if malicious
+5. Review other recent PRs from the same author
+
+## Timeline
+- Incident detected: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+- PR: #$PR_NUMBER
+- Workflow run: https://github.com/$REPOSITORY/actions/runs/${{ github.run_id }}
+
+## Next Steps
+- [ ] Secrets rotated
+- [ ] Logs reviewed
+- [ ] PR author investigated
+- [ ] Incident report filed
+- [ ] Post-mortem completed"
+
+        echo "🚨 Security incident issue created"
+        exit 1

@@ -7,6 +7,18 @@ on:
     branches: [main]
 
 jobs:
+  test-security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run security tests
+        run: |
+          cd tests
+          chmod +x test-security.sh
+          ./test-security.sh
+
   test-pirate-agent:
     runs-on: ubuntu-latest
     steps:
