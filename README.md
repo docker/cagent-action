@@ -54,11 +54,12 @@ jobs:
       - name: AI PR Review
         uses: docker/cagent-action@v2.0.0
         with:
-          agent: agents/pr-reviewer.yaml  # Built-in secure PR reviewer
           pr-number: ${{ github.event.pull_request.number }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
+
+**Note:** When `pr-number` is provided, the action automatically uses the built-in secure PR reviewer agent. No need to specify the `agent` input.
 
 **How it works:**
 1. Action checks author is OWNER or MEMBER (blocks external contributors)
@@ -133,9 +134,9 @@ See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `agent` | Agent identifier (e.g., `jeanlaurent/pr-reviewer`) or path to `.yaml` file | Yes | - |
+| `agent` | Agent identifier (e.g., `jeanlaurent/pr-reviewer`) or path to `.yaml` file. Optional when `pr-number` is provided (uses built-in secure PR reviewer) | No** | - |
 | `prompt` | Prompt to pass to the agent | No | - |
-| `pr-number` | Pull request number (for PR review mode with built-in security) | Yes* | - |
+| `pr-number` | Pull request number (for PR review mode with built-in security) | No** | - |
 | `max-pr-size` | Maximum PR size in lines (for PR review mode) | No | `3000` |
 | `cagent-version` | Version of cagent to use | No | `v1.6.6` |
 | `mcp-gateway` | Install mcp-gateway (`true`/`false`) | No | `false` |
@@ -151,7 +152,7 @@ See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 | `yolo` | Auto-approve all prompts (`true`/`false`) | No | `true` |
 | `extra-args` | Additional arguments to pass to `cagent run` | No | - |
 
-\* `pr-number` is required when using the built-in `agents/pr-reviewer.yaml` agent for PR reviews.
+\*\* Either `agent` or `pr-number` must be provided. When `pr-number` is provided without `agent`, the built-in secure PR reviewer is automatically used.
 
 ## Outputs
 
@@ -380,10 +381,10 @@ All tests must pass before deployment.
 - name: AI PR Review
   uses: docker/cagent-action@v2.0.0
   with:
-    agent: agents/pr-reviewer.yaml
     pr-number: ${{ github.event.pull_request.number }}
   env:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+# Automatically uses built-in secure PR reviewer
 # Security automatically enforced:
 # - Auth check (OWNER/MEMBER only)
 # - Input sanitization

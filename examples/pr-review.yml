@@ -22,7 +22,6 @@ jobs:
       - name: AI PR Review
         uses: docker/cagent-action@v2.0.0
         with:
-          agent: agents/pr-reviewer.yaml  # Built-in secure PR reviewer
           pr-number: ${{ github.event.pull_request.number }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

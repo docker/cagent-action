@@ -7,8 +7,8 @@ branding:
 
 inputs:
   agent:
-    description: "Agent identifier (e.g., jeanlaurent/pr-reviewer or path to .yaml file)"
-    required: true
+    description: "Agent identifier (e.g., jeanlaurent/pr-reviewer or path to .yaml file). Optional when pr-number is provided (uses built-in secure PR reviewer)"
+    required: false
   prompt:
     description: "Prompt to pass to the agent. If not provided, uses a default based on the agent type"
     required: false
@@ -61,7 +61,7 @@ inputs:
     required: false
     default: ""
   pr-number:
-    description: "Pull request number (for PR review mode)"
+    description: "Pull request number (for PR review mode with built-in secure reviewer)"
     required: false
   max-pr-size:
     description: "Maximum PR size in lines (for PR review mode)"
@@ -97,9 +97,17 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Validate versions
+    - name: Validate inputs
       shell: bash
       run: |
+        # Validate that either agent or pr-number is provided
+        if [[ -z "${{ inputs.agent }}" && -z "${{ inputs.pr-number }}" ]]; then
+          echo "::error::Either 'agent' or 'pr-number' input must be provided"
+          echo "::error::  - For general agent execution: provide 'agent'"
+          echo "::error::  - For PR review with built-in secure reviewer: provide 'pr-number'"
+          exit 1
+        fi
+
         # Validate cagent version format
         if ! [[ "${{ inputs.cagent-version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
           echo "::error::Invalid cagent version format '${{ inputs.cagent-version }}'. Expected format: v1.2.3"
@@ -115,7 +123,9 @@ runs:
         fi
 
         if [[ "${{ inputs.debug }}" == "true" ]]; then
-          echo "::debug::Version validation passed"
+          echo "::debug::Validation passed"
+          echo "::debug::agent: ${{ inputs.agent }}"
+          echo "::debug::pr-number: ${{ inputs.pr-number }}"
           echo "::debug::cagent version: ${{ inputs.cagent-version }}"
           echo "::debug::mcp-gateway version: ${{ inputs.mcp-gateway-version }}"
           echo "::debug::mcp-gateway install: ${{ inputs.mcp-gateway }}"
@@ -351,6 +361,12 @@ runs:
           echo "::debug::GitHub workspace: $GITHUB_WORKSPACE"
         fi
 
+        # Create output file early (before any validation exits)
+        # This ensures downstream steps always have a valid output file reference
+        OUTPUT_FILE=$(mktemp /tmp/cagent-output.XXXXXX.log)
+        echo "output-file=$OUTPUT_FILE" >> $GITHUB_OUTPUT
+        echo "Output file: $OUTPUT_FILE"
+
         # Determine the prompt to use
         # Priority: 1) Safe prompt file (PR review), 2) User prompt input
         if [ -f "$GITHUB_WORKSPACE/safe-prompt.txt" ]; then
@@ -380,16 +396,24 @@ runs:
           ARGS+=("${EXTRA_ARGS_ARRAY[@]}")
         fi
 
-        # Add agent
-        ARGS+=("${{ inputs.agent }}")
+        # Add agent (use built-in if pr-number provided and agent not specified)
+        if [ -n "${{ inputs.agent }}" ]; then
+          AGENT="${{ inputs.agent }}"
+          echo "Using specified agent: $AGENT"
+        elif [ -n "${{ inputs.pr-number }}" ]; then
+          AGENT="${{ github.action_path }}/agents/pr-reviewer.yaml"
+          echo "Using built-in secure PR reviewer: $AGENT"
+        else
+          echo "::error::No agent specified and pr-number not provided"
+          exit 1
+        fi
+
+        ARGS+=("$AGENT")
 
         # Add prompt
         ARGS+=("$PROMPT")
 
         echo "Running cagent with ${#ARGS[@]} arguments"
-
-        # Capture output to both console and file
-        OUTPUT_FILE=$(mktemp /tmp/cagent-output.XXXXXX.log)
 
         # Track execution time
         START_TIME=$(date +%s)
@@ -411,9 +435,8 @@ runs:
         END_TIME=$(date +%s)
         EXECUTION_TIME=$((END_TIME - START_TIME))
 
-        # Set outputs
+        # Set outputs (output-file already set at start of step)
         echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
-        echo "output-file=$OUTPUT_FILE" >> $GITHUB_OUTPUT
         echo "execution-time=$EXECUTION_TIME" >> $GITHUB_OUTPUT
 
         # Create job summary
@@ -471,6 +494,14 @@ runs:
       run: |
         echo "🔍 Scanning AI response for leaked secrets..."
         OUTPUT_FILE="${{ steps.run-agent.outputs.output-file }}"
+
+        # Defensive check: ensure output file exists
+        if [ -z "$OUTPUT_FILE" ] || [ ! -f "$OUTPUT_FILE" ]; then
+          echo "⚠️ No output file to scan (agent may have failed during validation)"
+          echo "leaked=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
         ${{ github.action_path }}/security/sanitize-output.sh "$OUTPUT_FILE"
 
     # ========================================
@@ -488,6 +519,12 @@ runs:
         REPOSITORY: ${{ github.repository }}
       run: |
         OUTPUT_FILE="${{ steps.run-agent.outputs.output-file }}"
+
+        # Defensive check: ensure output file exists before posting
+        if [ -z "$OUTPUT_FILE" ] || [ ! -f "$OUTPUT_FILE" ]; then
+          echo "::error::Cannot post comment - output file missing"
+          exit 1
+        fi
 
         echo "💬 Posting review to PR #$PR_NUMBER..."
 
