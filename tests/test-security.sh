@@ -3,19 +3,11 @@
 
 set -e
 
-echo "======================================================================"
-echo "Testing cagent-action Security Scripts"
-echo "======================================================================"
-echo ""
-
 SECURITY_DIR="../security"
 TEST_FAILED=false
 
 # Set up GITHUB_OUTPUT for all tests
 export GITHUB_OUTPUT=$(mktemp)
-
-echo "Testing both PR review mode and general agent mode security features"
-echo ""
 
 # Test 1: sanitize-input.sh - Should pass with clean input
 echo "Test 1: Clean input (should pass)"
@@ -175,13 +167,10 @@ echo ""
 # Cleanup
 rm -f test-*.diff test-*.txt test-output.diff "$GITHUB_OUTPUT"
 
-echo "======================================================================"
 if [ "$TEST_FAILED" = true ]; then
   echo "❌ SOME TESTS FAILED"
-  echo "======================================================================"
   exit 1
 else
   echo "✅ ALL TESTS PASSED"
-  echo "======================================================================"
   exit 0
 fi

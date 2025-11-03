@@ -4,6 +4,12 @@
 
 set -e
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source shared secret patterns
+source "$SCRIPT_DIR/secret-patterns.sh"
+
 OUTPUT_FILE="$1"
 
 if [ ! -f "$OUTPUT_FILE" ]; then
@@ -13,18 +19,7 @@ fi
 
 echo "Scanning output for leaked secrets..."
 
-# Define secret patterns to detect
-# These are regex patterns for common API key formats
-SECRET_PATTERNS=(
-  'sk-ant-[a-zA-Z0-9_-]{30,}'        # Anthropic API keys (hyphen at end)
-  'ghp_[a-zA-Z0-9]{36}'              # GitHub personal access tokens
-  'gho_[a-zA-Z0-9]{36}'              # GitHub OAuth tokens
-  'ghu_[a-zA-Z0-9]{36}'              # GitHub user tokens
-  'ghs_[a-zA-Z0-9]{36}'              # GitHub server tokens
-  'github_pat_[a-zA-Z0-9_]+'         # GitHub fine-grained tokens
-  'sk-[a-zA-Z0-9]{48}'               # OpenAI API keys
-  'sk-proj-[a-zA-Z0-9]{48}'          # OpenAI project keys
-)
+# SECRET_PATTERNS is loaded from secret-patterns.sh
 
 LEAKED=false
 DETECTED_PATTERNS=()

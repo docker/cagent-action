@@ -41,16 +41,18 @@ SUSPICIOUS_PATTERNS=(
   "ANTHROPIC_API_KEY"
   "GITHUB_TOKEN"
   "OPENAI_API_KEY"
-  "process\.env"
-  "os\.environ"
-  "System\.getenv"
+  "process\\.env"
+  "os\\.environ"
+  "System\\.getenv"
+  "base64"
+  "[A-Za-z0-9+/]{32,}={0,2}"
 )
 
 echo "Checking for suspicious patterns..."
 
-# Check for suspicious patterns
+# Check original input for suspicious patterns BEFORE sanitization
 for pattern in "${SUSPICIOUS_PATTERNS[@]}"; do
-  if grep -iE "$pattern" "$OUTPUT" > /dev/null 2>&1; then
+  if grep -iE "$pattern" "$INPUT" > /dev/null 2>&1; then
     echo "::error::🚨 Suspicious pattern detected in PR: $pattern"
     echo "::error::This may be a prompt injection attack"
     echo "blocked=true" >> "$GITHUB_OUTPUT"

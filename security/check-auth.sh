@@ -29,7 +29,8 @@ if ! command -v jq &> /dev/null; then
 fi
 
 # Parse JSON array and check if user's association is in allowed list
-if echo "$ALLOWED_ROLES" | jq -e ". | any(. == \"$ASSOCIATION\")" > /dev/null 2>&1; then
+# Use --arg to safely pass variables and prevent injection
+if echo "$ALLOWED_ROLES" | jq -e --arg assoc "$ASSOCIATION" '. | any(. == $assoc)' > /dev/null 2>&1; then
   echo "✅ Authorization successful"
   echo "   User role '$ASSOCIATION' is allowed"
   echo "authorized=true" >> "$GITHUB_OUTPUT"

@@ -201,7 +201,8 @@ runs:
         echo "📝 Building secure prompt from sanitized PR data..."
 
         # Build prompt from SAFE sources only - NEVER include secrets
-        cat > safe-prompt.txt <<'PROMPT_EOF'
+        # Use absolute path to ensure consistency across steps
+        cat > "$GITHUB_WORKSPACE/safe-prompt.txt" <<'PROMPT_EOF'
         # Pull Request Review
 
         ## CRITICAL SECURITY RULES
@@ -215,9 +216,9 @@ runs:
         PROMPT_EOF
 
         # Use sanitized diff
-        cat pr-clean.diff >> safe-prompt.txt
+        cat pr-clean.diff >> "$GITHUB_WORKSPACE/safe-prompt.txt"
 
-        cat >> safe-prompt.txt <<'PROMPT_EOF'
+        cat >> "$GITHUB_WORKSPACE/safe-prompt.txt" <<'PROMPT_EOF'
         ```
 
         ## Review Instructions
@@ -231,13 +232,25 @@ runs:
         PROMPT_EOF
 
         # CRITICAL: Verify no secrets leaked into prompt
-        if grep -E '(sk-ant-|ghp_|gho_|ANTHROPIC_API_KEY|GITHUB_TOKEN|OPENAI_API_KEY)' safe-prompt.txt > /dev/null 2>&1; then
-          echo "::error::🚨 CRITICAL: Secret detected in generated prompt!"
+        # Source shared secret patterns for consistency
+        source ${{ github.action_path }}/security/secret-patterns.sh
+
+        # Use comprehensive regex patterns for thorough detection
+        DETECTED=false
+        for pattern in "${SECRET_PATTERNS[@]}"; do
+          if grep -E "$pattern" "$GITHUB_WORKSPACE/safe-prompt.txt" > /dev/null 2>&1; then
+            echo "::error::🚨 CRITICAL: Secret detected in generated prompt!"
+            echo "::error::Pattern matched: $pattern"
+            DETECTED=true
+          fi
+        done
+
+        if [ "$DETECTED" = true ]; then
           echo "::error::This should never happen. Aborting."
           exit 1
         fi
 
-        echo "prompt-file=safe-prompt.txt" >> $GITHUB_OUTPUT
+        echo "prompt-file=$GITHUB_WORKSPACE/safe-prompt.txt" >> $GITHUB_OUTPUT
         echo "✅ Safe prompt generated"
 
     # ========================================
@@ -390,9 +403,9 @@ runs:
 
         ARGS+=("--tui=${{ inputs.tui }}")
 
-        # Add extra args if provided (safely parsed)
+        # Add extra args if provided (safely parsed, handling quoted arguments)
         if [ -n "${{ inputs.extra-args }}" ]; then
-          read -ra EXTRA_ARGS_ARRAY <<< "${{ inputs.extra-args }}"
+          mapfile -t EXTRA_ARGS_ARRAY < <(echo "${{ inputs.extra-args }}" | xargs -n1)
           ARGS+=("${EXTRA_ARGS_ARRAY[@]}")
         fi
 
