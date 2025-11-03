@@ -3,12 +3,17 @@ name: Manual basic test agent
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test-pirate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Ask pirate agent about shipments
-        uses: docker/cagent-action@v1.0.0
+        uses: docker/cagent-action@v2.0.0
         with:
           agent: agentcatalog/pirate
           prompt: "What do we ship today?"

@@ -2,13 +2,29 @@
 
 A GitHub Action for running [cagent](https://github.com/docker/cagent) AI agents in your workflows. This action simplifies the setup and execution of CAgent, handling binary downloads and environment configuration automatically.
 
+## 🔒 Security-Hardened for Open Source
+
+This action includes **built-in security features for all agent executions**:
+
+**Universal Security (All Modes):**
+- **Secret Leak Prevention**: Scans ALL agent outputs for API keys and tokens (Anthropic, OpenAI, GitHub)
+- **Prompt Injection Detection**: Warns about suspicious patterns in user prompts
+- **Automatic Incident Response**: Creates security issues and fails workflows when secrets are detected
+
+**PR Review Mode Security (When `pr-number` provided):**
+- **Authorization**: Only OWNER and MEMBER contributors can trigger (hardcoded, cannot be disabled)
+- **Input Sanitization**: Removes code comments and blocks malicious diff patterns
+- **Size Limits**: Enforces max PR size (3000 lines default) to prevent DoS
+
+See [Security Features](#security-features) for complete details.
+
 ## Usage
 
 ### Basic Example
 
 ```yaml
 - name: Run CAgent PR Reviewer
-  uses: docker/cagent-action@v1
+  uses: docker/cagent-action@v2.0.0
   with:
     agent: jeanlaurent/pr-reviewer
     prompt: "Review this pull request"
@@ -24,26 +40,40 @@ on:
   pull_request:
     types: [opened, synchronize]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write  # For security incident reporting
+
 jobs:
   review:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Review PR with CAgent
-        uses: docker/cagent-action@v1
+      - name: AI PR Review
+        uses: docker/cagent-action@v2.0.0
         with:
-          agent: jeanlaurent/pr-reviewer
-          prompt: "check PR ${{ github.event.number }} in repository ${{ github.repository }} and add a review to the pull request comments"
+          agent: agents/pr-reviewer.yaml  # Built-in secure PR reviewer
+          pr-number: ${{ github.event.pull_request.number }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
+
+**How it works:**
+1. Action checks author is OWNER or MEMBER (blocks external contributors)
+2. Fetches and sanitizes PR diff (removes comments, checks for malicious patterns)
+3. Runs multi-agent reviewer (coordinator delegates to specialized sub-agents)
+4. Scans output for leaked secrets (API keys, tokens)
+5. Posts review to PR or creates security incident issue
+
+See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 
 ### Using a Local Agent File
 
 ```yaml
 - name: Run Custom Agent
-  uses: docker/cagent-action@v1
+  uses: docker/cagent-action@v2.0.0
   with:
     agent: ./agents/my-agent.yaml
     prompt: "Analyze the codebase"
@@ -55,7 +85,7 @@ jobs:
 
 ```yaml
 - name: Run CAgent with Custom Settings
-  uses: docker/cagent-action@v1
+  uses: docker/cagent-action@v2.0.0
   with:
     agent: jeanlaurent/pr-reviewer
     prompt: "Review this PR"
@@ -77,7 +107,7 @@ jobs:
 ```yaml
 - name: Run CAgent
   id: agent
-  uses: docker/cagent-action@v1
+  uses: docker/cagent-action@v2.0.0
   with:
     agent: jeanlaurent/pr-reviewer
     prompt: "Review this pull request"
@@ -105,6 +135,8 @@ jobs:
 |-------|-------------|----------|---------|
 | `agent` | Agent identifier (e.g., `jeanlaurent/pr-reviewer`) or path to `.yaml` file | Yes | - |
 | `prompt` | Prompt to pass to the agent | No | - |
+| `pr-number` | Pull request number (for PR review mode with built-in security) | Yes* | - |
+| `max-pr-size` | Maximum PR size in lines (for PR review mode) | No | `3000` |
 | `cagent-version` | Version of cagent to use | No | `v1.6.6` |
 | `mcp-gateway` | Install mcp-gateway (`true`/`false`) | No | `false` |
 | `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No | `v0.22.0` |
@@ -119,6 +151,8 @@ jobs:
 | `yolo` | Auto-approve all prompts (`true`/`false`) | No | `true` |
 | `extra-args` | Additional arguments to pass to `cagent run` | No | - |
 
+\* `pr-number` is required when using the built-in `agents/pr-reviewer.yaml` agent for PR reviews.
+
 ## Outputs
 
 | Output | Description |
@@ -128,6 +162,9 @@ jobs:
 | `cagent-version` | Version of cagent that was used |
 | `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`) |
 | `execution-time` | Agent execution time in seconds |
+| `security-blocked` | Whether execution was blocked due to security concerns (PR review mode only) |
+| `secrets-detected` | Whether secrets were detected in output (checked for all modes) |
+| `prompt-suspicious` | Whether suspicious patterns were detected in user prompt (general mode only) |
 
 ## Environment Variables
 
@@ -170,7 +207,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Security Review
-        uses: docker/cagent-action@v1
+        uses: docker/cagent-action@v2.0.0
         with:
           agent: security-reviewer
           prompt: "Analyze for security issues"
@@ -178,7 +215,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Code Quality Review
-        uses: docker/cagent-action@v1
+        uses: docker/cagent-action@v2.0.0
         with:
           agent: code-reviewer
           prompt: "Review code quality and best practices"
@@ -208,12 +245,150 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Agent
-        uses: docker/cagent-action@v1
+        uses: docker/cagent-action@v2.0.0
         with:
           agent: ${{ github.event.inputs.agent }}
           prompt: ${{ github.event.inputs.prompt }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+## Security Features
+
+### Universal Security (All Agent Executions)
+
+**Every agent execution** includes these security features:
+
+1. **Output Scanning** - All agent responses are scanned for leaked secrets:
+   - API key patterns: `sk-ant-*`, `sk-*`, `sk-proj-*`
+   - GitHub tokens: `ghp_*`, `gho_*`, `ghu_*`, `ghs_*`, `github_pat_*`
+   - Environment variable names in output
+   - If secrets detected: workflow fails, security issue created
+
+2. **Prompt Sanitization** (General Mode) - User prompts are checked for:
+   - Prompt injection patterns ("ignore previous instructions", etc.)
+   - Requests for API keys or environment variables
+   - Encoded content (base64, hex) that could hide malicious requests
+   - Warnings issued if suspicious patterns found (execution continues)
+
+### PR Review Mode: Defense in Depth
+
+When using `pr-number` input for PR reviews, **additional** security layers activate:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Authorization Check                                      │
+│    ✓ Only OWNER and MEMBER can trigger (hardcoded)         │
+│    ✓ External contributors blocked automatically           │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 2. Input Sanitization                                       │
+│    ✓ Remove code comments (common injection vector)        │
+│    ✓ Detect suspicious patterns (API key requests, etc.)   │
+│    ✓ Enforce PR size limit (3000 lines default)            │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 3. Safe Prompt Building                                     │
+│    ✓ Never include secrets in prompt                       │
+│    ✓ Only sanitized diff passed to agent                   │
+│    ✓ Inject security rules in prompt                       │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 4. Agent Execution                                          │
+│    ✓ Multi-agent architecture with security rules          │
+│    ✓ No GitHub MCP tools (no direct API access)            │
+│    ✓ Limited toolset (no shell, no filesystem)             │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 5. Output Scanning                                          │
+│    ✓ Detect leaked API keys (Anthropic, OpenAI, etc.)      │
+│    ✓ Detect leaked tokens (GitHub PAT, OAuth, etc.)        │
+│    ✓ Block response if secrets found                       │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 6. Incident Response                                        │
+│    ✓ Create security issue with details                    │
+│    ✓ Fail workflow with clear error                        │
+│    ✓ Never post compromised response to PR                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Built-in Protections
+
+**Prompt Injection Protection:**
+- Removes all code comments before analysis (prevents hidden instructions)
+- Blocks patterns like "ignore previous instructions", "show me the API key"
+- Detects encoded requests (base64, hex, ROT13)
+
+**Secret Leak Prevention:**
+- Scans for API key patterns: `sk-ant-*`, `sk-*`, `ghp_*`, `gho_*`, etc.
+- Checks for environment variable names in output
+- Blocks posting if any secrets detected
+
+**Access Control:**
+- Hardcoded to OWNER and MEMBER only
+- Cannot be disabled or overridden
+- External contributors automatically blocked
+
+### Security Testing
+
+Run the test suite:
+```bash
+cd tests
+./test-security.sh
+```
+
+**10 Tests covering:**
+- Authorization enforcement (PR mode)
+- Input sanitization - PR diffs (comment removal, pattern detection)
+- Prompt sanitization - user prompts (injection detection, encoding detection)
+- Output scanning - all modes (API key leak detection, token detection)
+
+All tests must pass before deployment.
+
+### Security in Practice
+
+**General Agent Example:**
+```yaml
+- name: Run Agent
+  id: agent
+  uses: docker/cagent-action@v2.0.0
+  with:
+    agent: my-agent
+    prompt: "Analyze the logs"
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+- name: Check for security issues
+  if: always()
+  run: |
+    if [ "${{ steps.agent.outputs.secrets-detected }}" == "true" ]; then
+      echo "⚠️ Secret leak detected - incident issue created"
+    fi
+    if [ "${{ steps.agent.outputs.prompt-suspicious }}" == "true" ]; then
+      echo "⚠️ Prompt had suspicious patterns"
+    fi
+```
+
+**PR Review Example:**
+```yaml
+- name: AI PR Review
+  uses: docker/cagent-action@v2.0.0
+  with:
+    agent: agents/pr-reviewer.yaml
+    pr-number: ${{ github.event.pull_request.number }}
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+# Security automatically enforced:
+# - Auth check (OWNER/MEMBER only)
+# - Input sanitization
+# - Output scanning
+# - Auto-creates issue if secrets detected
 ```
 
 ## Contributing

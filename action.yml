@@ -61,10 +61,10 @@ inputs:
     required: false
     default: ""
   pr-number:
-    description: "Pull request number"
-    required: true
+    description: "Pull request number (for PR review mode)"
+    required: false
   max-pr-size:
-    description: "Maximum PR size in lines"
+    description: "Maximum PR size in lines (for PR review mode)"
     required: false
     default: "3000"
 
@@ -88,8 +88,11 @@ outputs:
     description: "Whether execution was blocked due to security concerns"
     value: ${{ steps.check-auth.outputs.authorized == 'false' || steps.sanitize-input.outputs.blocked == 'true' || steps.sanitize-output.outputs.leaked == 'true' }}
   secrets-detected:
-    description: "Whether secrets were detected in output"
+    description: "Whether secrets were detected in output (checked for all modes)"
     value: ${{ steps.sanitize-output.outputs.leaked }}
+  prompt-suspicious:
+    description: "Whether suspicious patterns were detected in user prompt (general mode only)"
+    value: ${{ steps.sanitize-prompt.outputs.suspicious }}
 
 runs:
   using: "composite"
@@ -226,6 +229,17 @@ runs:
 
         echo "prompt-file=safe-prompt.txt" >> $GITHUB_OUTPUT
         echo "✅ Safe prompt generated"
+
+    # ========================================
+    # SECURITY: Sanitize Prompt (General Agent Mode)
+    # ========================================
+    - name: Sanitize user prompt
+      if: inputs.prompt != '' && inputs.pr-number == ''
+      id: sanitize-prompt
+      shell: bash
+      run: |
+        echo "🔍 Checking user-provided prompt for injection patterns..."
+        ${{ github.action_path }}/security/sanitize-prompt.sh "${{ inputs.prompt }}"
 
     - name: Cache cagent binary
       id: cache-cagent
@@ -446,10 +460,10 @@ runs:
         exit $EXIT_CODE
 
     # ========================================
-    # SECURITY: Sanitize Output
+    # SECURITY: Sanitize Output (UNIVERSAL - All Modes)
     # ========================================
     - name: Sanitize output
-      if: always() && inputs.pr-number != ''
+      if: always()
       id: sanitize-output
       shell: bash
       env:
@@ -484,7 +498,7 @@ runs:
         echo "✅ Review posted successfully"
 
     # ========================================
-    # SECURITY: Handle Security Incident
+    # SECURITY: Handle Security Incident (Universal)
     # ========================================
     - name: Handle security incident
       if: steps.sanitize-output.outputs.leaked == 'true'
@@ -498,51 +512,91 @@ runs:
         echo "::error::🚨 SECURITY INCIDENT: SECRET LEAK DETECTED"
         echo "::error::═══════════════════════════════════════════════════════"
         echo "::error::"
-        echo "::error::A secret was detected in the AI response for PR #$PR_NUMBER"
-        echo "::error::The response has been BLOCKED from being posted"
+
+        if [ -n "$PR_NUMBER" ]; then
+          echo "::error::A secret was detected in the AI response for PR #$PR_NUMBER"
+          echo "::error::The response has been BLOCKED from being posted"
+          CONTEXT="PR #$PR_NUMBER"
+          TITLE="🚨 Security Alert: Secret Leak Detected in PR Review #$PR_NUMBER"
+        else
+          echo "::error::A secret was detected in the AI agent response"
+          echo "::error::Check the workflow logs for the leaked secret"
+          CONTEXT="Workflow run ${{ github.run_id }}"
+          TITLE="🚨 Security Alert: Secret Leak Detected in Agent Execution"
+        fi
+
         echo "::error::"
         echo "::error::IMMEDIATE ACTIONS REQUIRED:"
         echo "::error::  1. Review workflow logs for the leaked secret"
-        echo "::error::  2. Investigate PR #$PR_NUMBER for prompt injection"
-        echo "::error::  3. ROTATE ALL SECRETS IMMEDIATELY"
-        echo "::error::  4. Block the PR author if malicious"
+        if [ -n "$PR_NUMBER" ]; then
+          echo "::error::  2. Investigate PR #$PR_NUMBER for prompt injection"
+          echo "::error::  3. Block the PR author if malicious"
+        else
+          echo "::error::  2. Investigate the prompt/input that triggered this"
+          echo "::error::  3. Review who triggered this workflow"
+        fi
+        echo "::error::  4. ROTATE ALL SECRETS IMMEDIATELY"
         echo "::error::═══════════════════════════════════════════════════════"
 
         # Create security incident issue
+        BODY="**CRITICAL SECURITY INCIDENT**
+
+        A secret was detected in the AI agent response for: $CONTEXT
+
+        ## Actions Taken
+        ✓ Workflow failed with error"
+
+        if [ -n "$PR_NUMBER" ]; then
+          BODY="$BODY
+        ✓ Response BLOCKED from being posted to PR"
+        fi
+
+        BODY="$BODY
+        ✓ Security incident issue created
+
+        ## Required Actions
+        1. Review workflow logs: https://github.com/$REPOSITORY/actions
+        2. **ROTATE COMPROMISED SECRETS IMMEDIATELY**
+          - ANTHROPIC_API_KEY
+          - GITHUB_TOKEN
+          - OPENAI_API_KEY
+          - Any other exposed credentials"
+
+        if [ -n "$PR_NUMBER" ]; then
+          BODY="$BODY
+        3. Investigate PR #$PR_NUMBER for prompt injection attack
+        4. Review PR author's account and block if malicious"
+        else
+          BODY="$BODY
+        3. Investigate the workflow trigger and input prompt
+        4. Review workflow run history for suspicious patterns"
+        fi
+
+        BODY="$BODY
+
+        ## Timeline
+        - Incident detected: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+        if [ -n "$PR_NUMBER" ]; then
+          BODY="$BODY
+        - PR: #$PR_NUMBER"
+        fi
+
+        BODY="$BODY
+        - Workflow run: https://github.com/$REPOSITORY/actions/runs/${{ github.run_id }}
+
+        ## Next Steps
+        - [ ] Secrets rotated
+        - [ ] Logs reviewed
+        - [ ] Incident investigated
+        - [ ] Incident report filed
+        - [ ] Post-mortem completed"
+
         gh issue create \
           --repo "$REPOSITORY" \
-          --title "🚨 Security Alert: Secret Leak Detected in PR Review #$PR_NUMBER" \
+          --title "$TITLE" \
           --label "security" \
-          --body "**CRITICAL SECURITY INCIDENT**
-
-A secret was detected in the automated AI review response for PR #$PR_NUMBER.
-
-## Actions Taken
-✓ Response BLOCKED from being posted to PR
-✓ Workflow failed with error
-✓ Security incident issue created
-
-## Required Actions
-1. Review workflow logs: https://github.com/$REPOSITORY/actions
-2. Investigate PR #$PR_NUMBER for prompt injection attack
-3. **ROTATE COMPROMISED SECRETS IMMEDIATELY**
-   - ANTHROPIC_API_KEY
-   - GITHUB_TOKEN
-   - Any other exposed credentials
-4. Review PR author's account and block if malicious
-5. Review other recent PRs from the same author
-
-## Timeline
-- Incident detected: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-- PR: #$PR_NUMBER
-- Workflow run: https://github.com/$REPOSITORY/actions/runs/${{ github.run_id }}
-
-## Next Steps
-- [ ] Secrets rotated
-- [ ] Logs reviewed
-- [ ] PR author investigated
-- [ ] Incident report filed
-- [ ] Post-mortem completed"
+          --body "$BODY"
 
         echo "🚨 Security incident issue created"
         exit 1
