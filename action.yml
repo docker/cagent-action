@@ -521,6 +521,32 @@ runs:
 
         ${{ github.action_path }}/security/sanitize-output.sh "$OUTPUT_FILE"
 
+        # For PR reviews, extract clean output (remove verbose cagent logging)
+        if [ -n "$PR_NUMBER" ]; then
+          echo "🧹 Extracting clean review output..."
+
+          # Extract only the final review (starts with ## Summary)
+          # This removes all verbose cagent logging, agent transfers, and debug output
+          if grep -q "^## Summary$" "$OUTPUT_FILE"; then
+            # Find the first occurrence of "## Summary" and extract from there to end
+            SUMMARY_LINE=$(grep -n "^## Summary$" "$OUTPUT_FILE" | head -1 | cut -d: -f1)
+
+            # Extract from Summary onwards (this is the actual review)
+            tail -n +$SUMMARY_LINE "$OUTPUT_FILE" | \
+              grep -v "^time=" | \
+              grep -v "^--- Agent:" | \
+              grep -v "Calling " | \
+              grep -v " response →" | \
+              grep -v "For any feedback" > "${OUTPUT_FILE}.clean"
+
+            # Use the cleaned output for PR comments
+            mv "${OUTPUT_FILE}.clean" "$OUTPUT_FILE"
+            echo "✅ Extracted clean review output (starting from Summary)"
+          else
+            echo "⚠️  No '## Summary' marker found - using full output"
+          fi
+        fi
+
     # ========================================
     # SECURITY: Post Comment (only if safe)
     # ========================================

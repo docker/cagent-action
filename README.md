@@ -69,8 +69,9 @@ jobs:
 1. Action checks author is OWNER, MEMBER, or COLLABORATOR (blocks external contributors)
 2. Fetches and sanitizes PR diff (removes comments, checks for malicious patterns)
 3. Runs multi-agent reviewer (coordinator delegates to specialized sub-agents)
-4. Scans output for leaked secrets (API keys, tokens)
-5. Posts review to PR or creates security incident issue
+4. Filters verbose logging (extracts clean review starting from "## Summary")
+5. Scans output for leaked secrets (API keys, tokens)
+6. Posts clean review to PR or creates security incident issue
 
 See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 
