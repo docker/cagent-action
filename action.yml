@@ -93,6 +93,9 @@ outputs:
   prompt-suspicious:
     description: "Whether suspicious patterns were detected in user prompt (general mode only)"
     value: ${{ steps.sanitize-prompt.outputs.suspicious }}
+  input-risk-level:
+    description: "Risk level of PR input (low/medium/high) - PR review mode only"
+    value: ${{ steps.sanitize-input.outputs.risk-level }}
 
 runs:
   using: "composite"
@@ -541,6 +544,24 @@ runs:
         fi
 
         echo "💬 Posting review to PR #$PR_NUMBER..."
+
+        # Check if we need to add security warning for medium-risk patterns
+        RISK_LEVEL="${{ steps.sanitize-input.outputs.risk-level }}"
+
+        if [ "$RISK_LEVEL" = "medium" ]; then
+          # Add security warning header to the review
+          echo "## ⚠️ Security Notice" > /tmp/review-with-warning.md
+          echo "" >> /tmp/review-with-warning.md
+          echo "This PR contains changes to sensitive configuration (API key variable names detected). The AI review has been completed, but exercise additional caution during human review. Verify:" >> /tmp/review-with-warning.md
+          echo "- No actual API keys or secrets are committed" >> /tmp/review-with-warning.md
+          echo "- Environment variable usage is appropriate" >> /tmp/review-with-warning.md
+          echo "- Configuration changes follow security best practices" >> /tmp/review-with-warning.md
+          echo "" >> /tmp/review-with-warning.md
+          echo "---" >> /tmp/review-with-warning.md
+          echo "" >> /tmp/review-with-warning.md
+          cat "$OUTPUT_FILE" >> /tmp/review-with-warning.md
+          OUTPUT_FILE="/tmp/review-with-warning.md"
+        fi
 
         gh pr comment "$PR_NUMBER" \
           --repo "$REPOSITORY" \

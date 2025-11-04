@@ -29,36 +29,65 @@ sed -i.bak '/^+[[:space:]]*#/d' "$OUTPUT" || true
 # Clean up backup files
 rm -f "$OUTPUT.bak"
 
-# Define suspicious patterns that indicate prompt injection attempts
-SUSPICIOUS_PATTERNS=(
+# Define HIGH-RISK patterns that strongly indicate prompt injection attempts
+# These are behavioral instructions that shouldn't appear in normal code
+HIGH_RISK_PATTERNS=(
   "ignore.*previous.*instruction"
   "system.*override"
-  "debug.*mode"
-  "print.*environment"
-  "show.*api.*key"
-  "display.*token"
-  "reveal.*secret"
+  "debug.*mode.*enable"
+  "print.*environment.*variable"
+  "echo.*\\\$ANTHROPIC_API_KEY"
+  "echo.*\\\$GITHUB_TOKEN"
+  "echo.*\\\$OPENAI_API_KEY"
+  "console\\.log.*process\\.env"
+  "print.*os\\.environ"
+)
+
+# Define MEDIUM-RISK patterns that warrant warnings but shouldn't block
+# These are common in legitimate code (config, tests, docs)
+MEDIUM_RISK_PATTERNS=(
   "ANTHROPIC_API_KEY"
   "GITHUB_TOKEN"
   "OPENAI_API_KEY"
-  "process\\.env"
-  "os\\.environ"
-  "System\\.getenv"
-  "base64"
-  "[A-Za-z0-9+/]{32,}={0,2}"
 )
 
 echo "Checking for suspicious patterns..."
 
-# Check original input for suspicious patterns BEFORE sanitization
-for pattern in "${SUSPICIOUS_PATTERNS[@]}"; do
+FOUND_HIGH_RISK=false
+FOUND_MEDIUM_RISK=false
+
+# Check for HIGH-RISK patterns (behavioral injection attempts)
+for pattern in "${HIGH_RISK_PATTERNS[@]}"; do
   if grep -iE "$pattern" "$INPUT" > /dev/null 2>&1; then
-    echo "::error::🚨 Suspicious pattern detected in PR: $pattern"
-    echo "::error::This may be a prompt injection attack"
-    echo "blocked=true" >> "$GITHUB_OUTPUT"
-    exit 1
+    echo "::error::🚨 HIGH-RISK pattern detected: $pattern"
+    echo "::error::This strongly indicates a prompt injection attack"
+    FOUND_HIGH_RISK=true
   fi
 done
 
-echo "blocked=false" >> "$GITHUB_OUTPUT"
-echo "✅ Input sanitization completed - no suspicious patterns found"
+# Check for MEDIUM-RISK patterns (warn but don't block)
+for pattern in "${MEDIUM_RISK_PATTERNS[@]}"; do
+  if grep -E "$pattern" "$INPUT" > /dev/null 2>&1; then
+    echo "::warning::⚠️  MEDIUM-RISK pattern detected: $pattern"
+    echo "::warning::This PR modifies API key configuration - review carefully"
+    echo "::warning::Output will be scanned for actual secret leakage"
+    FOUND_MEDIUM_RISK=true
+  fi
+done
+
+if [ "$FOUND_HIGH_RISK" = true ]; then
+  echo "blocked=true" >> "$GITHUB_OUTPUT"
+  echo "risk-level=high" >> "$GITHUB_OUTPUT"
+  exit 1
+fi
+
+if [ "$FOUND_MEDIUM_RISK" = true ]; then
+  echo "blocked=false" >> "$GITHUB_OUTPUT"
+  echo "risk-level=medium" >> "$GITHUB_OUTPUT"
+  echo "⚠️  Input sanitization completed with WARNINGS - proceeding with review"
+  echo "   Real security is in output scanning (will detect actual leaked secrets)"
+else
+  echo "blocked=false" >> "$GITHUB_OUTPUT"
+  echo "risk-level=low" >> "$GITHUB_OUTPUT"
+  echo "✅ Input sanitization completed - no suspicious patterns found"
+fi
