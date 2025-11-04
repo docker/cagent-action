@@ -550,17 +550,15 @@ runs:
 
         if [ "$RISK_LEVEL" = "medium" ]; then
           # Add security warning header to the review
-          cat > /tmp/review-with-warning.md <<'WARNING_EOF'
-## ⚠️ Security Notice
-
-This PR contains changes to sensitive configuration (API key variable names detected). The AI review has been completed, but exercise additional caution during human review. Verify:
-- No actual API keys or secrets are committed
-- Environment variable usage is appropriate
-- Configuration changes follow security best practices
-
----
-
-WARNING_EOF
+          echo "## ⚠️ Security Notice" > /tmp/review-with-warning.md
+          echo "" >> /tmp/review-with-warning.md
+          echo "This PR contains changes to sensitive configuration (API key variable names detected). The AI review has been completed, but exercise additional caution during human review. Verify:" >> /tmp/review-with-warning.md
+          echo "- No actual API keys or secrets are committed" >> /tmp/review-with-warning.md
+          echo "- Environment variable usage is appropriate" >> /tmp/review-with-warning.md
+          echo "- Configuration changes follow security best practices" >> /tmp/review-with-warning.md
+          echo "" >> /tmp/review-with-warning.md
+          echo "---" >> /tmp/review-with-warning.md
+          echo "" >> /tmp/review-with-warning.md
           cat "$OUTPUT_FILE" >> /tmp/review-with-warning.md
           OUTPUT_FILE="/tmp/review-with-warning.md"
         fi
