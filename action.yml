@@ -528,8 +528,8 @@ runs:
           # Extract only the final review (starts with ## Summary)
           # This removes all verbose cagent logging, agent transfers, and debug output
           if grep -q "^## Summary$" "$OUTPUT_FILE"; then
-            # Find the first occurrence of "## Summary" and extract from there to end
-            SUMMARY_LINE=$(grep -n "^## Summary$" "$OUTPUT_FILE" | head -1 | cut -d: -f1)
+            # Find the LAST occurrence of "## Summary" (the actual review, not the template)
+            SUMMARY_LINE=$(grep -n "^## Summary$" "$OUTPUT_FILE" | tail -1 | cut -d: -f1)
 
             # Extract from Summary onwards (this is the actual review)
             tail -n +$SUMMARY_LINE "$OUTPUT_FILE" | \
