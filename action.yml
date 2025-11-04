@@ -141,8 +141,9 @@ runs:
       env:
         ASSOCIATION: ${{ github.event.comment.author_association || github.event.pull_request.author_association || 'NONE' }}
       run: |
-        # SECURITY: Only OWNER and MEMBER roles allowed (hardcoded)
-        ALLOWED_ROLES='["OWNER", "MEMBER"]'
+        # SECURITY: Only OWNER, MEMBER, and COLLABORATOR roles allowed (hardcoded)
+        # Note: COLLABORATOR includes org members opening PRs from forks
+        ALLOWED_ROLES='["OWNER", "MEMBER", "COLLABORATOR"]'
 
         echo "🔒 Security: Checking authorization for PR review..."
         ${{ github.action_path }}/security/check-auth.sh "$ASSOCIATION" "$ALLOWED_ROLES"
