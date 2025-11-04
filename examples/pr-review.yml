@@ -23,5 +23,4 @@ jobs:
         uses: docker/cagent-action@v2.0.0
         with:
           pr-number: ${{ github.event.pull_request.number }}
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

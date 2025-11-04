@@ -12,7 +12,7 @@ This action includes **built-in security features for all agent executions**:
 - **Automatic Incident Response**: Creates security issues and fails workflows when secrets are detected
 
 **PR Review Mode Security (When `pr-number` provided):**
-- **Authorization**: Only OWNER and MEMBER contributors can trigger (hardcoded, cannot be disabled)
+- **Authorization**: Only OWNER, MEMBER, and COLLABORATOR contributors can trigger (hardcoded, cannot be disabled)
 - **Input Sanitization**: Removes code comments and blocks malicious diff patterns
 - **Size Limits**: Enforces max PR size (3000 lines default) to prevent DoS
 
@@ -62,7 +62,7 @@ jobs:
 **Note:** When `pr-number` is provided, the action automatically uses the built-in secure PR reviewer agent. No need to specify the `agent` input.
 
 **How it works:**
-1. Action checks author is OWNER or MEMBER (blocks external contributors)
+1. Action checks author is OWNER, MEMBER, or COLLABORATOR (blocks external contributors)
 2. Fetches and sanitizes PR diff (removes comments, checks for malicious patterns)
 3. Runs multi-agent reviewer (coordinator delegates to specialized sub-agents)
 4. Scans output for leaked secrets (API keys, tokens)

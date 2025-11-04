@@ -26,7 +26,7 @@ This action includes **built-in security features for all agent executions**:
 
 When using `pr-number` input for PR reviews, **additional** security layers activate:
 
-- **Authorization**: Only OWNER and MEMBER contributors can trigger (hardcoded, cannot be disabled)
+- **Authorization**: Only OWNER, MEMBER, and COLLABORATOR contributors can trigger (hardcoded, cannot be disabled)
 - **Input Sanitization**: Removes code comments and blocks malicious diff patterns
 - **Size Limits**: Enforces max PR size (3000 lines default) to prevent DoS
 
@@ -37,7 +37,7 @@ When using PR review mode, the action implements multiple security layers:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ 1. Authorization Check                                      │
-│    ✓ Only OWNER and MEMBER can trigger (hardcoded)         │
+│    ✓ Only OWNER, MEMBER, COLLABORATOR can trigger          │
 │    ✓ External contributors blocked automatically           │
 └─────────────────────────────────────────────────────────────┘
                           ↓
@@ -108,13 +108,13 @@ SECRET_PATTERNS=(
 
 **Purpose:** Authorization check for PR review mode
 
-**Function:** Validates that only OWNER and MEMBER roles can trigger PR reviews
+**Function:** Validates that only OWNER, MEMBER, and COLLABORATOR roles can trigger PR reviews
 
 **Security:** Uses `jq --arg` for safe variable passing (prevents injection)
 
 **Usage:**
 ```bash
-./check-auth.sh "$ASSOCIATION" '["OWNER", "MEMBER"]'
+./check-auth.sh "$ASSOCIATION" '["OWNER", "MEMBER", "COLLABORATOR"]'
 ```
 
 **Outputs:**
@@ -199,7 +199,7 @@ SECRET_PATTERNS=(
 
 ### Access Control (PR Mode)
 
-- Hardcoded to OWNER and MEMBER only
+- Hardcoded to OWNER, MEMBER, and COLLABORATOR only
 - Cannot be disabled or overridden
 - External contributors automatically blocked
 
@@ -277,7 +277,7 @@ All tests must pass before deployment.
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 # Automatically uses built-in secure PR reviewer
 # Security automatically enforced:
-# - Auth check (OWNER/MEMBER only)
+# - Auth check (OWNER/MEMBER/COLLABORATOR only)
 # - Input sanitization
 # - Output scanning
 # - Auto-creates issue if secrets detected
