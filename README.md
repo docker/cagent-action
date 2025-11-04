@@ -2,13 +2,29 @@
 
 A GitHub Action for running [cagent](https://github.com/docker/cagent) AI agents in your workflows. This action simplifies the setup and execution of CAgent, handling binary downloads and environment configuration automatically.
 
+## 🔒 Security-Hardened for Open Source
+
+This action includes **built-in security features for all agent executions**:
+
+**Universal Security (All Modes):**
+- **Secret Leak Prevention**: Scans ALL agent outputs for API keys and tokens (Anthropic, OpenAI, GitHub)
+- **Prompt Injection Detection**: Warns about suspicious patterns in user prompts
+- **Automatic Incident Response**: Creates security issues and fails workflows when secrets are detected
+
+**PR Review Mode Security (When `pr-number` provided):**
+- **Authorization**: Only OWNER and MEMBER contributors can trigger (hardcoded, cannot be disabled)
+- **Input Sanitization**: Removes code comments and blocks malicious diff patterns
+- **Size Limits**: Enforces max PR size (3000 lines default) to prevent DoS
+
+See [security/README.md](security/README.md) for complete security documentation.
+
 ## Usage
 
 ### Basic Example
 
 ```yaml
 - name: Run CAgent PR Reviewer
-  uses: docker/cagent-action@v1
+  uses: docker/cagent-action@v2.0.0
   with:
     agent: jeanlaurent/pr-reviewer
     prompt: "Review this pull request"
@@ -24,26 +40,41 @@ on:
   pull_request:
     types: [opened, synchronize]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write  # For security incident reporting
+
 jobs:
   review:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Review PR with CAgent
-        uses: docker/cagent-action@v1
+      - name: AI PR Review
+        uses: docker/cagent-action@v2.0.0
         with:
-          agent: jeanlaurent/pr-reviewer
-          prompt: "check PR ${{ github.event.number }} in repository ${{ github.repository }} and add a review to the pull request comments"
+          pr-number: ${{ github.event.pull_request.number }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
+
+**Note:** When `pr-number` is provided, the action automatically uses the built-in secure PR reviewer agent. No need to specify the `agent` input.
+
+**How it works:**
+1. Action checks author is OWNER or MEMBER (blocks external contributors)
+2. Fetches and sanitizes PR diff (removes comments, checks for malicious patterns)
+3. Runs multi-agent reviewer (coordinator delegates to specialized sub-agents)
+4. Scans output for leaked secrets (API keys, tokens)
+5. Posts review to PR or creates security incident issue
+
+See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 
 ### Using a Local Agent File
 
 ```yaml
 - name: Run Custom Agent
-  uses: docker/cagent-action@v1
+  uses: docker/cagent-action@v2.0.0
   with:
     agent: ./agents/my-agent.yaml
     prompt: "Analyze the codebase"
@@ -55,7 +86,7 @@ jobs:
 
 ```yaml
 - name: Run CAgent with Custom Settings
-  uses: docker/cagent-action@v1
+  uses: docker/cagent-action@v2.0.0
   with:
     agent: jeanlaurent/pr-reviewer
     prompt: "Review this PR"
@@ -77,7 +108,7 @@ jobs:
 ```yaml
 - name: Run CAgent
   id: agent
-  uses: docker/cagent-action@v1
+  uses: docker/cagent-action@v2.0.0
   with:
     agent: jeanlaurent/pr-reviewer
     prompt: "Review this pull request"
@@ -103,8 +134,10 @@ jobs:
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `agent` | Agent identifier (e.g., `jeanlaurent/pr-reviewer`) or path to `.yaml` file | Yes | - |
+| `agent` | Agent identifier (e.g., `jeanlaurent/pr-reviewer`) or path to `.yaml` file. Optional when `pr-number` is provided (uses built-in secure PR reviewer) | No** | - |
 | `prompt` | Prompt to pass to the agent | No | - |
+| `pr-number` | Pull request number (for PR review mode with built-in security) | No** | - |
+| `max-pr-size` | Maximum PR size in lines (for PR review mode) | No | `3000` |
 | `cagent-version` | Version of cagent to use | No | `v1.6.6` |
 | `mcp-gateway` | Install mcp-gateway (`true`/`false`) | No | `false` |
 | `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No | `v0.22.0` |
@@ -119,6 +152,8 @@ jobs:
 | `yolo` | Auto-approve all prompts (`true`/`false`) | No | `true` |
 | `extra-args` | Additional arguments to pass to `cagent run` | No | - |
 
+\*\* Either `agent` or `pr-number` must be provided. When `pr-number` is provided without `agent`, the built-in secure PR reviewer is automatically used.
+
 ## Outputs
 
 | Output | Description |
@@ -128,6 +163,9 @@ jobs:
 | `cagent-version` | Version of cagent that was used |
 | `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`) |
 | `execution-time` | Agent execution time in seconds |
+| `security-blocked` | Whether execution was blocked due to security concerns (PR review mode only) |
+| `secrets-detected` | Whether secrets were detected in output (checked for all modes) |
+| `prompt-suspicious` | Whether suspicious patterns were detected in user prompt (general mode only) |
 
 ## Environment Variables
 
@@ -170,7 +208,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Security Review
-        uses: docker/cagent-action@v1
+        uses: docker/cagent-action@v2.0.0
         with:
           agent: security-reviewer
           prompt: "Analyze for security issues"
@@ -178,7 +216,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Code Quality Review
-        uses: docker/cagent-action@v1
+        uses: docker/cagent-action@v2.0.0
         with:
           agent: code-reviewer
           prompt: "Review code quality and best practices"
@@ -208,13 +246,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Agent
-        uses: docker/cagent-action@v1
+        uses: docker/cagent-action@v2.0.0
         with:
           agent: ${{ github.event.inputs.agent }}
           prompt: ${{ github.event.inputs.prompt }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
+
 
 ## Contributing
 
