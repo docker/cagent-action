@@ -13,8 +13,12 @@ This action includes **built-in security features for all agent executions**:
 
 **PR Review Mode Security (When `pr-number` provided):**
 - **Authorization**: Only OWNER, MEMBER, and COLLABORATOR contributors can trigger (hardcoded, cannot be disabled)
-- **Input Sanitization**: Removes code comments and blocks malicious diff patterns
+- **Input Sanitization**: Three-tier risk assessment
+  - **Low Risk**: Normal code changes - review proceeds normally
+  - **Medium Risk**: API key variable names detected (e.g., `ANTHROPIC_API_KEY`) - warns but allows review with security notice
+  - **High Risk**: Behavioral injection patterns (e.g., `echo $API_KEY`) - blocks execution immediately
 - **Size Limits**: Enforces max PR size (3000 lines default) to prevent DoS
+- **Output Scanning**: ALL reviews scanned for actual secret leakage - blocks and creates incident if detected
 
 See [security/README.md](security/README.md) for complete security documentation.
 
@@ -166,6 +170,7 @@ See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 | `security-blocked` | Whether execution was blocked due to security concerns (PR review mode only) |
 | `secrets-detected` | Whether secrets were detected in output (checked for all modes) |
 | `prompt-suspicious` | Whether suspicious patterns were detected in user prompt (general mode only) |
+| `input-risk-level` | Risk level of PR input: `low`, `medium` (warns), or `high` (blocks) - PR review mode only |
 
 ## Environment Variables
 

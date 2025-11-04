@@ -97,7 +97,7 @@ echo ""
 echo "Test 6: Authorization - OWNER (should pass)"
 
 echo "" > "$GITHUB_OUTPUT"  # Reset
-if $SECURITY_DIR/check-auth.sh "OWNER" '["OWNER", "MEMBER"]' 2>&1 | grep -q "Authorization successful"; then
+if $SECURITY_DIR/check-auth.sh "OWNER" '["OWNER", "MEMBER", "COLLABORATOR"]' 2>&1 | grep -q "Authorization successful"; then
   echo "✅ PASSED: OWNER authorized"
 else
   echo "❌ FAILED: OWNER not authorized"
@@ -105,8 +105,20 @@ else
 fi
 echo ""
 
-# Test 7: check-auth.sh - Should fail for CONTRIBUTOR
-echo "Test 7: Authorization - CONTRIBUTOR (should block)"
+# Test 7: check-auth.sh - Should pass for COLLABORATOR
+echo "Test 7: Authorization - COLLABORATOR (should pass)"
+
+echo "" > "$GITHUB_OUTPUT"  # Reset
+if $SECURITY_DIR/check-auth.sh "COLLABORATOR" '["OWNER", "MEMBER", "COLLABORATOR"]' 2>&1 | grep -q "Authorization successful"; then
+  echo "✅ PASSED: COLLABORATOR authorized"
+else
+  echo "❌ FAILED: COLLABORATOR not authorized"
+  TEST_FAILED=true
+fi
+echo ""
+
+# Test 8: check-auth.sh - Should fail for CONTRIBUTOR
+echo "Test 8: Authorization - CONTRIBUTOR (should block)"
 
 echo "" > "$GITHUB_OUTPUT"  # Reset
 set +e  # Allow script to fail
@@ -164,8 +176,101 @@ set -e
 echo "" > "$GITHUB_OUTPUT"  # Reset
 echo ""
 
+# Test 11: sanitize-input.sh - Low risk (normal code)
+echo "Test 11: Low risk input - normal code (should pass)"
+cat > test-low-risk.diff <<'EOF'
+diff --git a/src/app.js b/src/app.js
+index 123..456 100644
+--- a/src/app.js
++++ b/src/app.js
+@@ -1,3 +1,4 @@
++const express = require('express');
+ function hello() {
+   console.log('Hello World');
+ }
+EOF
+
+echo "" > "$GITHUB_OUTPUT"
+set +e
+OUTPUT=$($SECURITY_DIR/sanitize-input.sh test-low-risk.diff test-low-risk-clean.diff 2>&1)
+if echo "$OUTPUT" | grep -q "no suspicious patterns found"; then
+  RISK=$(grep "risk-level=" "$GITHUB_OUTPUT" | cut -d= -f2)
+  if [ "$RISK" = "low" ]; then
+    echo "✅ PASSED: Low risk detected correctly"
+  else
+    echo "❌ FAILED: Expected risk-level=low, got risk-level=$RISK"
+    TEST_FAILED=true
+  fi
+else
+  echo "❌ FAILED: Low risk input failed validation"
+  TEST_FAILED=true
+fi
+set -e
+echo ""
+
+# Test 12: sanitize-input.sh - Medium risk (API key variable name)
+echo "Test 12: Medium risk input - API key variable (should warn but pass)"
+cat > test-medium-risk.diff <<'EOF'
+diff --git a/.env.example b/.env.example
+index 123..456 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,2 +1,3 @@
+ DATABASE_URL=postgres://localhost/mydb
++ANTHROPIC_API_KEY=your-key-here
+EOF
+
+echo "" > "$GITHUB_OUTPUT"
+set +e
+OUTPUT=$($SECURITY_DIR/sanitize-input.sh test-medium-risk.diff test-medium-risk-clean.diff 2>&1)
+if echo "$OUTPUT" | grep -q "MEDIUM-RISK pattern detected"; then
+  RISK=$(grep "risk-level=" "$GITHUB_OUTPUT" | cut -d= -f2)
+  if [ "$RISK" = "medium" ]; then
+    echo "✅ PASSED: Medium risk detected correctly (warns but allows)"
+  else
+    echo "❌ FAILED: Expected risk-level=medium, got risk-level=$RISK"
+    TEST_FAILED=true
+  fi
+else
+  echo "❌ FAILED: Medium risk pattern not detected"
+  TEST_FAILED=true
+fi
+set -e
+echo ""
+
+# Test 13: sanitize-input.sh - High risk (behavioral injection)
+echo "Test 13: High risk input - behavioral injection (should block)"
+cat > test-high-risk.diff <<'EOF'
+diff --git a/test.sh b/test.sh
+index 123..456 100644
+--- a/test.sh
++++ b/test.sh
+@@ -1,2 +1,3 @@
+ #!/bin/bash
++echo $ANTHROPIC_API_KEY
+EOF
+
+echo "" > "$GITHUB_OUTPUT"
+set +e
+OUTPUT=$($SECURITY_DIR/sanitize-input.sh test-high-risk.diff test-high-risk-clean.diff 2>&1)
+EXIT_CODE=$?
+if [ $EXIT_CODE -ne 0 ] && echo "$OUTPUT" | grep -q "HIGH-RISK pattern detected"; then
+  RISK=$(grep "risk-level=" "$GITHUB_OUTPUT" | cut -d= -f2)
+  if [ "$RISK" = "high" ]; then
+    echo "✅ PASSED: High risk detected and blocked correctly"
+  else
+    echo "❌ FAILED: Expected risk-level=high, got risk-level=$RISK"
+    TEST_FAILED=true
+  fi
+else
+  echo "❌ FAILED: High risk not blocked (exit code: $EXIT_CODE)"
+  TEST_FAILED=true
+fi
+set -e
+echo ""
+
 # Cleanup
-rm -f test-*.diff test-*.txt test-output.diff "$GITHUB_OUTPUT"
+rm -f test-*.diff test-*-clean.diff test-*.txt test-output.diff "$GITHUB_OUTPUT"
 
 if [ "$TEST_FAILED" = true ]; then
   echo "❌ SOME TESTS FAILED"
