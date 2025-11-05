@@ -264,10 +264,12 @@ runs:
       if: inputs.prompt != '' && inputs.pr-number == ''
       id: sanitize-prompt
       shell: bash
+      env:
+        PROMPT_INPUT: ${{ inputs.prompt }}
       run: |
         echo "🔍 Checking user-provided prompt for injection patterns..."
-        # Use printf with %s to safely pass prompt to stdin (avoids echo interpretation issues)
-        printf '%s\n' "${{ inputs.prompt }}" | ${{ github.action_path }}/security/sanitize-prompt.sh
+        # Use environment variable to safely pass prompt (avoids GitHub Actions expansion issues)
+        printf '%s\n' "$PROMPT_INPUT" | ${{ github.action_path }}/security/sanitize-prompt.sh
 
     - name: Cache cagent binary
       id: cache-cagent
@@ -370,6 +372,7 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key || env.OPENAI_API_KEY }}
         GOOGLE_API_KEY: ${{ inputs.google-api-key || env.GOOGLE_API_KEY }}
         GITHUB_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-token || github.token }}
+        PROMPT_INPUT: ${{ inputs.prompt }}
       run: |
         set -e
 
@@ -390,9 +393,9 @@ runs:
         if [ -f "$GITHUB_WORKSPACE/safe-prompt.txt" ]; then
           echo "Using secure PR review prompt"
           PROMPT=$(cat "$GITHUB_WORKSPACE/safe-prompt.txt")
-        elif [ -n "${{ inputs.prompt }}" ]; then
+        elif [ -n "$PROMPT_INPUT" ]; then
           echo "Using provided prompt"
-          PROMPT="${{ inputs.prompt }}"
+          PROMPT="$PROMPT_INPUT"
         else
           echo "::error::No prompt provided"
           exit 1
@@ -481,15 +484,6 @@ runs:
           else
             echo "❌ **Status:** Failed"
           fi
-          echo ""
-
-          echo "<details>"
-          echo "<summary>Agent Output (click to expand)</summary>"
-          echo ""
-          # Show last 100 lines of output (no code block wrapping to avoid conflicts with markdown in output)
-          tail -n 100 "$OUTPUT_FILE"
-          echo ""
-          echo "</details>"
         } >> $GITHUB_STEP_SUMMARY
 
         if [[ "${{ inputs.debug }}" == "true" ]]; then
@@ -538,25 +532,39 @@ runs:
         # Fallback 1: For PR reviews, extract from ## Summary marker
         elif [ -n "$PR_NUMBER" ] && grep -q "^## Summary$" "$OUTPUT_FILE"; then
           SUMMARY_LINE=$(grep -n "^## Summary$" "$OUTPUT_FILE" | tail -1 | cut -d: -f1)
-          tail -n +$SUMMARY_LINE "$OUTPUT_FILE" | \
-            grep -v "^time=" | \
-            grep -v "^--- Agent:" | \
-            grep -v "Calling " | \
-            grep -v " response →" | \
-            grep -v "For any feedback" > "${OUTPUT_FILE}.clean"
 
-          echo "⚠️  No cagent-output block found, extracted from ## Summary marker"
+          # Validate SUMMARY_LINE is not empty before using it
+          if [ -n "$SUMMARY_LINE" ]; then
+            tail -n +$SUMMARY_LINE "$OUTPUT_FILE" | \
+              grep -v "^time=" | \
+              grep -v "^--- Agent:" | \
+              grep -v "Calling " | \
+              grep -v " response →" | \
+              grep -v "For any feedback" > "${OUTPUT_FILE}.clean"
+
+            echo "⚠️  No cagent-output block found, extracted from ## Summary marker"
+          else
+            echo "⚠️  Failed to extract line number from ## Summary marker"
+            cp "$OUTPUT_FILE" "${OUTPUT_FILE}.clean"
+          fi
 
         # Fallback 2: Extract after agent marker
         elif grep -q "^--- Agent: root ---$" "$OUTPUT_FILE"; then
           AGENT_LINE=$(grep -n "^--- Agent: root ---$" "$OUTPUT_FILE" | tail -1 | cut -d: -f1)
-          tail -n +$((AGENT_LINE + 1)) "$OUTPUT_FILE" | \
-            grep -v "^time=" | \
-            grep -v "^level=" | \
-            grep -v "For any feedback" | \
-            sed '/^$/N;/^\n$/d' > "${OUTPUT_FILE}.clean"
 
-          echo "⚠️  No cagent-output block found, extracted after agent marker"
+          # Validate AGENT_LINE is not empty before using it in arithmetic expansion
+          if [ -n "$AGENT_LINE" ]; then
+            tail -n +$((AGENT_LINE + 1)) "$OUTPUT_FILE" | \
+              grep -v "^time=" | \
+              grep -v "^level=" | \
+              grep -v "For any feedback" | \
+              sed '/^$/N;/^\n$/d' > "${OUTPUT_FILE}.clean"
+
+            echo "⚠️  No cagent-output block found, extracted after agent marker"
+          else
+            echo "⚠️  Failed to extract line number from agent marker"
+            cp "$OUTPUT_FILE" "${OUTPUT_FILE}.clean"
+          fi
 
         # Fallback 3: Just clean metadata
         else
@@ -569,6 +577,29 @@ runs:
 
         # Use the cleaned output
         mv "${OUTPUT_FILE}.clean" "$OUTPUT_FILE"
+
+    - name: Update job summary with cleaned output
+      if: always()
+      shell: bash
+      run: |
+        OUTPUT_FILE="${{ steps.run-agent.outputs.output-file }}"
+
+        # Check if output file exists (may not exist if agent failed during validation)
+        if [ -z "$OUTPUT_FILE" ] || [ ! -f "$OUTPUT_FILE" ]; then
+          echo "⚠️ Output file not available, skipping summary update"
+          exit 0
+        fi
+
+        # Append cleaned output to job summary in collapsed details section
+        {
+          echo ""
+          echo "<details>"
+          echo "<summary>Agent Output (click to expand)</summary>"
+          echo ""
+          cat "$OUTPUT_FILE"
+          echo ""
+          echo "</details>"
+        } >> $GITHUB_STEP_SUMMARY
 
     # ========================================
     # SECURITY: Post Comment (only if safe)
