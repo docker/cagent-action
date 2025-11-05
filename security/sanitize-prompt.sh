@@ -4,7 +4,17 @@
 
 set -e
 
-PROMPT="$1"
+# Accept input from stdin if available, otherwise use argument for backward compatibility
+if [ -n "$1" ]; then
+  # Argument provided, use it
+  PROMPT="$1"
+elif [ ! -t 0 ]; then
+  # stdin is piped, read from it
+  PROMPT=$(cat)
+else
+  # Neither argument nor stdin
+  PROMPT=""
+fi
 
 if [ -z "$PROMPT" ]; then
   echo "::warning::No prompt provided to sanitize"

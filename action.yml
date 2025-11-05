@@ -266,7 +266,7 @@ runs:
       shell: bash
       run: |
         echo "🔍 Checking user-provided prompt for injection patterns..."
-        ${{ github.action_path }}/security/sanitize-prompt.sh "${{ inputs.prompt }}"
+        echo "${{ inputs.prompt }}" | ${{ github.action_path }}/security/sanitize-prompt.sh
 
     - name: Cache cagent binary
       id: cache-cagent
@@ -484,10 +484,9 @@ runs:
           echo "<details>"
           echo "<summary>Agent Output (click to expand)</summary>"
           echo ""
-          echo "\`\`\`"
-          # Show last 100 lines of output
+          # Show last 100 lines of output (no code block wrapping to avoid conflicts with markdown in output)
           tail -n 100 "$OUTPUT_FILE"
-          echo "\`\`\`"
+          echo ""
           echo "</details>"
         } >> $GITHUB_STEP_SUMMARY
 
