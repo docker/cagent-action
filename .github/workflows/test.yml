@@ -115,8 +115,17 @@ jobs:
 
       - name: Verify invalid agent failed
         run: |
+          OUTPUT_FILE="${{ steps.invalid-agent.outputs.output-file }}"
+
+          # Check exit code OR check for error in output (cagent may exit 0 even on pull failure)
           if [ "${{ steps.invalid-agent.outputs.exit-code }}" == "0" ]; then
-            echo "❌ Invalid agent should have failed but succeeded"
-            exit 1
+            # Exit code is 0, check if output contains error message
+            if [ -f "$OUTPUT_FILE" ] && grep -q "failed to pull" "$OUTPUT_FILE"; then
+              echo "✅ Invalid agent correctly failed (error in output)"
+            else
+              echo "❌ Invalid agent should have failed but succeeded with no error"
+              exit 1
+            fi
+          else
+            echo "✅ Invalid agent correctly failed (non-zero exit code)"
           fi
-          echo "✅ Invalid agent correctly failed"
