@@ -520,31 +520,53 @@ runs:
 
         ${{ github.action_path }}/security/sanitize-output.sh "$OUTPUT_FILE"
 
-        # For PR reviews, extract clean output (remove verbose cagent logging)
-        if [ -n "$PR_NUMBER" ]; then
-          echo "🧹 Extracting clean review output..."
+        # Extract clean output (remove verbose cagent logging, timestamps, agent markers)
+        echo "🧹 Extracting clean agent output..."
 
-          # Extract only the final review (starts with ## Summary)
-          # This removes all verbose cagent logging, agent transfers, and debug output
-          if grep -q "^## Summary$" "$OUTPUT_FILE"; then
-            # Find the LAST occurrence of "## Summary" (the actual review, not the template)
-            SUMMARY_LINE=$(grep -n "^## Summary$" "$OUTPUT_FILE" | tail -1 | cut -d: -f1)
+        # Primary method: Extract from cagent-output code block (most reliable)
+        if grep -q '^```cagent-output' "$OUTPUT_FILE"; then
+          # Extract everything between ```cagent-output and the closing ```
+          # Using awk to handle multi-line content properly
+          awk '/^```cagent-output$/,/^```$/ {
+            if (!/^```cagent-output$/ && !/^```$/) print
+          }' "$OUTPUT_FILE" > "${OUTPUT_FILE}.clean"
 
-            # Extract from Summary onwards (this is the actual review)
-            tail -n +$SUMMARY_LINE "$OUTPUT_FILE" | \
-              grep -v "^time=" | \
-              grep -v "^--- Agent:" | \
-              grep -v "Calling " | \
-              grep -v " response →" | \
-              grep -v "For any feedback" > "${OUTPUT_FILE}.clean"
+          echo "✅ Extracted clean output from cagent-output code block"
 
-            # Use the cleaned output for PR comments
-            mv "${OUTPUT_FILE}.clean" "$OUTPUT_FILE"
-            echo "✅ Extracted clean review output (starting from Summary)"
-          else
-            echo "⚠️  No '## Summary' marker found - using full output"
-          fi
+        # Fallback 1: For PR reviews, extract from ## Summary marker
+        elif [ -n "$PR_NUMBER" ] && grep -q "^## Summary$" "$OUTPUT_FILE"; then
+          SUMMARY_LINE=$(grep -n "^## Summary$" "$OUTPUT_FILE" | tail -1 | cut -d: -f1)
+          tail -n +$SUMMARY_LINE "$OUTPUT_FILE" | \
+            grep -v "^time=" | \
+            grep -v "^--- Agent:" | \
+            grep -v "Calling " | \
+            grep -v " response →" | \
+            grep -v "For any feedback" > "${OUTPUT_FILE}.clean"
+
+          echo "⚠️  No cagent-output block found, extracted from ## Summary marker"
+
+        # Fallback 2: Extract after agent marker
+        elif grep -q "^--- Agent: root ---$" "$OUTPUT_FILE"; then
+          AGENT_LINE=$(grep -n "^--- Agent: root ---$" "$OUTPUT_FILE" | tail -1 | cut -d: -f1)
+          tail -n +$((AGENT_LINE + 1)) "$OUTPUT_FILE" | \
+            grep -v "^time=" | \
+            grep -v "^level=" | \
+            grep -v "For any feedback" | \
+            sed '/^$/N;/^\n$/d' > "${OUTPUT_FILE}.clean"
+
+          echo "⚠️  No cagent-output block found, extracted after agent marker"
+
+        # Fallback 3: Just clean metadata
+        else
+          grep -v "^time=" "$OUTPUT_FILE" | \
+            grep -v "^level=" | \
+            grep -v "For any feedback" > "${OUTPUT_FILE}.clean"
+
+          echo "⚠️  No extraction markers found - cleaned metadata only"
         fi
+
+        # Use the cleaned output
+        mv "${OUTPUT_FILE}.clean" "$OUTPUT_FILE"
 
     # ========================================
     # SECURITY: Post Comment (only if safe)
