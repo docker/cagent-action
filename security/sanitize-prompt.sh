@@ -51,39 +51,24 @@ SUSPICIOUS_PATTERNS=(
 DETECTED=false
 for pattern in "${SUSPICIOUS_PATTERNS[@]}"; do
   if echo "$PROMPT" | grep -iE "$pattern" > /dev/null 2>&1; then
-    echo "::warning::⚠️  Suspicious pattern detected in prompt: $pattern"
-    echo "::warning::This may indicate a prompt injection attempt"
+    echo "::warning::⚠️  Suspicious pattern detected in prompt: $pattern. This may indicate a prompt injection attempt."
     DETECTED=true
   fi
 done
 
 # Check for encoded content (base64, hex) which could hide malicious instructions
 if echo "$PROMPT" | grep -E '(base64|atob|btoa|0x[0-9a-fA-F]{20,})' > /dev/null 2>&1; then
-  echo "::warning::⚠️  Encoded content detected in prompt (base64/hex)"
-  echo "::warning::This could be an obfuscation technique"
+  echo "::warning::⚠️  Encoded content detected in prompt (base64/hex). This could be an obfuscation technique."
   DETECTED=true
 fi
 
 if [ "$DETECTED" = true ]; then
-  echo "::warning::════════════════════════════════════════════════════════"
-  echo "::warning::⚠️  PROMPT INJECTION PATTERNS DETECTED"
-  echo "::warning::════════════════════════════════════════════════════════"
-  echo "::warning::"
-  echo "::warning::The provided prompt contains suspicious patterns that may"
-  echo "::warning::indicate a prompt injection attack attempt."
-  echo "::warning::"
-  echo "::warning::The agent will still execute, but be aware that:"
-  echo "::warning::  - The prompt may attempt to extract secrets"
-  echo "::warning::  - The prompt may try to override system instructions"
-  echo "::warning::  - Output will be scanned for leaked secrets"
-  echo "::warning::"
-  echo "::warning::If this is a false positive, you can ignore this warning."
-  echo "::warning::════════════════════════════════════════════════════════"
+  echo "::warning::⚠️  PROMPT INJECTION PATTERNS DETECTED: The provided prompt contains suspicious patterns that may indicate a prompt injection attack attempt. The agent will still execute, but be aware that the prompt may attempt to extract secrets or override system instructions, and the output will be scanned for leaked secrets. If this is a false positive, you can ignore this warning."
 
   # Set output for downstream steps
   echo "suspicious=true" >> "$GITHUB_OUTPUT"
 else
-  echo "✅ No suspicious patterns detected in prompt"
+  echo "✅ No suspicious patterns detected in prompt."
   echo "suspicious=false" >> "$GITHUB_OUTPUT"
 fi
 

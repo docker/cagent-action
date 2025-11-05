@@ -266,7 +266,8 @@ runs:
       shell: bash
       run: |
         echo "🔍 Checking user-provided prompt for injection patterns..."
-        echo "${{ inputs.prompt }}" | ${{ github.action_path }}/security/sanitize-prompt.sh
+        # Use printf with %s to safely pass prompt to stdin (avoids echo interpretation issues)
+        printf '%s\n' "${{ inputs.prompt }}" | ${{ github.action_path }}/security/sanitize-prompt.sh
 
     - name: Cache cagent binary
       id: cache-cagent
@@ -427,24 +428,25 @@ runs:
 
         ARGS+=("$AGENT")
 
-        # Add prompt
-        ARGS+=("$PROMPT")
+        # Pass '-' to read prompt from stdin (avoids argument list too long error)
+        ARGS+=("-")
 
-        echo "Running cagent with ${#ARGS[@]} arguments"
+        echo "Running cagent with ${#ARGS[@]} arguments (prompt via stdin)"
 
         # Track execution time
         START_TIME=$(date +%s)
 
         # SECURE: Direct execution with quoted arguments (no eval!)
+        # Pass prompt via stdin to avoid "Argument list too long" errors with large prompts
         set +e  # Don't exit on command failure
         if [ "${{ inputs.timeout }}" != "0" ]; then
-          timeout "${{ inputs.timeout }}" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
+          printf '%s\n' "$PROMPT" | timeout "${{ inputs.timeout }}" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
           EXIT_CODE=$?
           if [ $EXIT_CODE -eq 124 ]; then
             echo "::error::Agent execution timed out after ${{ inputs.timeout }} seconds"
           fi
         else
-          "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
+          printf '%s\n' "$PROMPT" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
           EXIT_CODE=${PIPESTATUS[0]}
         fi
         set -e
