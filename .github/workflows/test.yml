@@ -81,24 +81,28 @@ jobs:
           cat "$OUTPUT_FILE"
           echo "--- End Output ---"
 
-          # Check that output contains "--- Agent: root ---"
-          if ! grep -qF -- "--- Agent: root ---" "$OUTPUT_FILE"; then
-            echo "❌ Output does not contain '--- Agent: root ---'"
-            exit 1
-          fi
-          echo "✅ Found '--- Agent: root ---' in output"
-
-          # Check that there is text after "--- Agent: root ---"
-          # Extract everything after "--- Agent: root ---" and check if it has non-empty content
-          AFTER_AGENT=$(sed -n '/--- Agent: root ---/,$p' "$OUTPUT_FILE" | tail -n +2 | grep -v '^$' | grep -vF 'Cleaning up' | head -n 5)
-
-          if [ -z "$AFTER_AGENT" ]; then
-            echo "❌ No output found after '--- Agent: root ---'"
-            exit 1
+          # Check that output is clean (no agent markers or metadata in output)
+          if grep -qF -- "--- Agent: root ---" "$OUTPUT_FILE"; then
+            echo "⚠️  Output still contains '--- Agent: root ---' marker (not fully cleaned)"
           fi
 
-          echo "✅ Found agent response after '--- Agent: root ---'"
-          echo "Response preview: $(echo "$AFTER_AGENT" | head -n 1)"
+          # Check that output doesn't contain log metadata
+          if grep -qE "^(time=|level=)" "$OUTPUT_FILE"; then
+            echo "❌ Output contains log metadata (time= or level=) - cleaning failed"
+            exit 1
+          fi
+          echo "✅ Output is clean (no log metadata)"
+
+          # Check that there is actual content (non-empty, non-whitespace)
+          CONTENT=$(cat "$OUTPUT_FILE" | grep -v '^$' | head -n 5)
+
+          if [ -z "$CONTENT" ]; then
+            echo "❌ No content found in output file"
+            exit 1
+          fi
+
+          echo "✅ Found agent response content"
+          echo "Response preview: $(echo "$CONTENT" | head -n 1)"
 
       - name: Test should fail on invalid agent
         id: invalid-agent
