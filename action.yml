@@ -532,25 +532,39 @@ runs:
         # Fallback 1: For PR reviews, extract from ## Summary marker
         elif [ -n "$PR_NUMBER" ] && grep -q "^## Summary$" "$OUTPUT_FILE"; then
           SUMMARY_LINE=$(grep -n "^## Summary$" "$OUTPUT_FILE" | tail -1 | cut -d: -f1)
-          tail -n +$SUMMARY_LINE "$OUTPUT_FILE" | \
-            grep -v "^time=" | \
-            grep -v "^--- Agent:" | \
-            grep -v "Calling " | \
-            grep -v " response →" | \
-            grep -v "For any feedback" > "${OUTPUT_FILE}.clean"
 
-          echo "⚠️  No cagent-output block found, extracted from ## Summary marker"
+          # Validate SUMMARY_LINE is not empty before using it
+          if [ -n "$SUMMARY_LINE" ]; then
+            tail -n +$SUMMARY_LINE "$OUTPUT_FILE" | \
+              grep -v "^time=" | \
+              grep -v "^--- Agent:" | \
+              grep -v "Calling " | \
+              grep -v " response →" | \
+              grep -v "For any feedback" > "${OUTPUT_FILE}.clean"
+
+            echo "⚠️  No cagent-output block found, extracted from ## Summary marker"
+          else
+            echo "⚠️  Failed to extract line number from ## Summary marker"
+            cp "$OUTPUT_FILE" "${OUTPUT_FILE}.clean"
+          fi
 
         # Fallback 2: Extract after agent marker
         elif grep -q "^--- Agent: root ---$" "$OUTPUT_FILE"; then
           AGENT_LINE=$(grep -n "^--- Agent: root ---$" "$OUTPUT_FILE" | tail -1 | cut -d: -f1)
-          tail -n +$((AGENT_LINE + 1)) "$OUTPUT_FILE" | \
-            grep -v "^time=" | \
-            grep -v "^level=" | \
-            grep -v "For any feedback" | \
-            sed '/^$/N;/^\n$/d' > "${OUTPUT_FILE}.clean"
 
-          echo "⚠️  No cagent-output block found, extracted after agent marker"
+          # Validate AGENT_LINE is not empty before using it in arithmetic expansion
+          if [ -n "$AGENT_LINE" ]; then
+            tail -n +$((AGENT_LINE + 1)) "$OUTPUT_FILE" | \
+              grep -v "^time=" | \
+              grep -v "^level=" | \
+              grep -v "For any feedback" | \
+              sed '/^$/N;/^\n$/d' > "${OUTPUT_FILE}.clean"
+
+            echo "⚠️  No cagent-output block found, extracted after agent marker"
+          else
+            echo "⚠️  Failed to extract line number from agent marker"
+            cp "$OUTPUT_FILE" "${OUTPUT_FILE}.clean"
+          fi
 
         # Fallback 3: Just clean metadata
         else
@@ -565,14 +579,14 @@ runs:
         mv "${OUTPUT_FILE}.clean" "$OUTPUT_FILE"
 
     - name: Update job summary with cleaned output
-      if: always() && steps.run-agent.outputs.output-file != ''
+      if: always()
       shell: bash
       run: |
         OUTPUT_FILE="${{ steps.run-agent.outputs.output-file }}"
 
-        # Only update if output file exists
-        if [ ! -f "$OUTPUT_FILE" ]; then
-          echo "⚠️ Output file not found, skipping summary update"
+        # Check if output file exists (may not exist if agent failed during validation)
+        if [ -z "$OUTPUT_FILE" ] || [ ! -f "$OUTPUT_FILE" ]; then
+          echo "⚠️ Output file not available, skipping summary update"
           exit 0
         fi
 

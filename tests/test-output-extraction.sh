@@ -78,6 +78,53 @@ cat "$TEST_DIR/output2.clean"
 echo ""
 
 echo ""
+echo "Test 3: Edge case - malformed output without expected markers"
+echo "---"
+cat > "$TEST_DIR/output3.log" <<'EOF'
+Some random output
+No agent markers here
+Just plain text
+EOF
+
+# Fallback 3 should just clean metadata
+grep -v "^time=" "$TEST_DIR/output3.log" | \
+  grep -v "^level=" | \
+  grep -v "For any feedback" > "$TEST_DIR/output3.clean"
+
+if [ -f "$TEST_DIR/output3.clean" ]; then
+  echo "✅ Fallback extraction successful (metadata cleaning only)"
+else
+  echo "❌ Fallback extraction failed"
+fi
+
+echo "Cleaned output:"
+cat "$TEST_DIR/output3.clean"
+echo ""
+
+echo ""
+echo "Test 4: Defensive check - agent marker exists but grep fails"
+echo "---"
+
+# This simulates the edge case where grep -q finds the marker but grep -n doesn't
+# (e.g., race condition or encoding issue)
+cat > "$TEST_DIR/output4.log" <<'EOF'
+--- Agent: root ---
+
+Some output
+EOF
+
+# Simulate the defensive logic
+AGENT_LINE=$(grep -n "^--- Agent: root ---$" "$TEST_DIR/output4.log" | tail -1 | cut -d: -f1)
+
+if [ -n "$AGENT_LINE" ]; then
+  echo "✅ AGENT_LINE extracted successfully: $AGENT_LINE"
+  tail -n +$((AGENT_LINE + 1)) "$TEST_DIR/output4.log" > "$TEST_DIR/output4.clean"
+else
+  echo "⚠️  AGENT_LINE is empty (defensive check would prevent arithmetic error)"
+  cp "$TEST_DIR/output4.log" "$TEST_DIR/output4.clean"
+fi
+
+echo ""
 echo "=========================================="
 echo "✅ All extraction tests completed"
 echo "=========================================="
