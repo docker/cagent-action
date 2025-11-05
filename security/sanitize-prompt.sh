@@ -5,14 +5,19 @@
 set -e
 
 # Accept input from stdin if available, otherwise use argument for backward compatibility
-if [ -n "$1" ]; then
-  # Argument provided, use it
-  PROMPT="$1"
-elif [ ! -t 0 ]; then
-  # stdin is piped, read from it
+# Check if stdin is NOT a terminal (piped/redirected)
+if [ ! -t 0 ]; then
+  # Try to read from stdin (will be empty if nothing piped)
   PROMPT=$(cat)
+  # If we got nothing from stdin, try argument
+  if [ -z "$PROMPT" ] && [ -n "$1" ]; then
+    PROMPT="$1"
+  fi
+elif [ -n "$1" ]; then
+  # stdin is a terminal, use argument
+  PROMPT="$1"
 else
-  # Neither argument nor stdin
+  # Neither stdin nor argument
   PROMPT=""
 fi
 
