@@ -11,6 +11,51 @@ permissions:
   contents: read
 
 jobs:
+  test-prompt-sanitization:
+    name: Prompt Sanitization Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Run prompt sanitization tests
+        run: |
+          cd tests
+          chmod +x test-local.sh
+          ./test-local.sh
+
+  test-output-extraction:
+    name: Output Extraction Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Run output extraction tests
+        run: |
+          cd tests
+          chmod +x test-output-extraction.sh
+          ./test-output-extraction.sh
+
+  test-job-summary:
+    name: Job Summary Format Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Run job summary tests
+        run: |
+          cd tests
+          chmod +x test-job-summary.sh
+          ./test-job-summary.sh
+
   test-security:
     name: Security Tests
     runs-on: ubuntu-latest
