@@ -590,15 +590,14 @@ runs:
           exit 0
         fi
 
-        # Append cleaned output to job summary in collapsed details section
+        # Append cleaned output to job summary
         {
-          echo ""
-          echo "<details>"
-          echo "<summary>Agent Output (click to expand)</summary>"
+          echo "<h2>Agent Output</h2>"
           echo ""
           cat "$OUTPUT_FILE"
           echo ""
-          echo "</details>"
+          echo "<hr />"
+          echo ""
         } >> $GITHUB_STEP_SUMMARY
 
     # ========================================
