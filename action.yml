@@ -320,7 +320,6 @@ runs:
         fi
 
         # Add agent
-        AGENT="$AGENT"
         echo "Using agent: $AGENT"
         ARGS+=("$AGENT")
 
