@@ -167,7 +167,7 @@ runs:
       id: cache-cagent
       uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
-        path: $GITHUB_WORKSPACE/cagent
+        path: ${{ github.workspace }}/cagent
         key: cagent-${{ runner.os }}-${{ inputs.cagent-version }}
 
     - name: Cache mcp-gateway binary
@@ -311,9 +311,11 @@ runs:
 
         ARGS+=("--tui=$TUI")
 
-        # Add extra args if provided (safely parsed, handling quoted arguments)
+        # Add extra args if provided
+        # Note: This uses simple word splitting. Quoted arguments with spaces are not supported.
+        # Using eval would be a security risk with user-provided input.
         if [ -n "$EXTRA_ARGS" ]; then
-          mapfile -t EXTRA_ARGS_ARRAY < <(echo "$EXTRA_ARGS" | xargs -n1)
+          read -ra EXTRA_ARGS_ARRAY <<< "$EXTRA_ARGS"
           ARGS+=("${EXTRA_ARGS_ARRAY[@]}")
         fi
 

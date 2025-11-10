@@ -93,7 +93,7 @@ jobs:
 
             $(cat /tmp/all_diffs.txt)
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          timeout: 300000  # 5 minutes
+          timeout: 300  # 5 minutes
 
       - name: Validate reported file paths
         id: validate

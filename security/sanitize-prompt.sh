@@ -50,8 +50,8 @@ SUSPICIOUS_PATTERNS=(
   'console\.log\(.*ANTHROPIC_API_KEY'
   'console\.log\(.*OPENAI_API_KEY'
   'console\.log\(.*GITHUB_TOKEN'
-  'printenv\s+(ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN)'
-  'cat\s+\.env'
+  'printenv[[:space:]]+(ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN)'
+  'cat[[:space:]]+\.env'
   # Only flag key extraction when it's clearly a command/question
   'show.*me.*(your|the|my).*key'
   'reveal.*(your|the|my).*(key|secret|token)'
