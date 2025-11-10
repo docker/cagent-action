@@ -2,23 +2,13 @@
 
 A GitHub Action for running [cagent](https://github.com/docker/cagent) AI agents in your workflows. This action simplifies the setup and execution of CAgent, handling binary downloads and environment configuration automatically.
 
-## 🔒 Security-Hardened for Open Source
+## 🔒 Security Features
 
 This action includes **built-in security features for all agent executions**:
 
-**Universal Security (All Modes):**
-- **Secret Leak Prevention**: Scans ALL agent outputs for API keys and tokens (Anthropic, OpenAI, GitHub)
+- **Secret Leak Prevention**: Scans all agent outputs for API keys and tokens (Anthropic, OpenAI, GitHub)
 - **Prompt Injection Detection**: Warns about suspicious patterns in user prompts
 - **Automatic Incident Response**: Creates security issues and fails workflows when secrets are detected
-
-**PR Review Mode Security (When `pr-number` provided):**
-- **Authorization**: Only OWNER, MEMBER, and COLLABORATOR contributors can trigger (hardcoded, cannot be disabled)
-- **Input Sanitization**: Three-tier risk assessment
-  - **Low Risk**: Normal code changes - review proceeds normally
-  - **Medium Risk**: API key variable names detected (e.g., `ANTHROPIC_API_KEY`) - warns but allows review with security notice
-  - **High Risk**: Behavioral injection patterns (e.g., `echo $API_KEY`) - blocks execution immediately
-- **Size Limits**: Enforces max PR size (3000 lines default) to prevent DoS
-- **Output Scanning**: ALL reviews scanned for actual secret leakage - blocks and creates incident if detected
 
 See [security/README.md](security/README.md) for complete security documentation.
 
@@ -27,16 +17,16 @@ See [security/README.md](security/README.md) for complete security documentation
 ### Basic Example
 
 ```yaml
-- name: Run CAgent PR Reviewer
+- name: Run CAgent
   uses: docker/cagent-action@v2.0.0
   with:
-    agent: jeanlaurent/pr-reviewer
-    prompt: "Review this pull request"
+    agent: docker/github-action-security-scanner
+    prompt: "Analyze these commits for security vulnerabilities"
   env:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-### PR Review Example
+### Pull Request Review Example
 
 ```yaml
 name: AI PR Review
@@ -55,25 +45,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Get PR diff
+        id: diff
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > pr.diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: AI PR Review
         uses: docker/cagent-action@v2.0.0
         with:
-          pr-number: ${{ github.event.pull_request.number }}
+          agent: docker/github-action-pr-reviewer
+          prompt: |
+            Review this pull request for code quality, correctness, and best practices.
+
+            ```diff
+            $(cat pr.diff)
+            ```
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post review
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body-file "${{ steps.review.outputs.output-file }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
 ```
-
-**Note:** When `pr-number` is provided, the action automatically uses the built-in secure PR reviewer agent. No need to specify the `agent` input.
-
-**How it works:**
-1. Action checks author is OWNER, MEMBER, or COLLABORATOR (blocks external contributors)
-2. Fetches and sanitizes PR diff (removes comments, checks for malicious patterns)
-3. Runs multi-agent reviewer (coordinator delegates to specialized sub-agents)
-4. Filters verbose logging (extracts clean review starting from "## Summary")
-5. Scans output for leaked secrets (API keys, tokens)
-6. Posts clean review to PR or creates security incident issue
-
-See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 
 ### Using a Local Agent File
 
@@ -93,7 +91,7 @@ See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 - name: Run CAgent with Custom Settings
   uses: docker/cagent-action@v2.0.0
   with:
-    agent: jeanlaurent/pr-reviewer
+    agent: docker/github-action-pr-reviewer
     prompt: "Review this PR"
     cagent-version: v1.6.6
     mcp-gateway: true  # Set to true to install mcp-gateway
@@ -115,7 +113,7 @@ See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
   id: agent
   uses: docker/cagent-action@v2.0.0
   with:
-    agent: jeanlaurent/pr-reviewer
+    agent: docker/github-action-pr-reviewer
     prompt: "Review this pull request"
   env:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -139,16 +137,14 @@ See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `agent` | Agent identifier (e.g., `jeanlaurent/pr-reviewer`) or path to `.yaml` file. Optional when `pr-number` is provided (uses built-in secure PR reviewer) | No** | - |
+| `agent` | Agent identifier (e.g., `docker/github-action-pr-reviewer`) or path to `.yaml` file | Yes | - |
 | `prompt` | Prompt to pass to the agent | No | - |
-| `pr-number` | Pull request number (for PR review mode with built-in security) | No** | - |
-| `max-pr-size` | Maximum PR size in lines (for PR review mode) | No | `3000` |
 | `cagent-version` | Version of cagent to use | No | `v1.6.6` |
 | `mcp-gateway` | Install mcp-gateway (`true`/`false`) | No | `false` |
 | `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No | `v0.22.0` |
 | `anthropic-api-key` | Anthropic API key | No | `$ANTHROPIC_API_KEY` env var |
 | `openai-api-key` | OpenAI API key | No | `$OPENAI_API_KEY` env var |
-| `google-api-key` | Google API key for Gemini | No | `$GOOGLE_API_KEY` env var |
+| `google-api-key` | Google API key for Gemini | No | `GOOGLE_API_KEY` env var |
 | `github-token` | GitHub token for API access | No | Auto-provided by GitHub Actions |
 | `timeout` | Timeout in seconds for agent execution (0 for no timeout) | No | `0` |
 | `debug` | Enable debug mode with verbose logging (`true`/`false`) | No | `false` |
@@ -156,8 +152,6 @@ See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 | `tui` | Enable TUI mode (`true`/`false`) | No | `false` |
 | `yolo` | Auto-approve all prompts (`true`/`false`) | No | `true` |
 | `extra-args` | Additional arguments to pass to `cagent run` | No | - |
-
-\*\* Either `agent` or `pr-number` must be provided. When `pr-number` is provided without `agent`, the built-in secure PR reviewer is automatically used.
 
 ## Outputs
 
@@ -168,10 +162,8 @@ See the [examples/pr-review.yml](examples/pr-review.yml) for a complete example.
 | `cagent-version` | Version of cagent that was used |
 | `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`) |
 | `execution-time` | Agent execution time in seconds |
-| `security-blocked` | Whether execution was blocked due to security concerns (PR review mode only) |
-| `secrets-detected` | Whether secrets were detected in output (checked for all modes) |
-| `prompt-suspicious` | Whether suspicious patterns were detected in user prompt (general mode only) |
-| `input-risk-level` | Risk level of PR input: `low`, `medium` (warns), or `high` (blocks) - PR review mode only |
+| `secrets-detected` | Whether secrets were detected in output |
+| `prompt-suspicious` | Whether suspicious patterns were detected in user prompt |
 
 ## Environment Variables
 
@@ -184,7 +176,7 @@ The action supports the following environment variables for different AI provide
 
 ## Permissions
 
-For PR review and GitHub integration features, ensure your workflow has appropriate permissions:
+For GitHub integration features (commenting on PRs, creating issues), ensure your workflow has appropriate permissions:
 
 ```yaml
 permissions:
@@ -216,7 +208,7 @@ jobs:
       - name: Security Review
         uses: docker/cagent-action@v2.0.0
         with:
-          agent: security-reviewer
+          agent: docker/github-action-security-scanner
           prompt: "Analyze for security issues"
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -224,7 +216,7 @@ jobs:
       - name: Code Quality Review
         uses: docker/cagent-action@v2.0.0
         with:
-          agent: code-reviewer
+          agent: docker/github-action-pr-reviewer
           prompt: "Review code quality and best practices"
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -240,7 +232,7 @@ on:
       agent:
         description: 'Agent to run'
         required: true
-        default: 'jeanlaurent/pr-reviewer'
+        default: 'docker/github-action-pr-reviewer'
       prompt:
         description: 'Prompt for the agent'
         required: true
