@@ -94,34 +94,43 @@ runs:
   using: "composite"
   steps:
     - name: Validate inputs
+      id: validate-inputs
       shell: bash
+      env:
+        AGENT: ${{ inputs.agent }}
+        CAGENT_VERSION: ${{ inputs.cagent-version }}
+        MCP_GATEWAY: ${{ inputs.mcp-gateway }}
+        MCP_GATEWAY_VERSION: ${{ inputs.mcp-gateway-version }}
+        DEBUG: ${{ inputs.debug }}
+        YOLO: ${{ inputs.yolo }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
       run: |
         # Validate agent is provided
-        if [[ -z "${{ inputs.agent }}" ]]; then
+        if [[ -z "$AGENT" ]]; then
           echo "::error::'agent' input is required"
           exit 1
         fi
 
         # Validate cagent version format
-        if ! [[ "${{ inputs.cagent-version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
-          echo "::error::Invalid cagent version format '${{ inputs.cagent-version }}'. Expected format: v1.2.3"
+        if ! [[ "$CAGENT_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+          echo "::error::Invalid cagent version format '$CAGENT_VERSION'. Expected format: v1.2.3"
           exit 1
         fi
 
         # Validate mcp-gateway version format if it will be installed
-        if [[ "${{ inputs.mcp-gateway }}" == "true" ]]; then
-          if ! [[ "${{ inputs.mcp-gateway-version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
-            echo "::error::Invalid mcp-gateway version format '${{ inputs.mcp-gateway-version }}'. Expected format: v1.2.3"
+        if [[ "$MCP_GATEWAY" == "true" ]]; then
+          if ! [[ "$MCP_GATEWAY_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+            echo "::error::Invalid mcp-gateway version format '$MCP_GATEWAY_VERSION'. Expected format: v1.2.3"
             exit 1
           fi
         fi
 
-        if [[ "${{ inputs.debug }}" == "true" ]]; then
+        if [[ "$DEBUG" == "true" ]]; then
           echo "::debug::Validation passed"
-          echo "::debug::agent: ${{ inputs.agent }}"
-          echo "::debug::cagent version: ${{ inputs.cagent-version }}"
-          echo "::debug::mcp-gateway version: ${{ inputs.mcp-gateway-version }}"
-          echo "::debug::mcp-gateway install: ${{ inputs.mcp-gateway }}"
+          echo "::debug::agent: $AGENT"
+          echo "::debug::cagent version: $CAGENT_VERSION"
+          echo "::debug::mcp-gateway version: $MCP_GATEWAY_VERSION"
+          echo "::debug::mcp-gateway install: $MCP_GATEWAY"
         fi
 
     # ========================================
@@ -133,13 +142,14 @@ runs:
       shell: bash
       env:
         PROMPT_INPUT: ${{ inputs.prompt }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         echo "🔍 Checking user-provided prompt for injection patterns..."
         # Write prompt to temp file for analysis
         printf '%s\n' "$PROMPT_INPUT" > /tmp/prompt-input.txt
 
         # Run sanitization which outputs risk-level and blocked status
-        ${{ github.action_path }}/security/sanitize-input.sh /tmp/prompt-input.txt /tmp/prompt-clean.txt
+        $ACTION_PATH/security/sanitize-input.sh /tmp/prompt-input.txt /tmp/prompt-clean.txt
 
     - name: Check prompt for suspicious patterns
       if: inputs.prompt != ''
@@ -147,16 +157,17 @@ runs:
       shell: bash
       env:
         PROMPT_INPUT: ${{ inputs.prompt }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         echo "🔍 Additional prompt pattern checking..."
         # Use environment variable to safely pass prompt (avoids GitHub Actions expansion issues)
-        printf '%s\n' "$PROMPT_INPUT" | ${{ github.action_path }}/security/sanitize-prompt.sh
+        printf '%s\n' "$PROMPT_INPUT" | $ACTION_PATH/security/sanitize-prompt.sh
 
     - name: Cache cagent binary
       id: cache-cagent
       uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
-        path: ${{ github.workspace }}/cagent
+        path: $GITHUB_WORKSPACE/cagent
         key: cagent-${{ runner.os }}-${{ inputs.cagent-version }}
 
     - name: Cache mcp-gateway binary
@@ -170,11 +181,20 @@ runs:
     - name: Setup binaries
       id: setup-binaries
       shell: bash
+      env:
+        CAGENT_VERSION: ${{ inputs.cagent-version }}
+        MCP_GATEWAY: ${{ inputs.mcp-gateway }}
+        MCP_GATEWAY_VERSION: ${{ inputs.mcp-gateway-version }}
+        DEBUG: ${{ inputs.debug }}
+        YOLO: ${{ inputs.yolo }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
+        CAGENT_CACHE_HIT: ${{ steps.cache-cagent.outputs.cache-hit }}
+        MCP_CACHE_HIT: ${{ steps.cache-mcp.outputs.cache-hit }}
       run: |
         set -e
         MCP_INSTALLED="false"
 
-        if [[ "${{ inputs.debug }}" == "true" ]]; then
+        if [[ "$DEBUG" == "true" ]]; then
           set -x
         fi
 
@@ -201,28 +221,28 @@ runs:
         }
 
         # Download cagent if not cached
-        if [[ "${{ steps.cache-cagent.outputs.cache-hit }}" != "true" ]]; then
-          echo "Downloading cagent ${{ inputs.cagent-version }}..."
+        if [[ "$CAGENT_CACHE_HIT" != "true" ]]; then
+          echo "Downloading cagent $CAGENT_VERSION..."
           retry_download \
-            "https://github.com/docker/cagent/releases/download/${{ inputs.cagent-version }}/cagent-linux-amd64" \
-            "${{ github.workspace }}/cagent"
-          chmod +x "${{ github.workspace }}/cagent"
+            "https://github.com/docker/cagent/releases/download/$CAGENT_VERSION/cagent-linux-amd64" \
+            "$GITHUB_WORKSPACE/cagent"
+          chmod +x "$GITHUB_WORKSPACE/cagent"
         else
           echo "Using cached cagent binary"
         fi
 
         # Verify cagent works
-        if ! "${{ github.workspace }}/cagent" version; then
+        if ! "$GITHUB_WORKSPACE/cagent" version; then
           echo "::error::cagent binary verification failed"
           exit 1
         fi
 
         # Download mcp-gateway if needed and not cached
-        if [[ "${{ inputs.mcp-gateway }}" == "true" ]]; then
-          if [[ "${{ steps.cache-mcp.outputs.cache-hit }}" != "true" ]]; then
-            echo "Downloading mcp-gateway ${{ inputs.mcp-gateway-version }}..."
+        if [[ "$MCP_GATEWAY" == "true" ]]; then
+          if [[ "$MCP_CACHE_HIT" != "true" ]]; then
+            echo "Downloading mcp-gateway $MCP_GATEWAY_VERSION..."
             retry_download \
-              "https://github.com/docker/mcp-gateway/releases/download/${{ inputs.mcp-gateway-version }}/docker-mcp-linux-amd64.tar.gz" \
+              "https://github.com/docker/mcp-gateway/releases/download/$MCP_GATEWAY_VERSION/docker-mcp-linux-amd64.tar.gz" \
               "mcp-gateway.tar.gz"
             tar -xzf mcp-gateway.tar.gz
             chmod +x docker-mcp
@@ -241,23 +261,35 @@ runs:
         fi
 
         # Set outputs
-        echo "cagent-version=${{ inputs.cagent-version }}" >> $GITHUB_OUTPUT
+        echo "cagent-version=$CAGENT_VERSION" >> $GITHUB_OUTPUT
         echo "mcp-installed=$MCP_INSTALLED" >> $GITHUB_OUTPUT
 
     - name: Run CAgent
       id: run-agent
       shell: bash
-      working-directory: ${{ inputs.working-directory }}
       env:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key || env.ANTHROPIC_API_KEY }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key || env.OPENAI_API_KEY }}
         GOOGLE_API_KEY: ${{ inputs.google-api-key || env.GOOGLE_API_KEY }}
         GITHUB_PERSONAL_ACCESS_TOKEN: ${{ inputs.github-token || github.token }}
+        AGENT: ${{ inputs.agent }}
         PROMPT_INPUT: ${{ inputs.prompt }}
+        ACTION_PATH: ${{ github.action_path }}
+        DEBUG: ${{ inputs.debug }}
+        YOLO: ${{ inputs.yolo }}
+        EXTRA_ARGS: ${{ inputs.extra-args }}
+        TUI: ${{ inputs.tui }}
+        TIMEOUT: ${{ inputs.timeout }}
+        WORKING_DIR: ${{ inputs.working-directory }}
+        CAGENT_VERSION: ${{ inputs.cagent-version }}
+        MCP_INSTALLED: ${{ steps.setup-binaries.outputs.mcp-installed }}
       run: |
         set -e
 
-        if [[ "${{ inputs.debug }}" == "true" ]]; then
+        # Change to working directory
+        cd "$WORKING_DIR"
+
+        if [[ "$DEBUG" == "true" ]]; then
           set -x
           echo "::debug::Working directory: $(pwd)"
           echo "::debug::GitHub workspace: $GITHUB_WORKSPACE"
@@ -273,20 +305,20 @@ runs:
         ARGS=("run")
 
         # Add flags
-        if [ "${{ inputs.yolo }}" = "true" ]; then
+        if [ "$YOLO" = "true" ]; then
           ARGS+=("--yolo")
         fi
 
-        ARGS+=("--tui=${{ inputs.tui }}")
+        ARGS+=("--tui=$TUI")
 
         # Add extra args if provided (safely parsed, handling quoted arguments)
-        if [ -n "${{ inputs.extra-args }}" ]; then
-          mapfile -t EXTRA_ARGS_ARRAY < <(echo "${{ inputs.extra-args }}" | xargs -n1)
+        if [ -n "$EXTRA_ARGS" ]; then
+          mapfile -t EXTRA_ARGS_ARRAY < <(echo "$EXTRA_ARGS" | xargs -n1)
           ARGS+=("${EXTRA_ARGS_ARRAY[@]}")
         fi
 
         # Add agent
-        AGENT="${{ inputs.agent }}"
+        AGENT="$AGENT"
         echo "Using agent: $AGENT"
         ARGS+=("$AGENT")
 
@@ -303,15 +335,15 @@ runs:
 
         # SECURE: Direct execution with quoted arguments (no eval!)
         set +e  # Don't exit on command failure
-        if [ "${{ inputs.timeout }}" != "0" ]; then
+        if [ "$TIMEOUT" != "0" ]; then
           if [ -n "$PROMPT_INPUT" ]; then
-            printf '%s\n' "$PROMPT_INPUT" | timeout "${{ inputs.timeout }}" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
+            printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
           else
-            timeout "${{ inputs.timeout }}" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
+            timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
           fi
           EXIT_CODE=$?
           if [ $EXIT_CODE -eq 124 ]; then
-            echo "::error::Agent execution timed out after ${{ inputs.timeout }} seconds"
+            echo "::error::Agent execution timed out after $TIMEOUT seconds"
           fi
         else
           if [ -n "$PROMPT_INPUT" ]; then
@@ -337,13 +369,13 @@ runs:
           echo ""
           echo "| Property | Value |"
           echo "|----------|-------|"
-          echo "| Agent | \`${{ inputs.agent }}\` |"
+          echo "| Agent | \`$AGENT\` |"
           echo "| Exit Code | $EXIT_CODE |"
           echo "| Execution Time | ${EXECUTION_TIME}s |"
-          echo "| CAgent Version | ${{ inputs.cagent-version }} |"
-          echo "| MCP Gateway | ${{ steps.setup-binaries.outputs.mcp-installed }} |"
-          if [ "${{ inputs.timeout }}" != "0" ]; then
-            echo "| Timeout | ${{ inputs.timeout }}s |"
+          echo "| CAgent Version | $CAGENT_VERSION |"
+          echo "| MCP Gateway | $MCP_INSTALLED |"
+          if [ "$TIMEOUT" != "0" ]; then
+            echo "| Timeout | ${TIMEOUT}s |"
           fi
           echo ""
 
@@ -356,7 +388,7 @@ runs:
           fi
         } >> $GITHUB_STEP_SUMMARY
 
-        if [[ "${{ inputs.debug }}" == "true" ]]; then
+        if [[ "$DEBUG" == "true" ]]; then
           echo "::debug::Exit code: $EXIT_CODE"
           echo "::debug::Execution time: ${EXECUTION_TIME}s"
           echo "::debug::Output file: $OUTPUT_FILE"
@@ -371,9 +403,12 @@ runs:
       if: always()
       id: sanitize-output
       shell: bash
+      env:
+        OUTPUT_FILE: ${{ steps.run-agent.outputs.output-file }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         echo "🔍 Scanning AI response for leaked secrets..."
-        OUTPUT_FILE="${{ steps.run-agent.outputs.output-file }}"
+        OUTPUT_FILE="$OUTPUT_FILE"
 
         # Defensive check: ensure output file exists
         if [ -z "$OUTPUT_FILE" ] || [ ! -f "$OUTPUT_FILE" ]; then
@@ -382,7 +417,7 @@ runs:
           exit 0
         fi
 
-        ${{ github.action_path }}/security/sanitize-output.sh "$OUTPUT_FILE"
+        $ACTION_PATH/security/sanitize-output.sh "$OUTPUT_FILE"
 
         # Extract clean output (remove verbose cagent logging, timestamps, agent markers)
         echo "🧹 Extracting clean agent output..."
@@ -430,8 +465,10 @@ runs:
     - name: Update job summary with cleaned output
       if: always()
       shell: bash
+      env:
+        OUTPUT_FILE: ${{ steps.run-agent.outputs.output-file }}
       run: |
-        OUTPUT_FILE="${{ steps.run-agent.outputs.output-file }}"
+        OUTPUT_FILE="$OUTPUT_FILE"
 
         # Check if output file exists (may not exist if agent failed during validation)
         if [ -z "$OUTPUT_FILE" ] || [ ! -f "$OUTPUT_FILE" ]; then
@@ -448,8 +485,6 @@ runs:
           echo ""
           cat "$OUTPUT_FILE"
           echo ""
-          echo "<hr />"
-          echo ""
         } >> $GITHUB_STEP_SUMMARY
 
     # ========================================
@@ -461,6 +496,7 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token || github.token }}
         REPOSITORY: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
       run: |
         cat <<'ERROR_MSG' >&2
         ═══════════════════════════════════════════════════════
@@ -481,7 +517,7 @@ runs:
         # Create security incident issue
         BODY="**CRITICAL SECURITY INCIDENT**
 
-        A secret was detected in the AI agent response for workflow run ${{ github.run_id }}
+        A secret was detected in the AI agent response for workflow run $RUN_ID
 
         ## Actions Taken
         ✓ Workflow failed with error
@@ -500,7 +536,7 @@ runs:
 
         ## Timeline
         - Incident detected: $(date -u +%Y-%m-%dT%H:%M:%SZ)
-        - Workflow run: https://github.com/$REPOSITORY/actions/runs/${{ github.run_id }}
+        - Workflow run: https://github.com/$REPOSITORY/actions/runs/$RUN_ID
 
         ## Next Steps
         - [ ] Secrets rotated

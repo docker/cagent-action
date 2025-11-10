@@ -13,7 +13,7 @@ jobs:
       contents: read
     steps:
       - name: Ask pirate agent about shipments
-        uses: docker/cagent-action@v2.0.0
+        uses: docker/cagent-action@f3674be1f7dc484dff8435720e9ccd8479721c42
         with:
           agent: agentcatalog/pirate
           prompt: "What do we ship today?"

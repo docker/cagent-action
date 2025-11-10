@@ -1,0 +1,307 @@
+name: Security Scan
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      days_back:
+        description: "Number of days back to scan"
+        required: false
+        default: "7"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+        with:
+          fetch-depth: 0  # Need full history to get commits from past week
+
+      - name: Get commits from past week
+        id: commits
+        env:
+          DAYS_BACK: ${{ inputs.days_back || '7' }}
+        run: |
+          # Use input days_back or default to 7
+          DAYS_BACK="$DAYS_BACK"
+          echo "Scanning commits from the past $DAYS_BACK days..."
+
+          # Get commits from the past N days
+          SINCE_DATE=$(date -u -d "$DAYS_BACK days ago" +%Y-%m-%d 2>/dev/null || date -u -v-${DAYS_BACK}d +%Y-%m-%d)
+          echo "Since: $SINCE_DATE"
+
+          # Get list of commits
+          git log --since="$SINCE_DATE" --pretty=format:"%H" > /tmp/commit_hashes.txt
+          COMMIT_COUNT=$(wc -l < /tmp/commit_hashes.txt | tr -d ' ')
+
+          echo "Found $COMMIT_COUNT commits to scan"
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+
+          if [ "$COMMIT_COUNT" -eq 0 ]; then
+            echo "No commits found in the past $DAYS_BACK days"
+            echo "has_commits=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "has_commits=true" >> $GITHUB_OUTPUT
+
+          # Generate full diffs for all commits
+          echo "Generating commit diffs..."
+          > /tmp/all_diffs.txt
+
+          while IFS= read -r commit_hash; do
+            echo "----------------------------------------" >> /tmp/all_diffs.txt
+            echo "Commit: $commit_hash" >> /tmp/all_diffs.txt
+            echo "Subject: $(git log -1 --pretty=format:%s $commit_hash)" >> /tmp/all_diffs.txt
+            echo "Author: $(git log -1 --pretty=format:%an $commit_hash)" >> /tmp/all_diffs.txt
+            echo "Date: $(git log -1 --pretty=format:%ci $commit_hash)" >> /tmp/all_diffs.txt
+            echo "" >> /tmp/all_diffs.txt
+            git show --pretty=format: --patch $commit_hash >> /tmp/all_diffs.txt
+            echo "" >> /tmp/all_diffs.txt
+            echo "" >> /tmp/all_diffs.txt
+          done < /tmp/commit_hashes.txt
+
+          # Show size of diff file
+          DIFF_SIZE=$(wc -c < /tmp/all_diffs.txt | tr -d ' ')
+          echo "Total diff size: $DIFF_SIZE bytes"
+
+          # If diff is too large (>100KB), warn but continue
+          if [ "$DIFF_SIZE" -gt 100000 ]; then
+            echo "⚠️  Warning: Diff is large ($DIFF_SIZE bytes). AI analysis may be truncated."
+          fi
+
+      - name: Run security scan
+        id: scan
+        if: steps.commits.outputs.has_commits == 'true'
+        uses: docker/cagent-action@f3674be1f7dc484dff8435720e9ccd8479721c42
+        with:
+          agent: agentcatalog/github-action-security-scanner
+          prompt: |
+            Analyze these commits from the past ${{ inputs.days_back || '7' }} days for security vulnerabilities.
+
+            Total commits: ${{ steps.commits.outputs.commit_count }}
+
+            $(cat /tmp/all_diffs.txt)
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          timeout: 300000  # 5 minutes
+
+      - name: Validate reported file paths
+        id: validate
+        if: steps.commits.outputs.has_commits == 'true'
+        env:
+          OUTPUT_FILE: ${{ steps.scan.outputs.output-file }}
+        run: |
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "No output file found"
+            echo "has_valid_report=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check if the report contains "No security issues detected"
+          if grep -q "No security issues detected" "$OUTPUT_FILE"; then
+            echo "✅ No security issues found"
+            echo "has_valid_report=false" >> $GITHUB_OUTPUT
+            echo "has_security_issues=false" >> $GITHUB_OUTPUT
+            echo "has_hallucinations=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # If we get here, the report claims to have found issues
+          echo "has_security_issues=true" >> $GITHUB_OUTPUT
+
+          # Extract file paths from the report (pattern: **File:** `path/to/file.ts:123`)
+          echo "Extracting file paths from security report..."
+          # Use sed for portability (works on both GNU and BSD)
+          sed -n 's/.*\*\*File:\*\* `\([^:`]*\).*/\1/p' "$OUTPUT_FILE" > /tmp/reported_files.txt || true
+
+          REPORTED_COUNT=$(wc -l < /tmp/reported_files.txt | tr -d ' ')
+          echo "Found $REPORTED_COUNT file paths in report"
+
+          if [ "$REPORTED_COUNT" -eq 0 ]; then
+            echo "⚠️ Warning: Report claims issues but contains no file paths"
+            echo "has_valid_report=true" >> $GITHUB_OUTPUT
+            echo "has_hallucinations=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Validate each file path exists in the repository
+          > /tmp/invalid_files.txt
+          > /tmp/valid_files.txt
+
+          while IFS= read -r filepath; do
+            if [ -f "$filepath" ] || git ls-files --error-unmatch "$filepath" >/dev/null 2>&1; then
+              echo "$filepath" >> /tmp/valid_files.txt
+              echo "  ✓ Valid: $filepath"
+            else
+              echo "$filepath" >> /tmp/invalid_files.txt
+              echo "  ✗ INVALID (hallucinated): $filepath"
+            fi
+          done < /tmp/reported_files.txt
+
+          INVALID_COUNT=$(wc -l < /tmp/invalid_files.txt | tr -d ' ')
+          VALID_COUNT=$(wc -l < /tmp/valid_files.txt | tr -d ' ')
+
+          echo ""
+          echo "Validation results:"
+          echo "  - Valid file paths: $VALID_COUNT"
+          echo "  - Invalid file paths (hallucinations): $INVALID_COUNT"
+
+          if [ "$INVALID_COUNT" -gt 0 ]; then
+            echo "has_hallucinations=true" >> $GITHUB_OUTPUT
+            echo "hallucination_count=$INVALID_COUNT" >> $GITHUB_OUTPUT
+
+            # Create warning report
+            {
+              echo "⚠️ **AI HALLUCINATION DETECTED**"
+              echo ""
+              echo "The security scanner reported $INVALID_COUNT issue(s) in files that don't exist:"
+              echo ""
+              while IFS= read -r filepath; do
+                echo "- \`$filepath\`"
+              done < /tmp/invalid_files.txt
+              echo ""
+              echo "These are AI hallucinations and have been filtered out."
+              echo ""
+            } > /tmp/hallucination_warning.md
+          else
+            echo "has_hallucinations=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ "$VALID_COUNT" -gt 0 ]; then
+            echo "✅ Found $VALID_COUNT valid security issues"
+            echo "has_valid_report=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ All reported issues were hallucinations - no real issues found"
+            echo "has_valid_report=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check if issues were found
+        id: check-issues
+        if: steps.commits.outputs.has_commits == 'true'
+        run: |
+          # Only create issue if security issues were actually found
+          if [ "${{ steps.validate.outputs.has_security_issues }}" = "true" ] && [ "${{ steps.validate.outputs.has_valid_report }}" = "true" ]; then
+            if [ "${{ steps.validate.outputs.has_hallucinations }}" = "true" ]; then
+              echo "⚠️ Valid security issues found, but some hallucinations were filtered"
+            fi
+            echo "has_issues=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No security issues to report"
+            echo "has_issues=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create security issue
+        if: steps.check-issues.outputs.has_issues == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OUTPUT_FILE: ${{ steps.scan.outputs.output-file }}
+          COMMIT_COUNT: ${{ steps.commits.outputs.commit_count }}
+          DAYS_BACK: ${{ inputs.days_back || '7' }}
+          GITHUB_REPO: ${{ github.repository }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          SCAN_DATE=$(date -u +"%Y-%m-%d")
+
+          # Create issue title
+          TITLE="🚨 Security Scan Results - $SCAN_DATE"
+
+          # Prepare issue body with header
+          cat > /tmp/issue_body.md <<'HEADER'
+          **Automated security scan detected potential vulnerabilities in recent commits.**
+
+          > ⚠️ This is an automated scan. Please review each finding carefully as there may be false positives.
+
+          ---
+
+          HEADER
+
+          # Add hallucination warning if detected
+          if [ "${{ steps.validate.outputs.has_hallucinations }}" = "true" ]; then
+            cat /tmp/hallucination_warning.md >> /tmp/issue_body.md
+            echo "---" >> /tmp/issue_body.md
+            echo "" >> /tmp/issue_body.md
+          fi
+
+          # Append the scan results
+          cat "$OUTPUT_FILE" >> /tmp/issue_body.md
+
+          # Add footer
+          cat >> /tmp/issue_body.md <<FOOTER
+
+          ---
+
+          **Scan Details:**
+          - Commits scanned: $COMMIT_COUNT
+          - Time period: Past $DAYS_BACK days
+          - Scan date: $SCAN_DATE
+          - Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPO/actions/runs/$GITHUB_RUN_ID
+
+          **Next Steps:**
+          1. Review each issue for validity (automated scans may have false positives)
+          2. Create separate issues for confirmed vulnerabilities if needed
+          3. Assign priority based on severity and exploitability
+          4. Close this issue once all findings have been addressed or dismissed
+
+          /label security
+          FOOTER
+
+          # Create the issue
+          gh issue create \
+            --repo "$GITHUB_REPO" \
+            --title "$TITLE" \
+            --body-file /tmp/issue_body.md \
+            --label "security"
+
+          echo "✅ Security issue created"
+
+      - name: Post success message
+        if: steps.check-issues.outputs.has_issues == 'false' && steps.commits.outputs.has_commits == 'true'
+        env:
+          COMMIT_COUNT: ${{ steps.commits.outputs.commit_count }}
+        run: |
+          echo "✅ Security scan completed successfully"
+          echo "✅ No security issues detected in $COMMIT_COUNT commits"
+          echo ""
+          echo "To view the full scan results, check the workflow output."
+
+      - name: Post summary
+        if: always() && steps.commits.outputs.has_commits == 'true'
+        env:
+          COMMIT_COUNT: ${{ steps.commits.outputs.commit_count }}
+          DAYS_BACK: ${{ inputs.days_back || '7' }}
+          HAS_HALLUCINATIONS: ${{ steps.validate.outputs.has_hallucinations }}
+          HALLUCINATION_COUNT: ${{ steps.validate.outputs.hallucination_count }}
+          HAS_ISSUES: ${{ steps.check-issues.outputs.has_issues }}
+        run: |
+          {
+            echo "## Security Scan Summary"
+            echo ""
+            echo "**Commits scanned:** $COMMIT_COUNT"
+            echo "**Time period:** Past $DAYS_BACK days"
+            echo ""
+            if [ "$HAS_HALLUCINATIONS" = "true" ]; then
+              echo "**⚠️ AI Hallucinations Detected:** $HALLUCINATION_COUNT file(s)"
+              echo ""
+              echo "The AI agent reported security issues in files that don't exist."
+              echo "These have been filtered out automatically."
+              echo ""
+            fi
+            if [ "$HAS_ISSUES" = "true" ]; then
+              echo "**Result:** 🚨 Security issues detected"
+              echo ""
+              echo "A GitHub issue has been created with detailed findings."
+            else
+              echo "**Result:** ✅ No security issues detected"
+            fi
+          } >> $GITHUB_STEP_SUMMARY

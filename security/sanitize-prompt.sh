@@ -29,6 +29,7 @@ fi
 echo "Sanitizing user-provided prompt for injection patterns..."
 
 # Define suspicious patterns that indicate prompt injection attempts
+# Note: These patterns are designed to catch malicious commands, not code references
 SUSPICIOUS_PATTERNS=(
   'ignore.*previous.*instruction'
   'ignore.*all.*instruction'
@@ -39,17 +40,24 @@ SUSPICIOUS_PATTERNS=(
   'admin.*mode'
   'debug.*mode'
   'developer.*mode'
-  'ANTHROPIC_API_KEY'
-  'OPENAI_API_KEY'
-  'GITHUB_TOKEN'
-  'process\.env'
-  'printenv'
-  'echo.*\$'
-  'cat.*\.env'
-  'show.*me.*key'
-  'reveal.*key'
-  'display.*secret'
-  'what.*is.*your.*api.*key'
+  # Only flag API keys when actively trying to extract them (not just code references)
+  'echo.*\$.*ANTHROPIC_API_KEY'
+  'echo.*\$.*OPENAI_API_KEY'
+  'echo.*\$.*GITHUB_TOKEN'
+  'print\(.*ANTHROPIC_API_KEY'
+  'print\(.*OPENAI_API_KEY'
+  'print\(.*GITHUB_TOKEN'
+  'console\.log\(.*ANTHROPIC_API_KEY'
+  'console\.log\(.*OPENAI_API_KEY'
+  'console\.log\(.*GITHUB_TOKEN'
+  'printenv\s+(ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN)'
+  'cat\s+\.env'
+  # Only flag key extraction when it's clearly a command/question
+  'show.*me.*(your|the|my).*key'
+  'reveal.*(your|the|my).*(key|secret|token)'
+  'display.*(your|the|my).*(key|secret|token)'
+  'what.*is.*(your|the).*api.*key'
+  'give.*me.*(your|the).*(key|secret|token)'
 )
 
 # Check each pattern
