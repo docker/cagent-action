@@ -80,18 +80,32 @@ jobs:
             echo "⚠️  Warning: Diff is large ($DIFF_SIZE bytes). AI analysis may be truncated."
           fi
 
+          # Create the full prompt for security scanning
+          # Using a multiline output to avoid command substitution in YAML
+          cat > /tmp/scan_prompt.txt <<EOF
+          Analyze these commits from the past $DAYS_BACK days for security vulnerabilities.
+
+          Total commits: $COMMIT_COUNT
+
+          EOF
+
+          # Append the diffs to the prompt
+          cat /tmp/all_diffs.txt >> /tmp/scan_prompt.txt
+
+          # Set prompt as multiline output
+          {
+            echo "prompt<<PROMPT_EOF"
+            cat /tmp/scan_prompt.txt
+            echo "PROMPT_EOF"
+          } >> $GITHUB_OUTPUT
+
       - name: Run security scan
         id: scan
         if: steps.commits.outputs.has_commits == 'true'
         uses: docker/cagent-action@f3674be1f7dc484dff8435720e9ccd8479721c42
         with:
           agent: agentcatalog/github-action-security-scanner
-          prompt: |
-            Analyze these commits from the past ${{ inputs.days_back || '7' }} days for security vulnerabilities.
-
-            Total commits: ${{ steps.commits.outputs.commit_count }}
-
-            $(cat /tmp/all_diffs.txt)
+          prompt: ${{ steps.commits.outputs.prompt }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           timeout: 300  # 5 minutes
 
@@ -119,16 +133,26 @@ jobs:
           # If we get here, the report claims to have found issues
           echo "has_security_issues=true" >> $GITHUB_OUTPUT
 
-          # Extract file paths from the report (pattern: **File:** `path/to/file.ts:123`)
+          # Extract file paths from the report.
+          # Expected format in the report: **File:** `path/to/file.ts:123`
+          # Only lines matching this exact format will be extracted.
           echo "Extracting file paths from security report..."
+          echo "Expected format: **File:** \`path/to/file.ts:123\`"
+
           # Use sed for portability (works on both GNU and BSD)
-          sed -n 's/.*\*\*File:\*\* `\([^:`]*\).*/\1/p' "$OUTPUT_FILE" > /tmp/reported_files.txt || true
+          sed -n 's/.*\*\*File:\*\* `\([^:`]*\).*/\1/p' "$OUTPUT_FILE" > /tmp/reported_files.txt
+          EXTRACTION_STATUS=$?
+
+          if [ $EXTRACTION_STATUS -ne 0 ]; then
+            echo "⚠️ Warning: sed command failed during file path extraction"
+          fi
 
           REPORTED_COUNT=$(wc -l < /tmp/reported_files.txt | tr -d ' ')
           echo "Found $REPORTED_COUNT file paths in report"
 
           if [ "$REPORTED_COUNT" -eq 0 ]; then
-            echo "⚠️ Warning: Report claims issues but contains no file paths"
+            echo "⚠️ Warning: Report claims issues but contains no file paths in expected format"
+            echo "This could mean the AI agent output format changed, or issues lack specific file references"
             echo "has_valid_report=true" >> $GITHUB_OUTPUT
             echo "has_hallucinations=false" >> $GITHUB_OUTPUT
             exit 0
