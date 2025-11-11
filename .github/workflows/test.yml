@@ -1,0 +1,176 @@
+name: Test cagent-action
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-prompt-sanitization:
+    name: Prompt Sanitization Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Run prompt sanitization tests
+        run: |
+          cd tests
+          chmod +x test-local.sh
+          ./test-local.sh
+
+  test-output-extraction:
+    name: Output Extraction Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Run output extraction tests
+        run: |
+          cd tests
+          chmod +x test-output-extraction.sh
+          ./test-output-extraction.sh
+
+  test-job-summary:
+    name: Job Summary Format Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Run job summary tests
+        run: |
+          cd tests
+          chmod +x test-job-summary.sh
+          ./test-job-summary.sh
+
+  test-security:
+    name: Security Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Run security tests
+        run: |
+          cd tests
+          chmod +x test-security.sh
+          ./test-security.sh
+
+  test-exploits:
+    name: Exploit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Run exploit tests
+        run: |
+          cd tests
+          chmod +x test-exploits.sh
+          ./test-exploits.sh
+
+  test-pirate-agent:
+    name: Pirate Agent Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Run test
+        id: pirate
+        uses: ./
+        with:
+          agent: agentcatalog/pirate
+          prompt: "What do we ship today?"
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Validate output and exit code
+        run: |
+          OUTPUT_FILE="${{ steps.pirate.outputs.output-file }}"
+
+          # Check that exit code is 0 (success)
+          if [ "${{ steps.pirate.outputs.exit-code }}" != "0" ]; then
+            echo "❌ Agent failed with exit code: ${{ steps.pirate.outputs.exit-code }}"
+            exit 1
+          fi
+          echo "✅ Agent completed successfully with exit code 0"
+
+          # Check that output file exists
+          if [ ! -f "$OUTPUT_FILE" ]; then
+            echo "❌ Output file not found: $OUTPUT_FILE"
+            exit 1
+          fi
+          echo "✅ Output file found: $OUTPUT_FILE"
+
+          # Display the output for debugging
+          echo "--- Agent Output ---"
+          cat "$OUTPUT_FILE"
+          echo "--- End Output ---"
+
+          # Check that output is clean (no agent markers or metadata in output)
+          if grep -qF -- "--- Agent: root ---" "$OUTPUT_FILE"; then
+            echo "⚠️  Output still contains '--- Agent: root ---' marker (not fully cleaned)"
+          fi
+
+          # Check that output doesn't contain log metadata
+          if grep -qE "^(time=|level=)" "$OUTPUT_FILE"; then
+            echo "❌ Output contains log metadata (time= or level=) - cleaning failed"
+            exit 1
+          fi
+          echo "✅ Output is clean (no log metadata)"
+
+          # Check that there is actual content (non-empty, non-whitespace)
+          CONTENT=$(cat "$OUTPUT_FILE" | grep -v '^$' | head -n 5)
+
+          if [ -z "$CONTENT" ]; then
+            echo "❌ No content found in output file"
+            exit 1
+          fi
+
+          echo "✅ Found agent response content"
+          echo "Response preview: $(echo "$CONTENT" | head -n 1)"
+
+      - name: Test should fail on invalid agent
+        id: invalid-agent
+        continue-on-error: true
+        uses: ./
+        with:
+          agent: agentcatalog/nonexistent
+          prompt: "This should fail"
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Verify invalid agent failed
+        run: |
+          OUTPUT_FILE="${{ steps.invalid-agent.outputs.output-file }}"
+
+          # Check exit code OR check for error in output (cagent may exit 0 even on pull failure)
+          if [ "${{ steps.invalid-agent.outputs.exit-code }}" == "0" ]; then
+            # Exit code is 0, check if output contains error message
+            if [ -f "$OUTPUT_FILE" ] && grep -q "failed to pull" "$OUTPUT_FILE"; then
+              echo "✅ Invalid agent correctly failed (error in output)"
+            else
+              echo "❌ Invalid agent should have failed but succeeded with no error"
+              exit 1
+            fi
+          else
+            echo "✅ Invalid agent correctly failed (non-zero exit code)"
+          fi

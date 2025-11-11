@@ -1,0 +1,48 @@
+name: Code Analysis with CAgent
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get PR diff
+        id: diff
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > pr.diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Analyze Code Changes
+        id: analysis
+        uses: docker/cagent-action@v2.0.0
+        with:
+          agent: docker/code-analyzer
+          prompt: |
+            Analyze the following code changes for quality and best practices:
+
+            ```diff
+            $(cat pr.diff)
+            ```
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post analysis as comment
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body-file "${{ steps.analysis.outputs.output-file }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
