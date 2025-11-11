@@ -2,6 +2,28 @@
 
 A GitHub Action for running [cagent](https://github.com/docker/cagent) AI agents in your workflows. This action simplifies the setup and execution of CAgent, handling binary downloads and environment configuration automatically.
 
+## Quick Start
+
+1. **Add the action to your workflow**:
+   ```yaml
+   - uses: docker/cagent-action@v2.0.0
+     with:
+       agent: docker/code-analyzer
+       prompt: "Analyze this code"
+     env:
+       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+   ```
+
+2. **Configure API key** in your repository settings:
+   - Go to `Settings` → `Secrets and variables` → `Actions`
+   - Add `ANTHROPIC_API_KEY` with your API key from [Anthropic Console](https://console.anthropic.com/)
+
+3. **That's it!** The action will automatically:
+   - Download the cagent binary
+   - Run your specified agent
+   - Scan outputs for leaked secrets
+   - Provide results in workflow logs
+
 ## 🔒 Security Features
 
 This action includes **built-in security features for all agent executions**:
@@ -256,11 +278,25 @@ jobs:
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or pull request on [GitHub](https://github.com/docker/cagent-action).
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
+
+- Setting up your development environment
+- Running tests
+- Submitting pull requests
+- Reporting security issues
+
+Please also read our [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Support
+
+- 📖 [Documentation](README.md)
+- 🐛 [Report Issues](https://github.com/docker/cagent-action/issues)
+- 💬 [Discussions](https://github.com/docker/cagent-action/discussions)
+- 🔒 [Security Policy](security/README.md)
 
 ## License
 
-MIT License - see LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Links
 
