@@ -116,11 +116,10 @@ jobs:
   with:
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
-    cagent-version: v1.6.6
+    cagent-version: v1.9.11
     mcp-gateway: true  # Set to true to install mcp-gateway
     mcp-gateway-version: v0.22.0
     yolo: false  # Require manual approval
-    tui: true    # Enable terminal UI
     timeout: 600  # 10 minute timeout
     debug: true   # Enable debug logging
     working-directory: ./src
@@ -172,15 +171,14 @@ jobs:
 | `timeout` | Timeout in seconds for agent execution (0 for no timeout) | No | `0` |
 | `debug` | Enable debug mode with verbose logging (`true`/`false`) | No | `false` |
 | `working-directory` | Working directory to run the agent in | No | `.` |
-| `tui` | Enable TUI mode (`true`/`false`) | No | `false` |
 | `yolo` | Auto-approve all prompts (`true`/`false`) | No | `true` |
-| `extra-args` | Additional arguments to pass to `cagent run` | No | - |
+| `extra-args` | Additional arguments to pass to `cagent exec` | No | - |
 
 ## Outputs
 
 | Output | Description |
 |--------|-------------|
-| `exit-code` | Exit code from the cagent run |
+| `exit-code` | Exit code from the cagent exec |
 | `output-file` | Path to the output log file |
 | `cagent-version` | Version of cagent that was used |
 | `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`) |

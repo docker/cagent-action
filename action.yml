@@ -15,7 +15,7 @@ inputs:
   cagent-version:
     description: "Version of cagent to use"
     required: false
-    default: "v1.6.6"
+    default: "v1.9.11"
   mcp-gateway:
     description: "Install mcp-gateway (true/false)"
     required: false
@@ -48,22 +48,18 @@ inputs:
     description: "Working directory to run the agent in"
     required: false
     default: "."
-  tui:
-    description: "Enable TUI mode (true/false)"
-    required: false
-    default: "false"
   yolo:
     description: "Enable yolo mode - auto-approve all prompts (true/false)"
     required: false
     default: "true"
   extra-args:
-    description: "Additional arguments to pass to cagent run"
+    description: "Additional arguments to pass to cagent exec"
     required: false
     default: ""
 
 outputs:
   exit-code:
-    description: "Exit code from cagent run"
+    description: "Exit code from cagent exec"
     value: ${{ steps.run-agent.outputs.exit-code }}
   output-file:
     description: "Path to the output log file"
@@ -266,7 +262,6 @@ runs:
         DEBUG: ${{ inputs.debug }}
         YOLO: ${{ inputs.yolo }}
         EXTRA_ARGS: ${{ inputs.extra-args }}
-        TUI: ${{ inputs.tui }}
         TIMEOUT: ${{ inputs.timeout }}
         WORKING_DIR: ${{ inputs.working-directory }}
         CAGENT_VERSION: ${{ inputs.cagent-version }}
@@ -290,14 +285,12 @@ runs:
         echo "Output file: $OUTPUT_FILE"
 
         # Build command arguments array (SECURE: no eval!)
-        ARGS=("run")
+        ARGS=("exec")
 
         # Add flags
         if [ "$YOLO" = "true" ]; then
           ARGS+=("--yolo")
         fi
-
-        ARGS+=("--tui=$TUI")
 
         # Add extra args if provided
         # Note: This uses simple word splitting. Quoted arguments with spaces are not supported.
