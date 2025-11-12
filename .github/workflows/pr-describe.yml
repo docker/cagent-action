@@ -1,0 +1,216 @@
+name: Generate PR Description
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  generate-description:
+    # Only run if comment contains /describe and is on a PR
+    if: ${{ (github.event.issue.pull_request && contains(github.event.comment.body, '/describe')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Validate PR and add reaction
+        id: validate_pr
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const prNumber = context.issue.number;
+            const commentId = context.payload.comment.id;
+
+            // Validate PR number
+            if (!Number.isInteger(prNumber) || prNumber < 1 || prNumber > 99999) {
+              core.setFailed(`❌ Error: Invalid PR number (got: ${prNumber})`);
+              return;
+            }
+
+            console.log(`✅ Validated PR number: ${prNumber}`);
+            core.setOutput('pr_number', prNumber);
+
+            // Add "eyes" reaction to comment
+            try {
+              await github.rest.reactions.createForIssueComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: commentId,
+                content: 'eyes'
+              });
+              console.log('👀 Added reaction to comment');
+            } catch (error) {
+              console.log(`⚠️ Warning: Could not add reaction: ${error.message}`);
+            }
+
+      - name: Get PR details
+        id: pr_details
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const fs = require('fs');
+            const prNumber = ${{ steps.validate_pr.outputs.pr_number }};
+
+            try {
+              // Get PR information
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+
+              // Set outputs for PR metadata
+              core.setOutput('title', pr.title);
+              core.setOutput('branch', pr.head.ref);
+              core.setOutput('base', pr.base.ref);
+              core.setOutput('additions', pr.additions);
+              core.setOutput('deletions', pr.deletions);
+              core.setOutput('changed_files', pr.changed_files);
+
+              console.log(`✅ Retrieved PR details for #${prNumber}`);
+              console.log(`📊 Stats: ${pr.changed_files} files, +${pr.additions}/-${pr.deletions} lines`);
+
+              // Get commit messages
+              const { data: commits } = await github.rest.pulls.listCommits({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+
+              const commitMessages = commits.map(commit => {
+                const message = commit.commit.message.split('\n')[0];
+                const sha = commit.sha.substring(0, 7);
+                return `- ${message} (${sha})`;
+              }).join('\n');
+
+              fs.writeFileSync('commits.txt', commitMessages);
+
+              // Get list of changed files with stats
+              const { data: files } = await github.rest.pulls.listFiles({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+
+              const filesList = files.map(file =>
+                `- \`${file.filename}\` (+${file.additions}/-${file.deletions}) - ${file.status}`
+              ).join('\n');
+
+              fs.writeFileSync('files.txt', filesList);
+
+              console.log(`📝 Generated commits.txt and files.txt`);
+
+            } catch (error) {
+              core.setFailed(`❌ Failed to fetch PR details: ${error.message}`);
+            }
+
+      - name: Generate description with AI
+        id: generate
+        uses: docker/cagent-action@a768b1458a6497f6ee9d203011fbe1104b6ede43
+        with:
+          agent: agentcatalog/github-action-pr-description-generator
+          prompt: |
+            **PR Metadata:**
+            - **Title:** ${{ steps.pr_details.outputs.title }}
+            - **Branch:** ${{ steps.pr_details.outputs.branch }} → ${{ steps.pr_details.outputs.base }}
+            - **PR Number:** #${{ steps.validate_pr.outputs.pr_number }}
+            - **Stats:** ${{ steps.pr_details.outputs.changed_files }} files changed, +${{ steps.pr_details.outputs.additions }}/-${{ steps.pr_details.outputs.deletions }} lines
+
+            **Commit Messages:**
+            $(cat commits.txt)
+
+            **Changed Files:**
+            $(cat files.txt)
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          timeout: 300000 # 5 minutes
+
+      - name: Update PR description
+        if: ${{ steps.generate.conclusion == 'success' }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const fs = require('fs');
+            const prNumber = ${{ steps.validate_pr.outputs.pr_number }};
+            const descriptionFile = '${{ steps.generate.outputs.output-file }}';
+
+            // Read generated description
+            const description = fs.readFileSync(descriptionFile, 'utf8');
+
+            // Update PR body
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              body: description
+            });
+
+            console.log(`✅ Updated PR #${prNumber} with generated description`);
+
+      - name: Post success comment
+        if: ${{ steps.generate.conclusion == 'success' }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const prNumber = ${{ steps.validate_pr.outputs.pr_number }};
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: '✅ PR description has been generated and updated!'
+            });
+
+      - name: Post failure comment
+        if: ${{ failure() && steps.generate.conclusion != 'success' }}
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const prNumber = ${{ steps.validate_pr.outputs.pr_number }};
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: '❌ Failed to generate PR description. Check workflow logs for details.'
+            });
+
+      - name: Post summary
+        if: always()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const prNumber = ${{ steps.validate_pr.outputs.pr_number }};
+            const title = '${{ steps.pr_details.outputs.title }}';
+            const branch = '${{ steps.pr_details.outputs.branch }}';
+            const base = '${{ steps.pr_details.outputs.base }}';
+            const conclusion = '${{ steps.generate.conclusion }}';
+
+            const summary = [
+              '## 📝 PR Description Generator',
+              '',
+              `**PR:** #${prNumber}`,
+              `**Title:** ${title}`,
+              `**Branch:** ${branch} → ${base}`,
+              '',
+              conclusion === 'success'
+                ? '**Result:** ✅ Description generated and PR updated'
+                : '**Result:** ❌ Failed to generate description'
+            ].join('\n');
+
+            await core.summary
+              .addRaw(summary)
+              .write();
+
+      - name: Cleanup temporary files
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f commits.txt files.txt || true
+          echo "🧹 Cleaned up temporary files"
