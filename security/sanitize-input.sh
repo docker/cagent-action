@@ -94,6 +94,7 @@ HIGH_RISK_PATTERNS=(
 
   # Encoding/obfuscation attempts
   "base64.*decode"
+  "decode.*base64"
   "atob\("
   "btoa\("
   "0x[0-9a-fA-F]{20,}"

@@ -96,25 +96,30 @@ SECRET_PATTERNS=(
 - `leaked=true/false` to `$GITHUB_OUTPUT`
 - Exits with code 1 if secrets detected
 
-### `sanitize-prompt.sh`
+### `sanitize-input.sh`
 
-**Purpose:** Prompt sanitization for general agent mode
+**Purpose:** Input sanitization for PR diffs and user prompts
 
 **Function:**
-- Warns about suspicious patterns in user prompts
-- Detects prompt injection attempts
-- Checks for encoded content
-
-**Note:** This is warning-only (execution continues) unlike input sanitization which blocks
+- Removes code comments from diffs (prevents hidden instructions)
+- Detects HIGH-RISK patterns (blocks execution)
+  - Instruction override attempts ("ignore previous instructions")
+  - Direct secret extraction commands (`echo $API_KEY`, `console.log(process.env)`)
+  - System prompt extraction attempts
+  - Jailbreak attempts
+  - Encoding/obfuscation (base64, hex)
+- Detects MEDIUM-RISK patterns (warns but allows execution)
+  - API key variable names in configuration
 
 **Usage:**
 ```bash
-./sanitize-prompt.sh "User prompt here"
+./sanitize-input.sh input-file.txt output-file.txt
 ```
 
 **Outputs:**
-- `suspicious=true/false` to `$GITHUB_OUTPUT`
-- Exits with code 0 (warnings only)
+- `blocked=true/false` to `$GITHUB_OUTPUT`
+- `risk-level=low/medium/high` to `$GITHUB_OUTPUT`
+- Exits with code 1 if HIGH-RISK patterns detected
 
 ## Built-in Protections
 
@@ -138,7 +143,7 @@ SECRET_PATTERNS=(
 ```bash
 cd tests
 
-# Run security test suite (10 tests)
+# Run security test suite (13 tests)
 ./test-security.sh
 
 # Run exploit simulation tests (6 tests)
@@ -147,21 +152,25 @@ cd tests
 
 ### Test Coverage
 
-**test-security.sh** (10 tests):
+**test-security.sh** (13 tests):
 1. Clean input (should pass)
 2. Prompt injection in comment (should block)
 3. Clean output (should pass)
 4. Leaked API key (should block)
 5. Leaked GitHub token (should block)
 6. Authorization - OWNER (should pass)
-7. Authorization - CONTRIBUTOR (should block)
-8. Clean prompt (should pass)
-9. Prompt injection in user prompt (should warn)
-10. Encoded content in prompt (should warn)
+7. Authorization - COLLABORATOR (should pass)
+8. Authorization - CONTRIBUTOR (should block)
+9. Clean prompt (should pass)
+10. Prompt injection in user prompt (should block)
+11. Encoded content in prompt (should block)
+12. Low risk input - normal code (should pass)
+13. Medium risk input - API key variable (should warn but pass)
+14. High risk input - behavioral injection (should block)
 
 **test-exploits.sh** (6 tests):
-1. Prompt injection via comment (should be blocked)
-2. Encoded base64 injection (should be blocked)
+1. Prompt injection via comment (should be stripped)
+2. High-risk behavioral injection (should be blocked)
 3. Output token leak (should be blocked)
 4. Prompt override attempt (should warn)
 5. Extra args parsing sanity check
