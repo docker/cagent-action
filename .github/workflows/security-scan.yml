@@ -103,7 +103,7 @@ jobs:
       - name: Run security scan
         id: scan
         if: steps.commits.outputs.has_commits == 'true'
-        uses: docker/cagent-action@v1.0.0
+        uses: ./
         with:
           agent: agentcatalog/github-action-security-scanner
           prompt: ${{ steps.commits.outputs.prompt }}

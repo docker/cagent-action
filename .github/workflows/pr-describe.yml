@@ -113,7 +113,7 @@ jobs:
 
       - name: Generate description with AI
         id: generate
-        uses: docker/cagent-action@a768b1458a6497f6ee9d203011fbe1104b6ede43
+        uses: ./
         with:
           agent: agentcatalog/github-action-pr-description-generator
           prompt: |
