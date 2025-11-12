@@ -1,6 +1,6 @@
 #!/bin/bash
-# Sanitize PR input by removing code comments and blocking suspicious patterns
-# This prevents prompt injection attacks hidden in code comments
+# Sanitize input by removing code comments and blocking suspicious patterns
+# This prevents prompt injection attacks hidden in code comments or user prompts
 
 set -e
 
@@ -32,15 +32,71 @@ rm -f "$OUTPUT.bak"
 # Define HIGH-RISK patterns that strongly indicate prompt injection attempts
 # These are behavioral instructions that shouldn't appear in normal code
 HIGH_RISK_PATTERNS=(
+  # Instruction override attempts
   "ignore.*previous.*instruction"
+  "ignore.*all.*instruction"
+  "disregard.*previous"
+  "forget.*previous"
+  "new.*instruction.*follow"
+
+  # System/mode override attempts
   "system.*override"
+  "system.*mode"
+  "admin.*mode"
   "debug.*mode.*enable"
-  "print.*environment.*variable"
-  "echo.*\\\$ANTHROPIC_API_KEY"
-  "echo.*\\\$GITHUB_TOKEN"
-  "echo.*\\\$OPENAI_API_KEY"
-  "console\\.log.*process\\.env"
+  "debug.*mode"
+  "developer.*mode"
+
+  # Direct secret extraction commands - shell
+  "echo.*\\\$.*ANTHROPIC_API_KEY"
+  "echo.*\\\$.*GITHUB_TOKEN"
+  "echo.*\\\$.*OPENAI_API_KEY"
+  "echo.*\\\$.*GOOGLE_API_KEY"
+
+  # Direct secret extraction commands - Python
+  "print\(.*ANTHROPIC_API_KEY"
+  "print\(.*OPENAI_API_KEY"
+  "print\(.*GITHUB_TOKEN"
+  "print\(.*GOOGLE_API_KEY"
   "print.*os\\.environ"
+
+  # Direct secret extraction commands - JavaScript
+  "console\\.log.*process\\.env"
+  "console\\.log\(.*ANTHROPIC_API_KEY"
+  "console\\.log\(.*OPENAI_API_KEY"
+  "console\\.log\(.*GITHUB_TOKEN"
+  "console\\.log\(.*GOOGLE_API_KEY"
+
+  # Environment variable extraction
+  "print.*environment.*variable"
+  "printenv[[:space:]]+(ANTHROPIC_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN|GOOGLE_API_KEY)"
+
+  # File access to secrets
+  "cat[[:space:]]+\\.env"
+
+  # Direct secret revelation requests
+  "show.*me.*(your|the|my).*(key|secret|token|api)"
+  "reveal.*(your|the|my).*(key|secret|token|api)"
+  "display.*(your|the|my).*(key|secret|token|api)"
+  "what.*is.*(your|the).*(api.*key|secret|token)"
+  "give.*me.*(your|the).*(key|secret|token|api)"
+
+  # System prompt extraction
+  "repeat.*system.*prompt"
+  "what.*are.*your.*instructions"
+  "show.*initial.*prompt"
+  "show.*system.*prompt"
+
+  # Jailbreak attempts
+  "act.*as.*no.*restrictions"
+  "pretend.*to.*be.*evil"
+  "pretend.*you.*are.*jailbroken"
+
+  # Encoding/obfuscation attempts
+  "base64.*decode"
+  "atob\("
+  "btoa\("
+  "0x[0-9a-fA-F]{20,}"
 )
 
 # Define MEDIUM-RISK patterns that warrant warnings but shouldn't block
@@ -49,9 +105,10 @@ MEDIUM_RISK_PATTERNS=(
   "ANTHROPIC_API_KEY"
   "GITHUB_TOKEN"
   "OPENAI_API_KEY"
+  "GOOGLE_API_KEY"
 )
 
-echo "Checking for suspicious patterns..."
+echo "🔍 Checking for suspicious patterns..."
 
 FOUND_HIGH_RISK=false
 FOUND_MEDIUM_RISK=false
@@ -111,6 +168,12 @@ if [ "$FOUND_HIGH_RISK" = true ]; then
     echo "blocked=true" >> "$GITHUB_OUTPUT" || true
     echo "risk-level=high" >> "$GITHUB_OUTPUT" || true
   fi
+  echo "::error::═══════════════════════════════════════════════════════
+🚨 BLOCKED: HIGH-RISK PROMPT INJECTION DETECTED
+═══════════════════════════════════════════════════════
+The input contains patterns that strongly indicate a
+prompt injection attack. Execution has been blocked.
+═══════════════════════════════════════════════════════"
   exit 1
 fi
 
