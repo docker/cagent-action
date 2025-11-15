@@ -161,7 +161,7 @@ jobs:
 |-------|-------------|----------|---------|
 | `agent` | Agent identifier (e.g., `docker/code-analyzer`) or path to `.yaml` file | Yes | - |
 | `prompt` | Prompt to pass to the agent | No | - |
-| `cagent-version` | Version of cagent to use | No | `v1.6.6` |
+| `cagent-version` | Version of cagent to use | No | `v1.9.12` |
 | `mcp-gateway` | Install mcp-gateway (`true`/`false`) | No | `false` |
 | `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No | `v0.22.0` |
 | `anthropic-api-key` | Anthropic API key | No | `$ANTHROPIC_API_KEY` env var |
