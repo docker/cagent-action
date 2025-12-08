@@ -204,11 +204,51 @@ runs:
           return 1
         }
 
+        # Detect platform
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+
+        case "$OS" in
+          linux)
+            PLATFORM="linux"
+            ;;
+          darwin)
+            PLATFORM="darwin"
+            ;;
+          mingw*|msys*|cygwin*)
+            PLATFORM="windows"
+            ;;
+          *)
+            echo "::error::Unsupported operating system: $OS"
+            exit 1
+            ;;
+        esac
+
+        case "$ARCH" in
+          x86_64|amd64)
+            ARCH_NAME="amd64"
+            ;;
+          aarch64|arm64)
+            ARCH_NAME="arm64"
+            ;;
+          *)
+            echo "::error::Unsupported architecture: $ARCH"
+            exit 1
+            ;;
+        esac
+
+        CAGENT_BINARY="cagent-${PLATFORM}-${ARCH_NAME}"
+        if [[ "$PLATFORM" == "windows" ]]; then
+          CAGENT_BINARY="${CAGENT_BINARY}.exe"
+        fi
+
+        echo "Detected platform: $PLATFORM-$ARCH_NAME"
+
         # Download cagent if not cached
         if [[ "$CAGENT_CACHE_HIT" != "true" ]]; then
-          echo "Downloading cagent $CAGENT_VERSION..."
+          echo "Downloading cagent $CAGENT_VERSION for $PLATFORM-$ARCH_NAME..."
           retry_download \
-            "https://github.com/docker/cagent/releases/download/$CAGENT_VERSION/cagent-linux-amd64" \
+            "https://github.com/docker/cagent/releases/download/$CAGENT_VERSION/$CAGENT_BINARY" \
             "$GITHUB_WORKSPACE/cagent"
           chmod +x "$GITHUB_WORKSPACE/cagent"
         else
@@ -224,14 +264,24 @@ runs:
         # Download mcp-gateway if needed and not cached
         if [[ "$MCP_GATEWAY" == "true" ]]; then
           if [[ "$MCP_CACHE_HIT" != "true" ]]; then
-            echo "Downloading mcp-gateway $MCP_GATEWAY_VERSION..."
+            echo "Downloading mcp-gateway $MCP_GATEWAY_VERSION for $PLATFORM-$ARCH_NAME..."
+            MCP_BINARY="docker-mcp-${PLATFORM}-${ARCH_NAME}.tar.gz"
             retry_download \
-              "https://github.com/docker/mcp-gateway/releases/download/$MCP_GATEWAY_VERSION/docker-mcp-linux-amd64.tar.gz" \
+              "https://github.com/docker/mcp-gateway/releases/download/$MCP_GATEWAY_VERSION/$MCP_BINARY" \
               "mcp-gateway.tar.gz"
             tar -xzf mcp-gateway.tar.gz
+
+            if [[ "$PLATFORM" == "windows" ]]; then
+              MCP_PLUGIN_DIR="$USERPROFILE/.docker/cli-plugins"
+              MCP_BINARY_NAME="docker-mcp.exe"
+            else
+              MCP_PLUGIN_DIR="$HOME/.docker/cli-plugins"
+              MCP_BINARY_NAME="docker-mcp"
+            fi
+
             chmod +x docker-mcp
-            mkdir -p ~/.docker/cli-plugins
-            cp docker-mcp ~/.docker/cli-plugins/docker-mcp
+            mkdir -p "$MCP_PLUGIN_DIR"
+            cp docker-mcp "$MCP_PLUGIN_DIR/$MCP_BINARY_NAME"
           else
             echo "Using cached mcp-gateway binary"
           fi
