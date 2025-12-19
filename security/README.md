@@ -7,6 +7,7 @@ This directory contains security hardening scripts for the cagent-action GitHub 
 This action includes **built-in security features for all agent executions**:
 
 1. **Output Scanning** - All agent responses are scanned for leaked secrets:
+
    - API key patterns: `sk-ant-*`, `sk-*`, `sk-proj-*`
    - GitHub tokens: `ghp_*`, `gho_*`, `ghu_*`, `ghs_*`, `github_pat_*`
    - Environment variable names in output
@@ -57,15 +58,18 @@ The action implements a defense-in-depth approach:
 ### Shared Patterns (`secret-patterns.sh`)
 
 Central source of truth for secret detection patterns. This file is sourced by:
+
 - `sanitize-output.sh` - Uses `SECRET_PATTERNS` array for comprehensive regex matching
 - `action.yml` (Build safe prompt step) - Uses `SECRET_PATTERNS` for prompt verification
 
 **Why shared patterns?**
+
 - **DRY principle**: Single source of truth prevents drift
 - **Consistency**: Same patterns across all security layers
 - **Maintainability**: Update patterns in one place
 
 **Secret patterns detected:**
+
 ```bash
 SECRET_PATTERNS=(
   'sk-ant-[a-zA-Z0-9_-]{30,}'        # Anthropic API keys
@@ -88,11 +92,13 @@ SECRET_PATTERNS=(
 **Patterns:** Sources from `secret-patterns.sh` for comprehensive detection
 
 **Usage:**
+
 ```bash
 ./sanitize-output.sh output-file.txt
 ```
 
 **Outputs:**
+
 - `leaked=true/false` to `$GITHUB_OUTPUT`
 - Exits with code 1 if secrets detected
 
@@ -101,6 +107,7 @@ SECRET_PATTERNS=(
 **Purpose:** Input sanitization for PR diffs and user prompts
 
 **Function:**
+
 - Removes code comments from diffs (prevents hidden instructions)
 - Detects HIGH-RISK patterns (blocks execution)
   - Instruction override attempts ("ignore previous instructions")
@@ -112,11 +119,13 @@ SECRET_PATTERNS=(
   - API key variable names in configuration
 
 **Usage:**
+
 ```bash
 ./sanitize-input.sh input-file.txt output-file.txt
 ```
 
 **Outputs:**
+
 - `blocked=true/false` to `$GITHUB_OUTPUT`
 - `risk-level=low/medium/high` to `$GITHUB_OUTPUT`
 - Exits with code 1 if HIGH-RISK patterns detected
@@ -153,6 +162,7 @@ cd tests
 ### Test Coverage
 
 **test-security.sh** (13 tests):
+
 1. Clean input (should pass)
 2. Prompt injection in comment (should block)
 3. Clean output (should pass)
@@ -169,6 +179,7 @@ cd tests
 14. High risk input - behavioral injection (should block)
 
 **test-exploits.sh** (6 tests):
+
 1. Prompt injection via comment (should be stripped)
 2. High-risk behavioral injection (should be blocked)
 3. Output token leak (should be blocked)
@@ -185,7 +196,7 @@ All tests must pass before deployment.
 ```yaml
 - name: Run Agent
   id: agent
-  uses: docker/cagent-action@v1.0.0
+  uses: docker/cagent-action@v1.0.4
   with:
     agent: my-agent
     prompt: "Analyze the logs"
@@ -204,6 +215,7 @@ All tests must pass before deployment.
 ```
 
 All executions automatically include:
+
 - Prompt sanitization warnings
 - Output scanning for secrets
 - Incident issue creation if secrets detected
@@ -216,6 +228,7 @@ All executions automatically include:
 When adding new secret patterns:
 
 1. **Update `secret-patterns.sh`** with new regex pattern:
+
    ```bash
    SECRET_PATTERNS=(
      # ... existing patterns ...
@@ -224,11 +237,13 @@ When adding new secret patterns:
    ```
 
 2. **Add to `SECRET_PREFIXES`** if needed for quick checks:
+
    ```bash
    SECRET_PREFIXES='(sk-ant-|...|new-provider-)'
    ```
 
 3. **Run tests** to verify:
+
    ```bash
    cd tests
    ./test-security.sh
@@ -253,9 +268,9 @@ Before deploying changes:
 
 The action provides security-related outputs that can be checked in subsequent steps:
 
-| Output | Description |
-|--------|-------------|
-| `secrets-detected` | `true` if secrets were detected in output |
+| Output              | Description                                           |
+| ------------------- | ----------------------------------------------------- |
+| `secrets-detected`  | `true` if secrets were detected in output             |
 | `prompt-suspicious` | `true` if suspicious patterns were detected in prompt |
 
 ## Reporting Security Issues

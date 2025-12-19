@@ -5,8 +5,9 @@ A GitHub Action for running [cagent](https://github.com/docker/cagent) AI agents
 ## Quick Start
 
 1. **Add the action to your workflow**:
+
    ```yaml
-   - uses: docker/cagent-action@v1.0.0
+   - uses: docker/cagent-action@v1.0.4
      with:
        agent: docker/code-analyzer
        prompt: "Analyze this code"
@@ -15,6 +16,7 @@ A GitHub Action for running [cagent](https://github.com/docker/cagent) AI agents
    ```
 
 2. **Configure API key** in your repository settings:
+
    - Go to `Settings` → `Secrets and variables` → `Actions`
    - Add `ANTHROPIC_API_KEY` with your API key from [Anthropic Console](https://console.anthropic.com/)
 
@@ -40,7 +42,7 @@ See [security/README.md](security/README.md) for complete security documentation
 
 ```yaml
 - name: Run CAgent
-  uses: docker/cagent-action@v1.0.0
+  uses: docker/cagent-action@v1.0.4
   with:
     agent: docker/github-action-security-scanner
     prompt: "Analyze these commits for security vulnerabilities"
@@ -50,7 +52,7 @@ See [security/README.md](security/README.md) for complete security documentation
 
 ### Analyzing Code Changes
 
-```yaml
+````yaml
 name: Code Analysis
 on:
   pull_request:
@@ -59,7 +61,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  issues: write  # For security incident reporting
+  issues: write # For security incident reporting
 
 jobs:
   analyze:
@@ -76,7 +78,7 @@ jobs:
 
       - name: Analyze Changes
         id: analysis
-        uses: docker/cagent-action@v1.0.0
+        uses: docker/cagent-action@v1.0.4
         with:
           agent: docker/code-analyzer
           prompt: |
@@ -94,13 +96,13 @@ jobs:
             --body-file "${{ steps.analysis.outputs.output-file }}"
         env:
           GH_TOKEN: ${{ github.token }}
-```
+````
 
 ### Using a Local Agent File
 
 ```yaml
 - name: Run Custom Agent
-  uses: docker/cagent-action@v1.0.0
+  uses: docker/cagent-action@v1.0.4
   with:
     agent: ./agents/my-agent.yaml
     prompt: "Analyze the codebase"
@@ -112,16 +114,16 @@ jobs:
 
 ```yaml
 - name: Run CAgent with Custom Settings
-  uses: docker/cagent-action@v1.0.0
+  uses: docker/cagent-action@v1.0.4
   with:
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
     cagent-version: v1.9.11
-    mcp-gateway: true  # Set to true to install mcp-gateway
+    mcp-gateway: true # Set to true to install mcp-gateway
     mcp-gateway-version: v0.22.0
-    yolo: false  # Require manual approval
-    timeout: 600  # 10 minute timeout
-    debug: true   # Enable debug logging
+    yolo: false # Require manual approval
+    timeout: 600 # 10 minute timeout
+    debug: true # Enable debug logging
     working-directory: ./src
     extra-args: "--verbose"
   env:
@@ -133,7 +135,7 @@ jobs:
 ```yaml
 - name: Run CAgent
   id: agent
-  uses: docker/cagent-action@v1.0.0
+  uses: docker/cagent-action@v1.0.4
   with:
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
@@ -157,34 +159,34 @@ jobs:
 
 ## Inputs
 
-| Input | Description | Required | Default |
-|-------|-------------|----------|---------|
-| `agent` | Agent identifier (e.g., `docker/code-analyzer`) or path to `.yaml` file | Yes | - |
-| `prompt` | Prompt to pass to the agent | No | - |
-| `cagent-version` | Version of cagent to use | No | `v1.9.12` |
-| `mcp-gateway` | Install mcp-gateway (`true`/`false`) | No | `false` |
-| `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No | `v0.22.0` |
-| `anthropic-api-key` | Anthropic API key | No | `$ANTHROPIC_API_KEY` env var |
-| `openai-api-key` | OpenAI API key | No | `$OPENAI_API_KEY` env var |
-| `google-api-key` | Google API key for Gemini | No | `GOOGLE_API_KEY` env var |
-| `github-token` | GitHub token for API access | No | Auto-provided by GitHub Actions |
-| `timeout` | Timeout in seconds for agent execution (0 for no timeout) | No | `0` |
-| `debug` | Enable debug mode with verbose logging (`true`/`false`) | No | `false` |
-| `working-directory` | Working directory to run the agent in | No | `.` |
-| `yolo` | Auto-approve all prompts (`true`/`false`) | No | `true` |
-| `extra-args` | Additional arguments to pass to `cagent exec` | No | - |
+| Input                 | Description                                                                          | Required | Default                         |
+| --------------------- | ------------------------------------------------------------------------------------ | -------- | ------------------------------- |
+| `agent`               | Agent identifier (e.g., `docker/code-analyzer`) or path to `.yaml` file              | Yes      | -                               |
+| `prompt`              | Prompt to pass to the agent                                                          | No       | -                               |
+| `cagent-version`      | Version of cagent to use                                                             | No       | `v1.15.6`                       |
+| `mcp-gateway`         | Install mcp-gateway (`true`/`false`)                                                 | No       | `false`                         |
+| `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No       | `v0.22.0`                       |
+| `anthropic-api-key`   | Anthropic API key                                                                    | No       | `$ANTHROPIC_API_KEY` env var    |
+| `openai-api-key`      | OpenAI API key                                                                       | No       | `$OPENAI_API_KEY` env var       |
+| `google-api-key`      | Google API key for Gemini                                                            | No       | `GOOGLE_API_KEY` env var        |
+| `github-token`        | GitHub token for API access                                                          | No       | Auto-provided by GitHub Actions |
+| `timeout`             | Timeout in seconds for agent execution (0 for no timeout)                            | No       | `0`                             |
+| `debug`               | Enable debug mode with verbose logging (`true`/`false`)                              | No       | `false`                         |
+| `working-directory`   | Working directory to run the agent in                                                | No       | `.`                             |
+| `yolo`                | Auto-approve all prompts (`true`/`false`)                                            | No       | `true`                          |
+| `extra-args`          | Additional arguments to pass to `cagent exec`                                        | No       | -                               |
 
 ## Outputs
 
-| Output | Description |
-|--------|-------------|
-| `exit-code` | Exit code from the cagent exec |
-| `output-file` | Path to the output log file |
-| `cagent-version` | Version of cagent that was used |
-| `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`) |
-| `execution-time` | Agent execution time in seconds |
-| `secrets-detected` | Whether secrets were detected in output |
-| `prompt-suspicious` | Whether suspicious patterns were detected in user prompt |
+| Output                  | Description                                              |
+| ----------------------- | -------------------------------------------------------- |
+| `exit-code`             | Exit code from the cagent exec                           |
+| `output-file`           | Path to the output log file                              |
+| `cagent-version`        | Version of cagent that was used                          |
+| `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`)       |
+| `execution-time`        | Agent execution time in seconds                          |
+| `secrets-detected`      | Whether secrets were detected in output                  |
+| `prompt-suspicious`     | Whether suspicious patterns were detected in user prompt |
 
 ## Environment Variables
 
@@ -227,7 +229,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Security Review
-        uses: docker/cagent-action@v1.0.0
+        uses: docker/cagent-action@v1.0.4
         with:
           agent: docker/github-action-security-scanner
           prompt: "Analyze for security issues"
@@ -235,7 +237,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Code Quality Analysis
-        uses: docker/cagent-action@v1.0.0
+        uses: docker/cagent-action@v1.0.4
         with:
           agent: docker/code-quality-analyzer
           prompt: "Analyze code quality and best practices"
@@ -251,11 +253,11 @@ on:
   workflow_dispatch:
     inputs:
       agent:
-        description: 'Agent to run'
+        description: "Agent to run"
         required: true
-        default: 'docker/code-analyzer'
+        default: "docker/code-analyzer"
       prompt:
-        description: 'Prompt for the agent'
+        description: "Prompt for the agent"
         required: true
 
 jobs:
@@ -265,14 +267,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Agent
-        uses: docker/cagent-action@v1.0.0
+        uses: docker/cagent-action@v1.0.4
         with:
           agent: ${{ github.event.inputs.agent }}
           prompt: ${{ github.event.inputs.prompt }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
-
 
 ## Contributing
 

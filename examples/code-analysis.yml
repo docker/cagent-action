@@ -28,7 +28,7 @@ jobs:
 
       - name: Analyze Code Changes
         id: analysis
-        uses: docker/cagent-action@v1.0.0
+        uses: docker/cagent-action@v1.0.4
         with:
           agent: docker/code-analyzer
           prompt: |
