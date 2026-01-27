@@ -118,7 +118,7 @@ jobs:
   with:
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
-    cagent-version: v1.19.4
+    cagent-version: v1.19.7
     mcp-gateway: true # Set to true to install mcp-gateway
     mcp-gateway-version: v0.22.0
     yolo: false # Require manual approval
@@ -163,13 +163,17 @@ jobs:
 | --------------------- | ------------------------------------------------------------------------------------ | -------- | ------------------------------- |
 | `agent`               | Agent identifier (e.g., `docker/code-analyzer`) or path to `.yaml` file              | Yes      | -                               |
 | `prompt`              | Prompt to pass to the agent                                                          | No       | -                               |
-| `cagent-version`      | Version of cagent to use                                                             | No       | `v1.19.4`                       |
+| `cagent-version`      | Version of cagent to use                                                             | No       | `v1.19.7`                       |
 | `mcp-gateway`         | Install mcp-gateway (`true`/`false`)                                                 | No       | `false`                         |
 | `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No       | `v0.22.0`                       |
-| `anthropic-api-key`   | Anthropic API key                                                                    | No       | `$ANTHROPIC_API_KEY` env var    |
-| `openai-api-key`      | OpenAI API key                                                                       | No       | `$OPENAI_API_KEY` env var       |
-| `google-api-key`      | Google API key for Gemini                                                            | No       | `GOOGLE_API_KEY` env var        |
-| `github-token`        | GitHub token for API access                                                          | No       | Auto-provided by GitHub Actions |
+| `anthropic-api-key`   | Anthropic API key                                                                    | No       | `$ANTHROPIC_API_KEY` env var        |
+| `openai-api-key`      | OpenAI API key                                                                       | No       | `$OPENAI_API_KEY` env var           |
+| `google-api-key`      | Google API key for Gemini                                                            | No       | `$GOOGLE_API_KEY` env var           |
+| `aws-bearer-token-bedrock` | AWS Bearer token for Bedrock models                                             | No       | `$AWS_BEARER_TOKEN_BEDROCK` env var |
+| `xai-api-key`         | xAI API key for Grok models                                                          | No       | `$XAI_API_KEY` env var              |
+| `nebius-api-key`      | Nebius API key                                                                       | No       | `$NEBIUS_API_KEY` env var           |
+| `mistral-api-key`     | Mistral API key                                                                      | No       | `$MISTRAL_API_KEY` env var          |
+| `github-token`        | GitHub token for API access                                                          | No       | Auto-provided by GitHub Actions     |
 | `timeout`             | Timeout in seconds for agent execution (0 for no timeout)                            | No       | `0`                             |
 | `debug`               | Enable debug mode with verbose logging (`true`/`false`)                              | No       | `false`                         |
 | `working-directory`   | Working directory to run the agent in                                                | No       | `.`                             |
@@ -192,9 +196,13 @@ jobs:
 
 The action supports the following environment variables for different AI providers:
 
-- `ANTHROPIC_API_KEY`: Your Anthropic API key for Claude models
-- `OPENAI_API_KEY`: Your OpenAI API key for GPT models
-- `GOOGLE_API_KEY`: Your Google API key for Gemini models
+- `ANTHROPIC_API_KEY`: Anthropic API key for Claude models
+- `OPENAI_API_KEY`: OpenAI API key for GPT models
+- `GOOGLE_API_KEY`: Google API key for Gemini models
+- `AWS_BEARER_TOKEN_BEDROCK`: AWS Bearer token for Bedrock models
+- `XAI_API_KEY`: xAI API key for Grok models
+- `NEBIUS_API_KEY`: Nebius API key
+- `MISTRAL_API_KEY`: Mistral API key
 - `GITHUB_TOKEN`: Automatically provided by GitHub Actions (for GitHub API access)
 
 ## Permissions

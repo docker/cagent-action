@@ -1,0 +1,112 @@
+name: "PR Review - Learn from Feedback"
+description: "Process feedback on AI review comments and learn from corrections"
+author: "Docker"
+
+inputs:
+  anthropic-api-key:
+    description: "Anthropic API key"
+    required: false
+  openai-api-key:
+    description: "OpenAI API key"
+    required: false
+  google-api-key:
+    description: "Google API key for Gemini models"
+    required: false
+  aws-bearer-token-bedrock:
+    description: "AWS Bearer token for Bedrock models"
+    required: false
+  xai-api-key:
+    description: "xAI API key for Grok models"
+    required: false
+  nebius-api-key:
+    description: "Nebius API key"
+    required: false
+  mistral-api-key:
+    description: "Mistral API key"
+    required: false
+  github-token:
+    description: "GitHub token for API access"
+    required: false
+  cagent-version:
+    description: "Version of cagent to use"
+    required: false
+    default: "v1.19.7"
+  model:
+    description: "Model to use for processing feedback (e.g., anthropic/claude-haiku-4)"
+    required: false
+    default: ""
+
+outputs:
+  processed:
+    description: "Whether feedback was processed (true if parent was an agent comment)"
+    value: ${{ steps.check.outputs.is_agent }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check if reply is to agent comment
+      id: check
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+        PARENT_ID: ${{ github.event.comment.in_reply_to_id }}
+      run: |
+        if [ -z "$PARENT_ID" ]; then
+          echo "is_agent=false" >> $GITHUB_OUTPUT
+          echo "⏭️ Not a reply comment, skipping"
+          exit 0
+        fi
+
+        parent=$(gh api repos/${{ github.repository }}/pulls/comments/$PARENT_ID 2>/dev/null || echo "{}")
+        if echo "$parent" | jq -r '.body // ""' | grep -q "<!-- cagent-review -->"; then
+          echo "is_agent=true" >> $GITHUB_OUTPUT
+          echo "✅ Reply is to an agent review comment"
+        else
+          echo "is_agent=false" >> $GITHUB_OUTPUT
+          echo "⏭️ Not a reply to agent comment, skipping"
+        fi
+
+    - name: Restore reviewer memory
+      if: steps.check.outputs.is_agent == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.action_path }}/../agents/pr-review-memory.db
+        key: pr-review-memory-${{ github.repository }}
+        restore-keys: |
+          pr-review-memory-${{ github.repository }}
+
+    - name: Process feedback
+      if: steps.check.outputs.is_agent == 'true'
+      uses: docker/cagent-action@${{ github.action_ref || 'latest' }}
+      with:
+        agent: ${{ github.action_path }}/../agents/pr-review-feedback.yaml
+        prompt: |
+          A developer replied to your review comment with feedback.
+
+          **File:** ${{ github.event.comment.path }}
+          **Line:** ${{ github.event.comment.line }}
+          **Their feedback:** ${{ github.event.comment.body }}
+
+          Analyze this feedback:
+          1. If they're correcting a false positive, add a memory to avoid this mistake
+          2. If they're asking for clarification, note what was unclear
+          3. If they're agreeing and adding context, store the additional insight
+
+          Use add_memory to record what you learned, then react with 👍.
+        anthropic-api-key: ${{ inputs.anthropic-api-key }}
+        openai-api-key: ${{ inputs.openai-api-key }}
+        google-api-key: ${{ inputs.google-api-key }}
+        aws-bearer-token-bedrock: ${{ inputs.aws-bearer-token-bedrock }}
+        xai-api-key: ${{ inputs.xai-api-key }}
+        nebius-api-key: ${{ inputs.nebius-api-key }}
+        mistral-api-key: ${{ inputs.mistral-api-key }}
+        github-token: ${{ inputs.github-token }}
+        cagent-version: ${{ inputs.cagent-version }}
+        extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
+
+    - name: Save reviewer memory
+      if: steps.check.outputs.is_agent == 'true' && always()
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ github.action_path }}/../agents/pr-review-memory.db
+        key: pr-review-memory-${{ github.repository }}

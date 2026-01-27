@@ -1,0 +1,274 @@
+name: "PR Review with CAgent"
+description: "AI-powered pull request review with automatic learning from feedback"
+author: "Docker"
+
+inputs:
+  pr-number:
+    description: "Pull request number to review (auto-detected from github.event if not provided)"
+    required: false
+    default: ""
+  comment-id:
+    description: "Comment ID for reactions (auto-detected from github.event if not provided)"
+    required: false
+    default: ""
+  additional-prompt:
+    description: "Additional instructions appended to the review (e.g., language-specific patterns, project conventions)"
+    required: false
+    default: ""
+  anthropic-api-key:
+    description: "Anthropic API key"
+    required: false
+  openai-api-key:
+    description: "OpenAI API key"
+    required: false
+  google-api-key:
+    description: "Google API key for Gemini models"
+    required: false
+  aws-bearer-token-bedrock:
+    description: "AWS Bearer token for Bedrock models"
+    required: false
+  xai-api-key:
+    description: "xAI API key for Grok models"
+    required: false
+  nebius-api-key:
+    description: "Nebius API key"
+    required: false
+  mistral-api-key:
+    description: "Mistral API key"
+    required: false
+  github-token:
+    description: "GitHub token for API access"
+    required: false
+  cagent-version:
+    description: "Version of cagent to use"
+    required: false
+    default: "v1.19.7"
+  model:
+    description: "Model to use for reviews (e.g., anthropic/claude-sonnet-4-5, openai/gpt-4o)"
+    required: false
+    default: ""
+
+outputs:
+  exit-code:
+    description: "Exit code from the review"
+    value: ${{ steps.run-review.outputs.exit-code }}
+  review-posted:
+    description: "Whether a review was posted"
+    value: ${{ steps.run-review.outputs.review-posted }}
+  review-url:
+    description: "URL to the posted review"
+    value: ${{ steps.post-summary.outputs.review-url }}
+
+runs:
+  using: "composite"
+  steps:
+    # ========================================
+    # SETUP
+    # ========================================
+    - name: Resolve PR number and comment ID
+      id: resolve-context
+      shell: bash
+      run: |
+        # Resolve PR number: input > pull_request event > issue event
+        PR_NUMBER="${{ inputs.pr-number }}"
+        if [ -z "$PR_NUMBER" ]; then
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+        fi
+        if [ -z "$PR_NUMBER" ]; then
+          PR_NUMBER="${{ github.event.issue.number }}"
+        fi
+        if [ -z "$PR_NUMBER" ]; then
+          echo "❌ Could not determine PR number. Provide pr-number input or trigger from a PR event."
+          exit 1
+        fi
+        echo "pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
+        echo "✅ Resolved PR number: $PR_NUMBER"
+
+        # Resolve comment ID: input > comment event (optional, for reactions)
+        COMMENT_ID="${{ inputs.comment-id }}"
+        if [ -z "$COMMENT_ID" ]; then
+          COMMENT_ID="${{ github.event.comment.id }}"
+        fi
+        echo "comment-id=$COMMENT_ID" >> $GITHUB_OUTPUT
+        if [ -n "$COMMENT_ID" ]; then
+          echo "✅ Resolved comment ID: $COMMENT_ID"
+        else
+          echo "ℹ️  No comment ID - reactions will be skipped"
+        fi
+
+    - name: Add eyes reaction
+      if: steps.resolve-context.outputs.comment-id != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+      run: |
+        gh api repos/${{ github.repository }}/issues/comments/${{ steps.resolve-context.outputs.comment-id }}/reactions \
+          -X POST -f content='eyes' || true
+
+    - name: Get PR information
+      id: pr-info
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+        PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
+      run: |
+        gh pr view $PR_NUMBER --json files -q '.files[].path' > changed_files.txt
+        gh pr view $PR_NUMBER --json title,body,author,baseRefName,headRefName > pr_metadata.json
+        echo "files_count=$(wc -l < changed_files.txt | tr -d ' ')" >> $GITHUB_OUTPUT
+
+    - name: Restore reviewer memory
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.action_path }}/agents/pr-review-memory.db
+        key: pr-review-memory-${{ github.repository }}
+        restore-keys: |
+          pr-review-memory-${{ github.repository }}
+
+    - name: Build review context
+      id: context
+      shell: bash
+      env:
+        PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
+        EXTRA_PROMPT: ${{ inputs.additional-prompt }}
+      run: |
+        title=$(jq -r '.title' pr_metadata.json)
+        author=$(jq -r '.author.login' pr_metadata.json)
+        body=$(jq -r '.body // "No description provided."' pr_metadata.json)
+        base=$(jq -r '.baseRefName' pr_metadata.json)
+        head=$(jq -r '.headRefName' pr_metadata.json)
+
+        cat > review_context.md << EOF
+# Pull Request Review Request
+
+## PR Information
+- **URL**: https://github.com/${{ github.repository }}/pull/$PR_NUMBER
+- **Title**: $title
+- **Author**: $author
+- **Branch**: $head → $base
+- **Files Changed**: $(wc -l < changed_files.txt | tr -d ' ')
+
+## PR Description
+$body
+
+## Changed Files
+
+EOF
+
+        cat changed_files.txt >> review_context.md
+
+        cat >> review_context.md << 'EOF'
+
+---
+
+## Instructions
+
+Execute the review pipeline:
+
+1. **Gather**: Use `gh pr diff` to get the full diff
+2. **Draft**: Delegate to `drafter` agent to generate bug hypotheses
+3. **Verify**: For each hypothesis, delegate to `verifier` agent
+4. **Post**: Aggregate findings and post review via `gh api`
+
+Only report CONFIRMED and LIKELY findings. Approve if no issues found.
+EOF
+
+        # Append extra prompt if provided
+        if [ -n "$EXTRA_PROMPT" ]; then
+          cat >> review_context.md << EOF
+
+## Additional Guidelines
+
+$EXTRA_PROMPT
+EOF
+        fi
+
+        # Save prompt to output for the action
+        {
+          echo "review_prompt<<PROMPT_EOF"
+          cat review_context.md
+          echo "PROMPT_EOF"
+        } >> $GITHUB_OUTPUT
+
+    # ========================================
+    # RUN REVIEW using root cagent-action
+    # ========================================
+    - name: Run PR Review
+      id: run-review
+      uses: docker/cagent-action@${{ github.action_ref || 'latest' }}
+      with:
+        agent: ${{ github.action_path }}/agents/pr-review.yaml
+        prompt: ${{ steps.context.outputs.review_prompt }}
+        anthropic-api-key: ${{ inputs.anthropic-api-key }}
+        openai-api-key: ${{ inputs.openai-api-key }}
+        google-api-key: ${{ inputs.google-api-key }}
+        aws-bearer-token-bedrock: ${{ inputs.aws-bearer-token-bedrock }}
+        xai-api-key: ${{ inputs.xai-api-key }}
+        nebius-api-key: ${{ inputs.nebius-api-key }}
+        mistral-api-key: ${{ inputs.mistral-api-key }}
+        github-token: ${{ inputs.github-token }}
+        cagent-version: ${{ inputs.cagent-version }}
+        extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
+
+    - name: Save reviewer memory
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ github.action_path }}/agents/pr-review-memory.db
+        key: pr-review-memory-${{ github.repository }}
+
+    # ========================================
+    # POST-REVIEW: Clean summary & reactions
+    # ========================================
+    - name: Post clean summary
+      id: post-summary
+      if: always()
+      shell: bash
+      env:
+        PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
+        REPOSITORY: ${{ github.repository }}
+        EXIT_CODE: ${{ steps.run-review.outputs.exit-code }}
+      run: |
+        REVIEW_URL="https://github.com/$REPOSITORY/pull/$PR_NUMBER"
+        echo "review-url=$REVIEW_URL" >> $GITHUB_OUTPUT
+
+        # Override the default summary with a cleaner one for PR reviews
+        {
+          echo ""
+          echo "---"
+          echo ""
+          echo "## PR Review Summary"
+          echo ""
+          if [ "$EXIT_CODE" == "0" ]; then
+            echo "✅ **Review posted successfully**"
+          else
+            echo "❌ **Review failed** (exit code: $EXIT_CODE)"
+          fi
+          echo ""
+          echo "📝 [View Pull Request #$PR_NUMBER]($REVIEW_URL)"
+        } >> $GITHUB_STEP_SUMMARY
+
+    - name: Add completion reaction
+      if: steps.resolve-context.outputs.comment-id != '' && always()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+        EXIT_CODE: ${{ steps.run-review.outputs.exit-code }}
+        PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
+      run: |
+        if [ "$EXIT_CODE" != "0" ]; then
+          # Error: add confused reaction
+          gh api "repos/${{ github.repository }}/issues/comments/${{ steps.resolve-context.outputs.comment-id }}/reactions" \
+            -X POST -f content='confused' || true
+          exit 0
+        fi
+
+        # Get the latest review state from the PR (use last? to handle empty arrays safely)
+        REVIEW_STATE=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+          --jq '[.[] | select(.user.type == "Bot")] | last? | .state? // empty' 2>/dev/null || echo "")
+
+        if [ "$REVIEW_STATE" == "APPROVED" ]; then
+          # Approved: thumbs up
+          gh api "repos/${{ github.repository }}/issues/comments/${{ steps.resolve-context.outputs.comment-id }}/reactions" \
+            -X POST -f content='+1' || true
+        fi
+        # Changes requested: no reaction (the review itself is the feedback)
