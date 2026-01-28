@@ -15,7 +15,7 @@ inputs:
   cagent-version:
     description: "Version of cagent to use"
     required: false
-    default: "v1.19.4"
+    default: "v1.19.7"
   mcp-gateway:
     description: "Install mcp-gateway (true/false)"
     required: false
@@ -32,6 +32,18 @@ inputs:
     required: false
   google-api-key:
     description: "Google API key for Gemini (defaults to GOOGLE_API_KEY secret)"
+    required: false
+  aws-bearer-token-bedrock:
+    description: "AWS Bearer token for Bedrock models (defaults to AWS_BEARER_TOKEN_BEDROCK secret)"
+    required: false
+  xai-api-key:
+    description: "xAI API key for Grok models (defaults to XAI_API_KEY secret)"
+    required: false
+  nebius-api-key:
+    description: "Nebius API key (defaults to NEBIUS_API_KEY secret)"
+    required: false
+  mistral-api-key:
+    description: "Mistral API key (defaults to MISTRAL_API_KEY secret)"
     required: false
   github-token:
     description: "GitHub token for API access (defaults to GITHUB_TOKEN env var)"
@@ -305,6 +317,10 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key || env.ANTHROPIC_API_KEY }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key || env.OPENAI_API_KEY }}
         GOOGLE_API_KEY: ${{ inputs.google-api-key || env.GOOGLE_API_KEY }}
+        AWS_BEARER_TOKEN_BEDROCK: ${{ inputs.aws-bearer-token-bedrock || env.AWS_BEARER_TOKEN_BEDROCK }}
+        XAI_API_KEY: ${{ inputs.xai-api-key || env.XAI_API_KEY }}
+        NEBIUS_API_KEY: ${{ inputs.nebius-api-key || env.NEBIUS_API_KEY }}
+        MISTRAL_API_KEY: ${{ inputs.mistral-api-key || env.MISTRAL_API_KEY }}
         GH_TOKEN: ${{ inputs.github-token || github.token }}
         AGENT: ${{ inputs.agent }}
         PROMPT_INPUT: ${{ inputs.prompt }}
@@ -451,62 +467,50 @@ runs:
 
         $ACTION_PATH/security/sanitize-output.sh "$OUTPUT_FILE"
 
-        # Extract clean output (remove verbose cagent logging, timestamps, agent markers)
+        # Extract clean output (remove verbose cagent internals)
         echo "🧹 Extracting clean agent output..."
 
         # Primary method: Extract from cagent-output code block (most reliable)
         if grep -q '^```cagent-output' "$OUTPUT_FILE"; then
-          # Extract everything between ```cagent-output and the closing ```
-          # Using awk to handle multi-line content properly
           awk '/^```cagent-output$/,/^```$/ {
             if (!/^```cagent-output$/ && !/^```$/) print
           }' "$OUTPUT_FILE" > "${OUTPUT_FILE}.clean"
-
           echo "✅ Extracted clean output from cagent-output code block"
-
-        # Fallback: Extract after agent marker
-        elif grep -q "^--- Agent: root ---$" "$OUTPUT_FILE"; then
-          AGENT_LINE=$(grep -n "^--- Agent: root ---$" "$OUTPUT_FILE" | tail -1 | cut -d: -f1)
-
-          # Validate AGENT_LINE is not empty before using it in arithmetic expansion
-          if [ -n "$AGENT_LINE" ]; then
-            tail -n +$((AGENT_LINE + 1)) "$OUTPUT_FILE" | \
-              grep -v "^time=" | \
-              grep -v "^level=" | \
-              grep -v "^msg=" | \
-              grep -v "^--- Agent:" | \
-              grep -v "^--- Tool:" | \
-              grep -v "^<thinking>" | \
-              grep -v "^</thinking>" | \
-              grep -v "^\[thinking\]" | \
-              grep -v "^\[/thinking\]" | \
-              grep -v "^Thinking:" | \
-              grep -v "^> \[!NOTE\]" | \
-              grep -v "For any feedback" | \
-              sed '/^$/N;/^\n$/d' > "${OUTPUT_FILE}.clean"
-
-            echo "⚠️  No cagent-output block found, extracted after agent marker"
-          else
-            echo "⚠️  Failed to extract line number from agent marker"
-            cp "$OUTPUT_FILE" "${OUTPUT_FILE}.clean"
-          fi
-
-        # Fallback: Just clean metadata
         else
-          grep -v "^time=" "$OUTPUT_FILE" | \
-            grep -v "^level=" | \
-            grep -v "^msg=" | \
-            grep -v "^--- Agent:" | \
-            grep -v "^--- Tool:" | \
-            grep -v "^<thinking>" | \
-            grep -v "^</thinking>" | \
-            grep -v "^\[thinking\]" | \
-            grep -v "^\[/thinking\]" | \
-            grep -v "^Thinking:" | \
-            grep -v "^> \[!NOTE\]" | \
-            grep -v "For any feedback" > "${OUTPUT_FILE}.clean"
+          # Use awk to filter out thinking blocks, tool calls, and internal markers
+          awk '
+            # Skip thinking blocks entirely
+            /<thinking>/,/<\/thinking>/ { next }
+            /^\[thinking\]/,/^\[\/thinking\]/ { next }
+            /^Thinking:/ { next }
 
-          echo "⚠️  No extraction markers found - cleaned metadata only"
+            # Skip tool call blocks
+            /^--- Tool:/ { in_tool=1; next }
+            in_tool && /^---/ { in_tool=0; next }
+            in_tool { next }
+
+            # Skip agent markers and metadata
+            /^--- Agent:/ { next }
+            /^time=/ { next }
+            /^level=/ { next }
+            /^msg=/ { next }
+            /^> \[!NOTE\]/ { next }
+            /For any feedback/ { next }
+
+            # Skip transfer_task and delegation output
+            /transfer_task/ { next }
+            /Delegating to/ { next }
+            /Task delegated/ { next }
+
+            # Skip empty lines at start
+            NF==0 && !seen_content { next }
+            NF>0 { seen_content=1 }
+
+            # Print everything else
+            { print }
+          ' "$OUTPUT_FILE" > "${OUTPUT_FILE}.clean"
+
+          echo "✅ Filtered verbose output"
         fi
 
         # Use the cleaned output
@@ -580,6 +584,10 @@ runs:
           - GITHUB_TOKEN
           - OPENAI_API_KEY
           - GOOGLE_API_KEY
+          - AWS_BEARER_TOKEN_BEDROCK
+          - XAI_API_KEY
+          - NEBIUS_API_KEY
+          - MISTRAL_API_KEY
           - Any other exposed credentials
         3. Investigate the workflow trigger and input prompt
         4. Review workflow run history for suspicious patterns
