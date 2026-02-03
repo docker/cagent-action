@@ -58,8 +58,11 @@ jobs:
 
           echo "has_commits=true" >> $GITHUB_OUTPUT
 
-          # Generate full diffs for all commits
-          echo "Generating commit diffs..."
+          # Generate full diffs for all commits (excluding markdown files)
+          # Markdown is excluded because:
+          # 1. Docs don't need security scanning
+          # 2. Security docs contain example attack patterns that trigger false positives
+          echo "Generating commit diffs (excluding *.md files)..."
           > /tmp/all_diffs.txt
 
           while IFS= read -r commit_hash; do
@@ -69,7 +72,8 @@ jobs:
             echo "Author: $(git log -1 --pretty=format:%an $commit_hash)" >> /tmp/all_diffs.txt
             echo "Date: $(git log -1 --pretty=format:%ci $commit_hash)" >> /tmp/all_diffs.txt
             echo "" >> /tmp/all_diffs.txt
-            git show --pretty=format: --patch $commit_hash >> /tmp/all_diffs.txt
+            # Exclude markdown files from diff (-- . ':!*.md' is git pathspec syntax)
+            git show --pretty=format: --patch "$commit_hash" -- . ':!*.md' >> /tmp/all_diffs.txt
             echo "" >> /tmp/all_diffs.txt
             echo "" >> /tmp/all_diffs.txt
           done < /tmp/commit_hashes.txt
