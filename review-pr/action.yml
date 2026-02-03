@@ -194,7 +194,7 @@ EOF
     # ========================================
     - name: Run PR Review
       id: run-review
-      uses: docker/cagent-action@${{ github.action_ref || 'latest' }}
+      uses: docker/cagent-action@latest
       with:
         agent: ${{ github.action_path }}/agents/pr-review.yaml
         prompt: ${{ steps.context.outputs.review_prompt }}
