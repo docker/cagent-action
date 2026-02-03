@@ -6,14 +6,20 @@ This directory contains security hardening scripts for the cagent-action GitHub 
 
 This action includes **built-in security features for all agent executions**:
 
-1. **Output Scanning** - All agent responses are scanned for leaked secrets:
+1. **Authorization Check** - Users are verified for comment-triggered events:
+   - Only `OWNER`, `MEMBER`, and `COLLABORATOR` roles can trigger via comments (e.g., `/review`)
+   - External contributors (`CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, `NONE`) are blocked
+   - Skips for non-comment events (PR triggers, scheduled jobs, workflow_dispatch)
+   - Comment-triggered actions are the main abuse vector - this protects against cost/spam attacks
+
+2. **Output Scanning** - All agent responses are scanned for leaked secrets:
 
    - API key patterns: `sk-ant-*`, `sk-*`, `sk-proj-*`
    - GitHub tokens: `ghp_*`, `gho_*`, `ghu_*`, `ghs_*`, `github_pat_*`
    - Environment variable names in output
    - If secrets detected: workflow fails, security issue created
 
-2. **Prompt Sanitization** - User prompts are checked for:
+3. **Prompt Sanitization** - User prompts are checked for:
    - Prompt injection patterns ("ignore previous instructions", etc.)
    - Requests for API keys or environment variables
    - Encoded content (base64, hex) that could hide malicious requests
@@ -25,28 +31,35 @@ The action implements a defense-in-depth approach:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. Prompt Sanitization                                      │
+│ 1. Authorization Check (check-auth.sh)                      │
+│    ✓ Verify user's author_association role                  │
+│    ✓ Block external contributors by default                 │
+│    ✓ Only OWNER, MEMBER, COLLABORATOR allowed               │
+└─────────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 2. Prompt Sanitization                                      │
 │    ✓ Detect prompt injection attempts                       │
 │    ✓ Warn about suspicious patterns                         │
 │    ✓ Check for encoded malicious content                    │
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 2. Agent Execution                                          │
+│ 3. Agent Execution                                          │
 │    ✓ User-provided agent runs in isolated cagent runtime    │
 │    ✓ No direct access to secrets or environment vars        │
 │    ✓ Controlled execution environment                       │
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. Output Scanning                                          │
+│ 4. Output Scanning                                          │
 │    ✓ Scan for leaked API keys (Anthropic, OpenAI, etc.)     │
 │    ✓ Scan for leaked tokens (GitHub PAT, OAuth, etc.)       │
 │    ✓ Block execution if secrets found                       │
 └─────────────────────────────────────────────────────────────┘
                           ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. Incident Response                                        │
+│ 5. Incident Response                                        │
 │    ✓ Create security issue with details                     │
 │    ✓ Fail workflow with clear error                         │
 │    ✓ Prevent secret exposure in logs                        │

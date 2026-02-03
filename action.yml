@@ -142,6 +142,36 @@ runs:
         fi
 
     # ========================================
+    # SECURITY: Authorization Check
+    # Only enforced for comment-triggered events (the main abuse vector)
+    # PR-triggered workflows are controlled by the workflow author
+    # ========================================
+    - name: Check authorization
+      id: check-auth
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        # Get author_association from comment events (the main risk)
+        COMMENT_ASSOCIATION: ${{ github.event.comment.author_association }}
+        DEBUG: ${{ inputs.debug }}
+      run: |
+        # Only enforce auth for comment-triggered events
+        # This prevents abuse via /commands while allowing PR-triggered workflows to run
+        if [ -z "$COMMENT_ASSOCIATION" ]; then
+          echo "ℹ️ Skipping auth check (not a comment-triggered event)"
+          echo "authorized=skipped" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        echo "Using comment author_association: $COMMENT_ASSOCIATION"
+
+        # Allowed roles (hardcoded for security - cannot be overridden)
+        ALLOWED_ROLES='["OWNER", "MEMBER", "COLLABORATOR"]'
+
+        # Run the authorization check
+        $ACTION_PATH/security/check-auth.sh "$COMMENT_ASSOCIATION" "$ALLOWED_ROLES"
+
+    # ========================================
     # SECURITY: Sanitize and Analyze Input
     # ========================================
     - name: Sanitize and analyze input
