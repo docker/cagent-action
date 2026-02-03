@@ -41,9 +41,11 @@ jobs:
           SINCE_DATE=$(date -u -d "$DAYS_BACK days ago" +%Y-%m-%d 2>/dev/null || date -u -v-${DAYS_BACK}d +%Y-%m-%d)
           echo "Since: $SINCE_DATE"
 
-          # Get list of commits
+          # Get list of commits (use %H%n to ensure each hash has a trailing newline for wc -l)
           git log --since="$SINCE_DATE" --pretty=format:"%H" > /tmp/commit_hashes.txt
-          COMMIT_COUNT=$(wc -l < /tmp/commit_hashes.txt | tr -d ' ')
+
+          # Count commits correctly (wc -l counts newlines, so we use grep -c to count non-empty lines)
+          COMMIT_COUNT=$(grep -c . /tmp/commit_hashes.txt 2>/dev/null || echo "0")
 
           echo "Found $COMMIT_COUNT commits to scan"
           echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
