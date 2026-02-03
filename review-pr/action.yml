@@ -130,56 +130,55 @@ runs:
       env:
         PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
         EXTRA_PROMPT: ${{ inputs.additional-prompt }}
+        REPO: ${{ github.repository }}
       run: |
         title=$(jq -r '.title' pr_metadata.json)
         author=$(jq -r '.author.login' pr_metadata.json)
         body=$(jq -r '.body // "No description provided."' pr_metadata.json)
         base=$(jq -r '.baseRefName' pr_metadata.json)
         head=$(jq -r '.headRefName' pr_metadata.json)
+        files_count=$(wc -l < changed_files.txt | tr -d ' ')
 
-        cat > review_context.md << EOF
-# Pull Request Review Request
-
-## PR Information
-- **URL**: https://github.com/${{ github.repository }}/pull/$PR_NUMBER
-- **Title**: $title
-- **Author**: $author
-- **Branch**: $head → $base
-- **Files Changed**: $(wc -l < changed_files.txt | tr -d ' ')
-
-## PR Description
-$body
-
-## Changed Files
-
-EOF
-
-        cat changed_files.txt >> review_context.md
-
-        cat >> review_context.md << 'EOF'
-
----
-
-## Instructions
-
-Execute the review pipeline:
-
-1. **Gather**: Use `gh pr diff` to get the full diff
-2. **Draft**: Delegate to `drafter` agent to generate bug hypotheses
-3. **Verify**: For each hypothesis, delegate to `verifier` agent
-4. **Post**: Aggregate findings and post review via `gh api`
-
-Only report CONFIRMED and LIKELY findings. Approve if no issues found.
-EOF
+        # Build review context (using echo to avoid YAML heredoc parsing issues)
+        {
+          echo "# Pull Request Review Request"
+          echo ""
+          echo "## PR Information"
+          echo "- **URL**: https://github.com/${REPO}/pull/${PR_NUMBER}"
+          echo "- **Title**: $title"
+          echo "- **Author**: $author"
+          echo "- **Branch**: $head → $base"
+          echo "- **Files Changed**: $files_count"
+          echo ""
+          echo "## PR Description"
+          echo "$body"
+          echo ""
+          echo "## Changed Files"
+          echo ""
+          cat changed_files.txt
+          echo ""
+          echo "---"
+          echo ""
+          echo "## Instructions"
+          echo ""
+          echo "Execute the review pipeline:"
+          echo ""
+          echo '1. **Gather**: Use `gh pr diff` to get the full diff'
+          echo '2. **Draft**: Delegate to `drafter` agent to generate bug hypotheses'
+          echo '3. **Verify**: For each hypothesis, delegate to `verifier` agent'
+          echo '4. **Post**: Aggregate findings and post review via `gh api`'
+          echo ""
+          echo "Only report CONFIRMED and LIKELY findings. Approve if no issues found."
+        } > review_context.md
 
         # Append extra prompt if provided
         if [ -n "$EXTRA_PROMPT" ]; then
-          cat >> review_context.md << EOF
-
-## Additional Guidelines
-
-$EXTRA_PROMPT
-EOF
+          {
+            echo ""
+            echo "## Additional Guidelines"
+            echo ""
+            echo "$EXTRA_PROMPT"
+          } >> review_context.md
         fi
 
         # Save prompt to output for the action
@@ -194,7 +193,7 @@ EOF
     # ========================================
     - name: Run PR Review
       id: run-review
-      uses: docker/cagent-action@${{ github.action_ref || 'latest' }}
+      uses: docker/cagent-action@latest
       with:
         agent: ${{ github.action_path }}/agents/pr-review.yaml
         prompt: ${{ steps.context.outputs.review_prompt }}
