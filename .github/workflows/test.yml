@@ -168,6 +168,9 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout code
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
       - name: Test should fail on invalid agent
         id: invalid-agent
         continue-on-error: true
