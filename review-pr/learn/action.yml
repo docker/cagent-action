@@ -110,3 +110,35 @@ runs:
       with:
         path: ${{ github.workspace }}/.github/pr-review-memory.db
         key: pr-review-memory-${{ github.repository }}-${{ github.run_id }}
+
+    - name: Clean up old memory caches
+      if: steps.check.outputs.is_agent == 'true' && always()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token || github.token }}
+      run: |
+        # Keep the 5 most recent caches, delete older ones
+        # This prevents proliferation while handling concurrent runs safely
+        CACHE_PREFIX="pr-review-memory-${{ github.repository }}-"
+
+        echo "🧹 Cleaning up old memory caches (keeping 5 most recent)"
+
+        # Get caches older than the 5 most recent (sorted by created_at descending, skip first 5)
+        OLD_CACHES=$(gh api "repos/${{ github.repository }}/actions/caches" \
+          --jq "[.actions_caches | map(select(.key | startswith(\"$CACHE_PREFIX\"))) | sort_by(.created_at) | reverse | .[5:] | .[].id] | .[]" \
+          2>/dev/null || echo "")
+
+        if [ -z "$OLD_CACHES" ]; then
+          echo "✅ No old caches to clean up"
+          exit 0
+        fi
+
+        # Delete each old cache
+        DELETED=0
+        for CACHE_ID in $OLD_CACHES; do
+          if gh api "repos/${{ github.repository }}/actions/caches/$CACHE_ID" -X DELETE 2>/dev/null; then
+            ((DELETED++))
+          fi
+        done
+
+        echo "✅ Deleted $DELETED old cache(s)"

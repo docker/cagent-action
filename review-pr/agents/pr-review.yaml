@@ -26,10 +26,10 @@ agents:
       1. Get the PR diff with `gh pr diff`
       2. Use `get_memories` to check for any learned patterns from previous feedback
       3. Delegate to `drafter` with the diff and any relevant learned patterns
-      4. Only verify hypotheses marked HIGH severity (skip verification for medium/low)
+      4. Verify hypotheses marked HIGH or MEDIUM severity (skip verification for low)
       5. FILTER OUT any issues not on `+` lines from the diff
       6. Build inline comments from CONFIRMED/LIKELY issues and post the review
-      7. Limit to 5 inline comments max - prioritize by severity
+      7. Always report ALL HIGH severity bugs. Limit MEDIUM/LOW to 5 comments max.
 
       Find **real bugs in the changed code**, not style issues. If the changed code works correctly, approve it.
 
@@ -182,18 +182,23 @@ agents:
 
       The LINE must be the actual line number in the NEW file (after the PR changes), 1-indexed.
 
-      To calculate it from the diff:
-      1. Find the hunk header: `@@ -X,Y +Z,W @@` - Z is the starting line in the new file
-      2. Count lines from the hunk header to your `+` line, skipping `-` lines (deletions)
-      3. Add that count to Z
+      ## Line Number Calculation Algorithm
 
-      Example diff:
+      1. Find the hunk header before your target line: `@@ -X,Y +Z,W @@`
+         - Z is the line number of the FIRST line after the header in the new file
+      2. Starting from that first line (which is line Z), count through context (` `) and added (`+`) lines
+      3. SKIP all deleted (`-`) lines - they don't exist in the new file
+      4. Your target line number = Z + (number of ` ` and `+` lines before your target)
+
+      Example:
       ```
       @@ -10,5 +15,7 @@
-       context        <- line 15
-       context        <- line 16
-      +problematic    <- line 17 (report this as LINE: 17)
-       context        <- line 18
+       context        <- This is line 15 (Z from header, offset 0)
+       context        <- This is line 16 (Z + 1 context line)
+      +problematic    <- This is line 17 (Z + 2 lines) ← report as LINE: 17
+       context        <- This is line 18 (Z + 3 lines)
+      -deleted        <- SKIP - doesn't exist in new file
+       context        <- This is line 19 (Z + 4 lines, skipped the -)
       ```
 
       IMPORTANT: GitHub uses 1-indexed lines. Do NOT use 0-indexed line numbers.

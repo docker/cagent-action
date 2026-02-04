@@ -95,7 +95,9 @@ jobs:
       - name: Check if fork PR
         id: fork-check
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
+          # Use default empty string to handle edge cases (deleted branches, malformed events)
+          HEAD_REPO="${{ github.event.pull_request.head.repo.full_name || '' }}"
+          if [[ "${{ github.event_name }}" == "pull_request" && "$HEAD_REPO" != "${{ github.repository }}" && -n "$HEAD_REPO" ]]; then
             echo "⏭️ Skipping - fork PR (secrets not available)"
             echo "is_fork=true" >> $GITHUB_OUTPUT
           else
