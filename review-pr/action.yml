@@ -152,10 +152,14 @@ runs:
         gh pr view $PR_NUMBER --json title,body,author,baseRefName,headRefName > pr_metadata.json
         echo "files_count=$(wc -l < changed_files.txt | tr -d ' ')" >> $GITHUB_OUTPUT
 
+    - name: Ensure cache directory exists
+      shell: bash
+      run: mkdir -p "${{ github.workspace }}/.cache"
+
     - name: Restore reviewer memory
       uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
-        path: ${{ github.workspace }}/.github/pr-review-memory.db
+        path: ${{ github.workspace }}/.cache/pr-review-memory.db
         key: pr-review-memory-${{ github.repository }}-${{ github.run_id }}
         restore-keys: |
           pr-review-memory-${{ github.repository }}-
@@ -248,7 +252,7 @@ runs:
       if: always()
       uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
-        path: ${{ github.workspace }}/.github/pr-review-memory.db
+        path: ${{ github.workspace }}/.cache/pr-review-memory.db
         key: pr-review-memory-${{ github.repository }}-${{ github.run_id }}
 
     - name: Clean up old memory caches

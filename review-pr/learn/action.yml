@@ -66,18 +66,23 @@ runs:
           echo "⏭️ Not a reply to agent comment, skipping"
         fi
 
+    - name: Ensure cache directory exists
+      if: steps.check.outputs.is_agent == 'true'
+      shell: bash
+      run: mkdir -p "${{ github.workspace }}/.cache"
+
     - name: Restore reviewer memory
       if: steps.check.outputs.is_agent == 'true'
       uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
-        path: ${{ github.workspace }}/.github/pr-review-memory.db
+        path: ${{ github.workspace }}/.cache/pr-review-memory.db
         key: pr-review-memory-${{ github.repository }}-${{ github.run_id }}
         restore-keys: |
           pr-review-memory-${{ github.repository }}-
 
     - name: Process feedback
       if: steps.check.outputs.is_agent == 'true'
-      uses: docker/cagent-action@${{ github.action_ref || 'latest' }}
+      uses: docker/cagent-action@latest
       with:
         agent: ${{ github.action_path }}/../agents/pr-review-feedback.yaml
         prompt: |
@@ -108,7 +113,7 @@ runs:
       if: steps.check.outputs.is_agent == 'true' && always()
       uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
-        path: ${{ github.workspace }}/.github/pr-review-memory.db
+        path: ${{ github.workspace }}/.cache/pr-review-memory.db
         key: pr-review-memory-${{ github.repository }}-${{ github.run_id }}
 
     - name: Clean up old memory caches
