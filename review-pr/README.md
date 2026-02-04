@@ -38,7 +38,7 @@ jobs:
     uses: docker/cagent-action/.github/workflows/review-pr.yml@latest
     with:
       auto-review-org: my-org  # Only auto-review PRs from this org's members
-      model: anthropic/claude-haiku-4  # Use a faster/cheaper model
+      model: anthropic/claude-haiku-4-5  # Use a faster/cheaper model
     secrets: inherit
 ```
 
@@ -217,7 +217,7 @@ When using `docker/cagent-action/.github/workflows/review-pr.yml`:
 | `pr-number` | PR number (auto-detected from event) | - |
 | `comment-id` | Comment ID for reactions (auto-detected) | - |
 | `additional-prompt` | Additional review guidelines | - |
-| `model` | Model override (e.g., `anthropic/claude-haiku-4`) | - |
+| `model` | Model override (e.g., `anthropic/claude-haiku-4-5`) | - |
 | `cagent-version` | CAgent version | `v1.19.7` |
 | `auto-review-org` | Organization for auto-review membership check | `docker` |
 
@@ -279,7 +279,7 @@ The action uses **Claude Sonnet 4.5** by default. Typical costs per review:
 | Large (15+ files) | ~$0.15-0.50 |
 
 Costs depend on diff size, not just file count. To reduce costs:
-- Use `model: anthropic/claude-haiku-4` for faster, cheaper reviews
+- Use `model: anthropic/claude-haiku-4-5` for faster, cheaper reviews
 - Trigger reviews selectively (not on every push)
 
 ---
@@ -366,6 +366,6 @@ When you reply to a review comment:
 
 **Reviews are too slow?**
 - Large diffs take longer. Consider reviewing smaller PRs
-- Use `model: anthropic/claude-haiku-4` for faster (but less thorough) reviews
+- Use `model: anthropic/claude-haiku-4-5` for faster (but less thorough) reviews
 
 **Clear the memory cache:** Actions → Caches → Delete `pr-review-memory-*`
