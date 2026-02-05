@@ -41,7 +41,7 @@ HIGH_RISK_PATTERNS=(
 
   # System/mode override attempts
   "system.*override"
-  "system.*mode"
+  "system.{0,20}mode([^a-z]|$)"
   "admin.*mode"
   "debug.*mode.*enable"
   "debug.*mode"
@@ -82,10 +82,10 @@ HIGH_RISK_PATTERNS=(
   "give.*me.*(your|the).*(key|secret|token|api)"
 
   # System prompt extraction
-  "repeat.*system.*prompt"
+  "repeat.*(your|the|back).*system.*prompt"
   "what.*are.*your.*instructions"
   "show.*initial.*prompt"
-  "show.*system.*prompt"
+  "show.*(your|the).*system.*prompt"
 
   # Jailbreak attempts
   "act.*as.*no.*restrictions"
