@@ -124,6 +124,7 @@ jobs:
     quiet: false # Show verbose tool calls (default: true)
     working-directory: ./src
     extra-args: "--verbose"
+    add-prompt-files: "AGENTS.md,CLAUDE.md" # Append these files to the prompt
 ```
 
 ### Using Outputs
@@ -179,6 +180,30 @@ jobs:
 | `max-retries`         | Maximum number of retries on failure (0 = no retries)                                | No       | `2`                             |
 | `retry-delay`         | Seconds to wait between retries                                                      | No       | `5`                             |
 | `extra-args`          | Additional arguments to pass to `cagent exec`                                        | No       | -                               |
+| `add-prompt-files`    | Comma-separated list of files to append to the prompt (e.g., `AGENTS.md,CLAUDE.md`)  | No       | -                               |
+
+### Prompt Files (`add-prompt-files`)
+
+The `add-prompt-files` input allows you to include additional context files (like `AGENTS.md`, `CLAUDE.md`) as system messages. This uses cagent's `--prompt-file` flag under the hood.
+
+**File Resolution (handled by cagent):**
+- Searches up the directory hierarchy (like `.gitignore`)
+- Also checks the home folder (`~/`)
+- Files are added as system messages, not appended to the user prompt
+
+**Examples:**
+
+```yaml
+# Single file
+add-prompt-files: "AGENTS.md"
+
+# Multiple files
+add-prompt-files: "AGENTS.md,CLAUDE.md"
+
+# With custom working directory
+working-directory: ./src
+add-prompt-files: "AGENTS.md"  # Found via hierarchy search
+```
 
 ## Outputs
 
