@@ -71,11 +71,11 @@ With just an API key, you can use `/review` comments to trigger reviews manually
 | Secret | Description | Purpose |
 |--------|-------------|---------|
 | `ANTHROPIC_API_KEY` | API key for your LLM provider | Required |
-| `ORG_MEMBERSHIP_TOKEN` | PAT with `read:org` scope | Auto-review PRs from org members |
+| `CAGENT_ORG_MEMBERSHIP_TOKEN` | PAT with `read:org` scope | Auto-review PRs from org members |
 | `CAGENT_REVIEWER_APP_ID` | GitHub App ID | Reviews appear as your app (not github-actions[bot]) |
 | `CAGENT_REVIEWER_APP_PRIVATE_KEY` | GitHub App private key | Required with App ID |
 
-**Note:** Without `ORG_MEMBERSHIP_TOKEN`, only `/review` comments work (no auto-review on PR open).
+**Note:** Without `CAGENT_ORG_MEMBERSHIP_TOKEN`, only `/review` comments work (no auto-review on PR open).
 Without GitHub App secrets, reviews appear as "github-actions[bot]" which is fine for most teams.
 
 ---

@@ -55,7 +55,7 @@ on:
         type: string
         default: "docker"
     secrets:
-      ORG_MEMBERSHIP_TOKEN:
+      CAGENT_ORG_MEMBERSHIP_TOKEN:
         description: "PAT with read:org scope to check org membership for auto-reviews"
         required: false
       ANTHROPIC_API_KEY:
@@ -116,7 +116,7 @@ jobs:
         id: membership
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
-          github-token: ${{ secrets.ORG_MEMBERSHIP_TOKEN }}
+          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
           script: |
             const org = '${{ inputs.auto-review-org }}';
             const username = context.payload.pull_request.user.login;
@@ -134,11 +134,11 @@ jobs:
                 console.log(`⏭️ ${username} is not a ${org} org member - skipping auto-review`);
               } else if (error.status === 401) {
                 core.setFailed(
-                  '❌ ORG_MEMBERSHIP_TOKEN secret is missing or invalid.\n\n' +
+                  '❌ CAGENT_ORG_MEMBERSHIP_TOKEN secret is missing or invalid.\n\n' +
                   `This secret is required to check ${org} org membership for auto-reviews.\n\n` +
                   'To fix this:\n' +
                   '1. Create a classic PAT with read:org scope at https://github.com/settings/tokens/new\n' +
-                  '2. Add it as an org secret named ORG_MEMBERSHIP_TOKEN'
+                  '2. Add it as an org secret named CAGENT_ORG_MEMBERSHIP_TOKEN'
                 );
               } else {
                 core.setFailed(`Failed to check org membership: ${error.message}`);
