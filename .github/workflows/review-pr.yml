@@ -48,7 +48,7 @@ on:
         description: "Version of cagent to use"
         required: false
         type: string
-        default: "v1.19.7"
+        default: "v1.20.6"
       auto-review-org:
         description: "Organization to check membership for auto-reviews"
         required: false

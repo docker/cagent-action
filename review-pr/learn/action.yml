@@ -30,7 +30,7 @@ inputs:
   cagent-version:
     description: "Version of cagent to use"
     required: false
-    default: "v1.19.7"
+    default: "v1.20.6"
   model:
     description: "Model to use for processing feedback (e.g., anthropic/claude-haiku-4-5)"
     required: false

@@ -15,7 +15,7 @@ inputs:
   cagent-version:
     description: "Version of cagent to use"
     required: false
-    default: "v1.19.7"
+    default: "v1.20.6"
   mcp-gateway:
     description: "Install mcp-gateway (true/false)"
     required: false
@@ -76,6 +76,10 @@ inputs:
     default: "true"
   extra-args:
     description: "Additional arguments to pass to cagent exec"
+    required: false
+    default: ""
+  add-prompt-files:
+    description: "Comma-separated list of files to append to the prompt (e.g., 'AGENTS.md,CLAUDE.md')"
     required: false
     default: ""
 
@@ -421,6 +425,7 @@ runs:
         CAGENT_VERSION: ${{ inputs.cagent-version }}
         MCP_INSTALLED: ${{ steps.setup-binaries.outputs.mcp-installed }}
         QUIET: ${{ inputs.quiet }}
+        ADD_PROMPT_FILES: ${{ inputs.add-prompt-files }}
       run: |
         set -e
 
@@ -468,6 +473,16 @@ runs:
         if [ -n "$EXTRA_ARGS" ]; then
           read -ra EXTRA_ARGS_ARRAY <<< "$EXTRA_ARGS"
           ARGS+=("${EXTRA_ARGS_ARRAY[@]}")
+        fi
+
+        # Add prompt files as --prompt-file flags (cagent handles file resolution)
+        if [ -n "$ADD_PROMPT_FILES" ]; then
+          echo "Adding prompt files: $ADD_PROMPT_FILES"
+          IFS=',' read -ra FILES <<< "$ADD_PROMPT_FILES"
+          for file in "${FILES[@]}"; do
+            file=$(echo "$file" | xargs)  # trim whitespace
+            ARGS+=("--prompt-file" "$file")
+          done
         fi
 
         # Add agent

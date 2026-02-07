@@ -218,7 +218,7 @@ When using `docker/cagent-action/.github/workflows/review-pr.yml`:
 | `comment-id` | Comment ID for reactions (auto-detected) | - |
 | `additional-prompt` | Additional review guidelines | - |
 | `model` | Model override (e.g., `anthropic/claude-haiku-4-5`) | - |
-| `cagent-version` | CAgent version | `v1.19.7` |
+| `cagent-version` | CAgent version | `v1.20.6` |
 | `auto-review-org` | Organization for auto-review membership check | `docker` |
 
 ### `review-pr` (Composite Action)

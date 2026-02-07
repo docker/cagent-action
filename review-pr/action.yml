@@ -48,7 +48,7 @@ inputs:
   cagent-version:
     description: "Version of cagent to use"
     required: false
-    default: "v1.19.7"
+    default: "v1.20.6"
   model:
     description: "Model to use for reviews (e.g., anthropic/claude-sonnet-4-5, openai/gpt-4o)"
     required: false
