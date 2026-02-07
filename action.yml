@@ -15,7 +15,7 @@ inputs:
   cagent-version:
     description: "Version of cagent to use"
     required: false
-    default: "v1.19.7"
+    default: "v1.20.6"
   mcp-gateway:
     description: "Install mcp-gateway (true/false)"
     required: false
