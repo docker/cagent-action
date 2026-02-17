@@ -494,12 +494,12 @@ runs:
         echo "Using agent: $AGENT"
         ARGS+=("$AGENT")
 
-        # Add prompt if provided (pass via stdin to avoid "Argument list too long" errors)
+        # Always pass prompt via stdin to satisfy cagent exec's required prompt arg
+        ARGS+=("-")
         if [ -n "$PROMPT_INPUT" ]; then
-          ARGS+=("-")
           echo "Running cagent with ${#ARGS[@]} arguments (prompt via stdin)"
         else
-          echo "Running cagent with ${#ARGS[@]} arguments (no prompt)"
+          echo "Running cagent with ${#ARGS[@]} arguments (empty prompt via stdin)"
         fi
 
         # Track execution time
@@ -508,23 +508,14 @@ runs:
         # SECURE: Direct execution with quoted arguments (no eval!)
         set +e  # Don't exit on command failure
         if [ "$TIMEOUT" != "0" ]; then
-          if [ -n "$PROMPT_INPUT" ]; then
-            printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
-          else
-            timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
-          fi
+          printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
           EXIT_CODE=$?
           if [ $EXIT_CODE -eq 124 ]; then
             echo "::error::Agent execution timed out after $TIMEOUT seconds"
           fi
         else
-          if [ -n "$PROMPT_INPUT" ]; then
-            printf '%s\n' "$PROMPT_INPUT" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
-            EXIT_CODE=${PIPESTATUS[0]}
-          else
-            "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
-            EXIT_CODE=$?
-          fi
+          printf '%s\n' "$PROMPT_INPUT" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
+          EXIT_CODE=${PIPESTATUS[0]}
         fi
         set -e
 
