@@ -289,6 +289,96 @@ When you reply to a review comment:
 
 ---
 
+## Running Locally
+
+The reviewer agent automatically detects its environment. When running outside of GitHub Actions, it outputs the review to your console instead of posting to GitHub — even if you provide a PR URL.
+
+### Review a PR without posting
+
+```bash
+cagent run review-pr/agents/pr-review.yaml \
+  "https://github.com/docker/ai/pull/384"
+```
+
+This fetches the PR diff via `gh pr diff` and outputs the review as formatted markdown. No GitHub API calls are made.
+
+### Review local branch changes
+
+```bash
+cd ~/code/my-project
+cagent run ~/code/cagent-action/review-pr/agents/pr-review.yaml \
+  "Review my current branch changes"
+```
+
+When no PR URL is provided, the agent uses `git diff` against the base branch to review uncommitted work before you open a PR.
+
+---
+
+## Running Evals
+
+Evals verify that the reviewer produces consistent, correct results across multiple runs.
+
+### Run all evals
+
+```bash
+cd cagent-action
+cagent eval review-pr/agents/pr-review.yaml review-pr/agents/evals/ \
+  -e GITHUB_TOKEN -e GH_TOKEN
+```
+
+### Eval structure
+
+Each eval file in `review-pr/agents/evals/` contains:
+
+- **`messages`**: The initial user prompt (e.g., a PR URL)
+- **`evals.relevance`**: Natural-language assertions checked against the agent's output
+- **`evals.setup`**: Setup commands run before the eval (e.g., installing `gh`)
+
+### Eval naming conventions
+
+| Prefix | Expected outcome |
+| --- | --- |
+| `success-*` | Clean PR, agent should APPROVE |
+| `security-*` | PR with security concerns, agent should COMMENT or REQUEST_CHANGES |
+
+### Writing new evals
+
+1. Find a PR with a known correct outcome (e.g., a clean PR that should be approved, or one with a real bug)
+2. Create a JSON file with the PR URL as the user message and relevance criteria describing the expected behavior
+3. Run the eval 3+ times to verify consistency
+
+```json
+{
+  "id": "unique-uuid",
+  "title": "Description of what this eval tests",
+  "evals": {
+    "setup": "apk add --no-cache github-cli",
+    "relevance": [
+      "The agent ran 'echo $GITHUB_ACTIONS' before performing the review to detect the output mode",
+      "The agent output the review to the console as formatted markdown instead of posting via gh api",
+      "The drafter response is valid JSON containing a 'findings' array and a 'summary' field",
+      "... assertions about the expected findings and verdict ..."
+    ]
+  },
+  "messages": [
+    {
+      "message": {
+        "agentName": "",
+        "message": {
+          "role": "user",
+          "content": "https://github.com/org/repo/pull/123",
+          "created_at": "2026-01-01T00:00:00-05:00"
+        }
+      }
+    }
+  ]
+}
+```
+
+> **Tip:** Create multiple eval files for the same PR to test consistency. If the agent produces different verdicts across runs, the failing evals highlight the inconsistency.
+
+---
+
 ## What It Reviews
 
 **Catches:** Logic errors, null dereferences, resource leaks, security issues, error handling mistakes, concurrency bugs
