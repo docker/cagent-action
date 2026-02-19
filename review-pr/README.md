@@ -8,6 +8,34 @@ AI-powered pull request review using a multi-agent system. Analyzes code changes
 
 Add `.github/workflows/pr-review.yml` to your repo with this **minimal but safe setup**:
 
+```yaml
+name: PR Review
+on:
+  issue_comment: # Enables /review command in PR comments
+    types: [created]
+  pull_request_review_comment: # Captures feedback on review comments for learning
+    types: [created]
+  pull_request_target: # Triggers auto-review on PR open; uses base branch context so secrets work with forks
+    types: [ready_for_review, opened]
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    uses: docker/cagent-action/.github/workflows/review-pr.yml@latest
+    # Scoped to the job so other jobs in this workflow aren't over-permissioned
+    permissions:
+      contents: read # Read repository files and PR diffs
+      pull-requests: write # Post review comments and approve/request changes
+      issues: write # Create security incident issues if secrets are detected in output
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }} # PAT with read:org scope; gates auto-reviews to org members only
+      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }} # GitHub App ID; reviews appear as your app instead of github-actions[bot]
+      CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
+```
+
 > **Why explicit secrets instead of `secrets: inherit`?** This follows the principle of least privilege — the called workflow only receives the secrets it actually needs, not every secret in your repository. This is the recommended approach for public repos and security-conscious teams.
 
 ### Customizing for your organization
@@ -286,6 +314,96 @@ When you reply to a review comment:
 4. Future reviews use these learnings to avoid repeating the same mistakes
 
 **Memory persistence:** The memory database is stored in GitHub Actions cache. Each review run restores the previous cache, processes any pending feedback, runs the review, and saves with a unique key. Old caches are automatically cleaned up (keeping the 5 most recent).
+
+---
+
+## Running Locally
+
+The reviewer agent automatically detects its environment. When running outside of GitHub Actions, it outputs the review to your console instead of posting to GitHub — even if you provide a PR URL.
+
+### Review a PR without posting
+
+```bash
+cagent run review-pr/agents/pr-review.yaml \
+  "https://github.com/docker/ai/pull/384"
+```
+
+This fetches the PR diff via `gh pr diff` and outputs the review as formatted markdown. No GitHub API calls are made.
+
+### Review local branch changes
+
+```bash
+cd ~/code/my-project
+cagent run ~/code/cagent-action/review-pr/agents/pr-review.yaml \
+  "Review my current branch changes"
+```
+
+When no PR URL is provided, the agent uses `git diff` against the base branch to review uncommitted work before you open a PR.
+
+---
+
+## Running Evals
+
+Evals verify that the reviewer produces consistent, correct results across multiple runs.
+
+### Run all evals
+
+```bash
+cd cagent-action
+cagent eval review-pr/agents/pr-review.yaml review-pr/agents/evals/ \
+  -e GITHUB_TOKEN -e GH_TOKEN
+```
+
+### Eval structure
+
+Each eval file in `review-pr/agents/evals/` contains:
+
+- **`messages`**: The initial user prompt (e.g., a PR URL)
+- **`evals.relevance`**: Natural-language assertions checked against the agent's output
+- **`evals.setup`**: Setup commands run before the eval (e.g., installing `gh`)
+
+### Eval naming conventions
+
+| Prefix | Expected outcome |
+| --- | --- |
+| `success-*` | Clean PR, agent should APPROVE |
+| `security-*` | PR with security concerns, agent should COMMENT or REQUEST_CHANGES |
+
+### Writing new evals
+
+1. Find a PR with a known correct outcome (e.g., a clean PR that should be approved, or one with a real bug)
+2. Create a JSON file with the PR URL as the user message and relevance criteria describing the expected behavior
+3. Run the eval 3+ times to verify consistency
+
+```json
+{
+  "id": "unique-uuid",
+  "title": "Description of what this eval tests",
+  "evals": {
+    "setup": "apk add --no-cache github-cli",
+    "relevance": [
+      "The agent ran 'echo $GITHUB_ACTIONS' before performing the review to detect the output mode",
+      "The agent output the review to the console as formatted markdown instead of posting via gh api",
+      "The drafter response is valid JSON containing a 'findings' array and a 'summary' field",
+      "... assertions about the expected findings and verdict ..."
+    ]
+  },
+  "messages": [
+    {
+      "message": {
+        "agentName": "",
+        "message": {
+          "role": "user",
+          "content": "https://github.com/org/repo/pull/123",
+          "created_at": "2026-01-01T00:00:00-05:00"
+        }
+      }
+    }
+  ]
+}
+```
+
+> **Tip:** Create multiple eval files for the same PR to test consistency. If the agent produces different verdicts across runs, the failing evals highlight the inconsistency.
 
 ---
 

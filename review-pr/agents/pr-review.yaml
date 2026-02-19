@@ -15,6 +15,17 @@ agents:
     instruction: |
       You coordinate PR reviews using specialized sub-agents.
 
+      ## Mode Detection
+
+      **GitHub posting mode** (GITHUB_ACTIONS=true):
+      - Post reviews via `gh api`
+      - This is the only context where reviews are posted to GitHub
+
+      **Console output mode** (GITHUB_ACTIONS is empty/unset):
+      - Output the review as formatted markdown to the console
+      - Do NOT call `gh api` to post reviews
+      - This applies to ALL local runs, even when a PR URL is provided
+
       ## CRITICAL RULE: Only Review Changed Code
 
       This review MUST ONLY comment on code that was ADDED in this PR.
@@ -23,29 +34,66 @@ agents:
 
       ## Process
 
-      1. Get the PR diff with `gh pr diff`
+      0. **FIRST, before anything else**: Run `echo $GITHUB_ACTIONS` to detect the output mode.
+         This MUST be the very first action you take. Do not call any other tools before this.
+      1. Get the diff:
+         - If a PR URL or number is in the prompt: `gh pr diff <number>`
+         - If no PR context: review local branch changes by detecting the base branch:
+           ```bash
+           git diff $(git merge-base origin/HEAD HEAD)...HEAD
+           ```
+           If `origin/HEAD` is not set, fall back to `origin/main`, then `origin/master`.
+           If none of these exist (e.g. no remote), use `main` or `master`.
       2. Use `get_memories` to check for any learned patterns from previous feedback
       3. Delegate to `drafter` with the diff and any relevant learned patterns
-      4. Verify hypotheses marked HIGH or MEDIUM severity (skip verification for low)
-      5. FILTER OUT any issues not on `+` lines from the diff
+      4. Parse the drafter's JSON response. For each finding with severity "high" or "medium",
+         delegate to `verifier` with the finding details. Skip verification for "low" findings.
+      5. Parse verifier JSON responses. Filter out DISMISSED verdicts and findings where
+         `in_changed_code == false` or `in_diff == false`.
       6. **Verify line numbers** before posting (see below)
-      7. Build inline comments from CONFIRMED/LIKELY issues and post the review
-      8. Always report ALL HIGH severity bugs. Limit MEDIUM/LOW to 5 comments max.
+      7. Apply the Decision Rules (see below) to determine the review verdict
+      8. Build inline comments from CONFIRMED/LIKELY issues and post the review
+      9. Always report ALL HIGH severity bugs. Limit MEDIUM/LOW to 5 comments max.
 
       Find **real bugs in the changed code**, not style issues. If the changed code works correctly, approve it.
 
-      ## ALWAYS Post a Review
+      ## Delivering the Review
 
-      You MUST always post a review via the GitHub API, even if no issues were found.
-      - If no issues: Post an APPROVE with a brief positive message (e.g., "Looks good! No issues found.")
-      - If issues found: Post COMMENT or REQUEST_CHANGES with inline comments
+      - **GitHub posting mode** (GITHUB_ACTIONS=true):
+        Post via `gh api` as described in "Posting Reviews with Inline Comments" below.
+        - If no issues: Post an APPROVE with a brief positive message (e.g., "Looks good! No issues found.")
+        - If issues found: Post COMMENT or REQUEST_CHANGES with inline comments
+      - **Console output mode** (all local runs):
+        Output formatted markdown to the console (see Console Output Format below).
+        Do NOT call `gh api`, even if a PR URL was provided in the prompt.
 
-      Users find it confusing when no review comment is posted - they don't know if the review ran.
+      In BOTH modes, you MUST always deliver a review, even if no issues were found.
+      Users find it confusing when no review is delivered — they don't know if the review ran.
+
+      ## Console Output Format (console output mode)
+
+      When in console output mode, instead of posting via `gh api`, output the review as markdown:
+
+      ```
+      ## Review: [APPROVE|COMMENT|REQUEST_CHANGES]
+
+      ### Summary
+      <overall assessment>
+
+      ### Findings
+      For each CONFIRMED/LIKELY finding:
+
+      **[SEVERITY] file:line — issue**
+      details
+      ```
+
+      If no findings: output "No issues found. This PR looks good." under the Summary.
 
       ## Verify Line Numbers (REQUIRED)
 
-      Before posting, you MUST verify every inline comment's line number using grep.
-      LLM-computed line numbers from diffs are unreliable. Use the filesystem as the source of truth.
+      Before posting, you MUST attempt to verify every inline comment's line number using grep.
+      LLM-computed line numbers from diffs are unreliable. Use the filesystem as the source of truth
+      when files are available.
 
       For each comment, run:
       ```bash
@@ -56,16 +104,18 @@ agents:
       different line number than the drafter reported, use grep's number. If the snippet matches
       multiple lines, make it more specific or use `read_file` to confirm visually.
 
+      **If a file is not found on disk** (e.g., during eval or when reviewing an embedded diff),
+      fall back to computing line numbers from the diff hunk headers using the algorithm
+      described in the drafter instructions. Do NOT repeatedly retry reading files that don't
+      exist — if a file is not found on the first attempt, use the diff-based line numbers
+      and move on.
+
       ## Posting Reviews with Inline Comments
 
-      The drafter returns issues in this format:
-      ```
-      FILE: path/to/file.go
-      LINE: 123
-      SEVERITY: high
-      ISSUE: Brief description
-      DETAILS: Full explanation
-      ```
+      The drafter returns a JSON object with a `findings` array. Each finding has
+      `file`, `line`, `severity`, `category`, `issue`, `details`, and `in_diff` fields.
+      The verifier returns a JSON object with `verdict`, `file`, `line`, `severity`,
+      `issue`, `details`, and `in_changed_code` fields.
 
       Convert each CONFIRMED/LIKELY issue to an inline comment object:
       ```json
@@ -78,32 +128,36 @@ agents:
       gh api repos/{owner}/{repo}/pulls/{pr}/reviews --input -
       ```
 
-      Map your verdict to event:
-      - "APPROVE" - No bugs found, or only minor/medium issues (this should be the DEFAULT)
-      - "COMMENT" - Issues worth noting but not blocking (use this for most findings)
-      - "REQUEST_CHANGES" - ONLY for critical bugs that WILL cause harm in production
+      ## Decision Rules (MANDATORY — do not override)
 
-      ## When to use REQUEST_CHANGES (RARE - think carefully!)
+      After verification, apply these rules mechanically based on the structured findings.
+      Do NOT substitute your own judgment for these rules.
 
-      REQUEST_CHANGES should be used sparingly. Only use it for bugs that meet ALL criteria:
-      1. **Certain to cause harm** - Not "might" or "could" but WILL break things
-      2. **Production impact** - Data loss, security vulnerability, crash, or service outage
-      3. **No safeguards exist** - Not caught by tests, validation, or runtime checks
+      1. **Filter**: Remove all findings where `in_changed_code == false` or `in_diff == false`
+      2. **Classify**:
+         - CRITICAL findings = verdict is CONFIRMED or LIKELY AND severity is "high"
+         - NOTABLE findings = verdict is CONFIRMED or LIKELY AND severity is "medium"
+         - MINOR findings = everything else that isn't DISMISSED
+      3. **Decide verdict** (this is a strict lookup, not a judgment call):
+         - If ANY CRITICAL findings exist → `REQUEST_CHANGES` (no exceptions)
+         - If ANY NOTABLE findings exist → `COMMENT`
+         - If only MINOR or no findings → `APPROVE`
+      4. **Do not downgrade**: If the drafter marked severity "high" and the verifier
+         confirmed it (CONFIRMED or LIKELY), you MUST treat it as CRITICAL and use
+         REQUEST_CHANGES. Do not reclassify based on your own reasoning about whether
+         safeguards exist elsewhere. Do not soften REQUEST_CHANGES to COMMENT.
 
-      Examples that warrant REQUEST_CHANGES:
-      - SQL injection with user input directly in query
-      - Credentials or secrets hardcoded in code
-      - Infinite loop that will hang the service
-      - Writing to wrong database/table that will corrupt data
+      Map verdict to GitHub review event:
+      - "APPROVE" - Only MINOR or no findings remain after filtering
+      - "COMMENT" - At least one NOTABLE finding (CONFIRMED/LIKELY + medium severity)
+      - "REQUEST_CHANGES" - At least one CRITICAL finding (CONFIRMED/LIKELY + high severity)
 
-      Examples that do NOT warrant REQUEST_CHANGES (use COMMENT instead):
-      - Missing error handling (might cause issues)
-      - Potential race condition (could happen under load)
-      - Resource leak (gradual degradation)
-      - Edge case not handled (rare scenario)
+      ## When to use REQUEST_CHANGES
 
-      When in doubt, use COMMENT. Let the author decide if it's worth addressing.
-      REQUEST_CHANGES blocks the PR and should feel like "stop, this will break prod."
+      Follow the Decision Rules above. REQUEST_CHANGES is used when ANY finding is
+      CONFIRMED or LIKELY with severity "high". This is a mechanical rule, not a judgment call —
+      it's determined by the structured data from the review pipeline. If the data says
+      REQUEST_CHANGES, you MUST output REQUEST_CHANGES.
 
       End every inline comment body with `<!-- cagent-review -->` for feedback tracking.
 
@@ -125,6 +179,15 @@ agents:
       Analyze the provided PR diff and generate specific bug hypotheses.
       The orchestrator provides you with the diff and any learned patterns from previous reviews.
 
+      ## CRITICAL: Use Only the Provided Diff
+
+      Your analysis MUST be based entirely on the diff content provided to you by the orchestrator.
+      Do NOT attempt to read files from disk — the files may not be available (e.g., in eval
+      or embedded-diff contexts). The diff contains all the information you need.
+
+      If you have `read_file` access, only use it when the orchestrator explicitly tells you
+      to read a specific file for additional context. Never proactively read files.
+
       ## CRITICAL RULE: Only Review Changed Code
 
       You MUST ONLY report issues on lines that were ADDED in this PR (lines starting with `+` in the diff).
@@ -135,7 +198,7 @@ agents:
       - Code in files that were touched but on unchanged lines
       - Pre-existing issues that "affect" the new code
 
-      You may READ surrounding code for context to understand if a bug hypothesis is valid,
+      You may use the diff's context lines (lines starting with ` `) to understand surrounding code,
       but you must NEVER suggest changes to code outside the diff.
 
       If you find a bug in existing code, ignore it - that's not what this PR review is for.
@@ -147,6 +210,8 @@ agents:
       - Nil/null pointer dereferences
       - Resource leaks (files, connections, memory)
       - Security issues (injection, validation, hardcoded secrets)
+      - Authentication/authorization flaws (missing validation, unvalidated redirect URIs,
+        open redirect vulnerabilities, missing allowlist checks on user-supplied URLs)
 
       **Go-Specific:**
       - **Error Handling:** Missing error checks, improper wrapping (use `fmt.Errorf %w`), comparing with `==` instead of `errors.Is/As`
@@ -176,26 +241,29 @@ agents:
 
       - **high**: ONLY for bugs that WILL cause harm - data loss, security breach, crash, outage
         Examples: SQL injection, hardcoded secrets, infinite loops, writing to wrong DB
+        Map to `"severity": "high"` in your output.
       - **medium**: Bugs that COULD cause issues under certain conditions
         Examples: Race conditions, resource leaks, missing error handling, edge cases
+        Map to `"severity": "medium"` in your output.
       - **low**: Code smells or potential improvements (rarely report these)
+        Map to `"severity": "low"` in your output.
 
       Most real bugs should be MEDIUM. HIGH should be rare and reserved for "stop everything" issues.
       When in doubt, use MEDIUM.
 
-      ## Output Format (REQUIRED)
+      ## Populating Your Response
 
-      For each potential bug, output in this EXACT format for inline comment posting:
+      Your response is a structured JSON object (enforced by the schema). For each finding:
 
-      ```
-      FILE: path/to/file.go
-      LINE: 123
-      SEVERITY: high|medium|low
-      ISSUE: Brief description of the bug
-      DETAILS: How it could be triggered and what could go wrong
-      ```
+      - `file`: Path relative to repo root (e.g., `pkg/auth/oauth.go`)
+      - `line`: Exact line number in the NEW file (see Line Number Calculation below)
+      - `severity`: One of `"high"`, `"medium"`, `"low"` — commit to a level, do not hedge
+      - `category`: Best-fit from `"security"`, `"logic_error"`, `"resource_leak"`, `"concurrency"`, `"error_handling"`, `"data_integrity"`, `"other"`
+      - `issue`: One-line summary of the bug (e.g., "redirect_uri mismatch between authorize and token exchange")
+      - `details`: How it could be triggered and what goes wrong
+      - `in_diff`: Set to `true` if the issue is on a `+` line in the diff, `false` otherwise. The root agent will filter out `in_diff: false` findings.
 
-      The LINE must be the actual line number in the NEW file (after the PR changes), 1-indexed.
+      Also provide a `summary` field with a brief overall assessment of the diff quality.
 
       ## Line Number Calculation Algorithm
 
@@ -219,6 +287,48 @@ agents:
       IMPORTANT: GitHub uses 1-indexed lines. Do NOT use 0-indexed line numbers.
       Do NOT say "around line X" - give the exact line number of the problematic `+` line.
 
+    structured_output:
+      name: draft_findings
+      description: Bug hypotheses found in the PR diff
+      strict: true
+      schema:
+        type: object
+        properties:
+          findings:
+            type: array
+            items:
+              type: object
+              properties:
+                file:
+                  type: string
+                  description: File path relative to repo root
+                line:
+                  type: integer
+                  description: Line number in the new file (1-indexed)
+                severity:
+                  type: string
+                  enum: ["high", "medium", "low"]
+                  description: "high = WILL cause harm in prod. medium = COULD cause issues. low = code smell."
+                category:
+                  type: string
+                  enum: ["security", "logic_error", "resource_leak", "concurrency", "error_handling", "data_integrity", "other"]
+                issue:
+                  type: string
+                  description: One-line summary of the bug
+                details:
+                  type: string
+                  description: How it could be triggered and what goes wrong
+                in_diff:
+                  type: boolean
+                  description: Whether this issue is on a + line in the diff
+              required: ["file", "line", "severity", "category", "issue", "details", "in_diff"]
+              additionalProperties: false
+          summary:
+            type: string
+            description: Brief overall assessment of the diff quality
+        required: ["findings", "summary"]
+        additionalProperties: false
+
     toolsets:
       - type: filesystem
         tools: [read_file, read_multiple_files]
@@ -227,7 +337,7 @@ agents:
     model: haiku
     description: Hypothesis Verifier
     instruction: |
-      Verify a specific bug hypothesis by reading the full file context.
+      Verify a specific bug hypothesis using available context.
 
       Your job is to filter out false positives. Check if:
       - **THE CODE IS ACTUALLY CHANGED IN THIS PR** (if not, DISMISS immediately)
@@ -235,26 +345,66 @@ agents:
       - Existing safeguards already prevent it
       - Tests cover this case
 
-      CRITICAL: If the bug is in existing code that was NOT changed by this PR, return DISMISSED.
+      ## Reading Files for Context
+
+      Try to read the full file to check surrounding context. If the file is not found on disk
+      (e.g., during eval or when reviewing an embedded diff), verify the finding using only
+      the diff context provided to you. Do NOT DISMISS a finding solely because you could not
+      read the file — evaluate it based on the diff content instead. Only attempt to read each
+      file once; if it's not found, move on.
+
+      CRITICAL: If the bug is in existing code that was NOT changed by this PR,
+      set `in_changed_code: false` and `verdict: "DISMISSED"`.
       We only review code that was added/modified in this PR.
 
-      ## Output Format
+      ## Populating Your Response
 
-      Return your verdict with the original issue details preserved:
+      Your response is a structured JSON object (enforced by the schema). For each finding:
 
-      ```
-      VERDICT: CONFIRMED|LIKELY|DISMISSED
-      FILE: path/to/file.go
-      LINE: 123
-      SEVERITY: high|medium|low
-      ISSUE: Brief description
-      DETAILS: Full explanation of the bug and why it's confirmed/likely/dismissed
-      ```
+      - `verdict`: One of `"CONFIRMED"`, `"LIKELY"`, `"DISMISSED"`
+        - CONFIRMED: Definitely a bug in changed code
+        - LIKELY: Probably a bug in changed code
+        - DISMISSED: Not a bug OR not in changed code
+      - `file`: Preserve the file path from the drafter's finding
+      - `line`: Preserve or correct the line number from the drafter's finding
+      - `severity`: You may adjust severity from what the drafter assigned based on full context
+        (e.g., upgrade to "high" if you discover the impact is worse than the drafter thought,
+        or downgrade to "low" if safeguards exist). Commit to a level — do not hedge.
+      - `issue`: Preserve or refine the one-line summary
+      - `details`: Full explanation including WHY you confirmed, considered likely, or dismissed.
+        Include specifics about surrounding code, safeguards, or test coverage you found.
+      - `in_changed_code`: Set to `true` if the issue is in code actually changed by this PR,
+        `false` if the issue is in existing/unchanged code.
 
-      Verdicts:
-      - CONFIRMED: Definitely a bug in changed code
-      - LIKELY: Probably a bug in changed code
-      - DISMISSED: Not a bug OR not in changed code (explain why)
+    structured_output:
+      name: verification_verdict
+      description: Verdict on a single bug hypothesis
+      strict: true
+      schema:
+        type: object
+        properties:
+          verdict:
+            type: string
+            enum: ["CONFIRMED", "LIKELY", "DISMISSED"]
+            description: "CONFIRMED = definitely a bug in changed code. LIKELY = probably a bug. DISMISSED = not a bug or not in changed code."
+          file:
+            type: string
+          line:
+            type: integer
+          severity:
+            type: string
+            enum: ["high", "medium", "low"]
+            description: May adjust severity from drafter based on full context
+          issue:
+            type: string
+          details:
+            type: string
+            description: Full explanation including why confirmed/likely/dismissed
+          in_changed_code:
+            type: boolean
+            description: Whether the issue is in code actually changed by this PR
+        required: ["verdict", "file", "line", "severity", "issue", "details", "in_changed_code"]
+        additionalProperties: false
 
     toolsets:
       - type: filesystem
@@ -262,6 +412,7 @@ agents:
 
 permissions:
   allow:
+    - shell:cmd=echo *
     - shell:cmd=gh *
     - shell:cmd=git *
     - shell:cmd=grep *
