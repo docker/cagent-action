@@ -20,4 +20,6 @@ permissions:
 jobs:
   review:
     uses: ./.github/workflows/review-pr.yml
+    with:
+      add-prompt-files: "AGENTS.md"
     secrets: inherit
