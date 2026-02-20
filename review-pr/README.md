@@ -11,28 +11,28 @@ Add `.github/workflows/pr-review.yml` to your repo with this **minimal but safe 
 ```yaml
 name: PR Review
 on:
-  issue_comment: # Enables /review command in PR comments
+  issue_comment:               # Enables /review command in PR comments
     types: [created]
   pull_request_review_comment: # Captures feedback on review comments for learning
     types: [created]
-  pull_request_target: # Triggers auto-review on PR open; uses base branch context so secrets work with forks
+  pull_request_target:         # Triggers auto-review on PR open; uses base branch context so secrets work with forks
     types: [ready_for_review, opened]
 
 permissions:
-  contents: read
+  contents: read # This is required to be a top-level permission to give `issue_comment` events (on forked PRs) access to the secrets below.
 
 jobs:
   review:
     uses: docker/cagent-action/.github/workflows/review-pr.yml@latest
     # Scoped to the job so other jobs in this workflow aren't over-permissioned
     permissions:
-      contents: read # Read repository files and PR diffs
+      contents: read       # Read repository files and PR diffs
       pull-requests: write # Post review comments and approve/request changes
-      issues: write # Create security incident issues if secrets are detected in output
+      issues: write        # Create security incident issues if secrets are detected in output
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }} # PAT with read:org scope; gates auto-reviews to org members only
-      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }} # GitHub App ID; reviews appear as your app instead of github-actions[bot]
+      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}         # PAT with read:org scope; gates auto-reviews to org members only
+      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }}                   # GitHub App ID; reviews appear as your app instead of github-actions[bot]
       CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
 ```
 
@@ -55,6 +55,30 @@ The workflow automatically handles:
 | PR opened/ready         | Auto-reviews PRs from your org members (if `CAGENT_ORG_MEMBERSHIP_TOKEN` is configured) |
 | `/review` comment       | Manual review on any PR                                                                 |
 | Reply to review comment | Learns from feedback to improve future reviews                                          |
+
+---
+
+## Running Locally
+
+Requires [cagent](https://github.com/docker/cagent) installed locally. The reviewer agent automatically detects its environment. When running locally, it diffs your current branch against the base branch and outputs findings to the console.
+
+```bash
+cd ~/code/my-project
+cagent run agentcatalog/review-pr "Review my changes"
+```
+
+The agent automatically:
+- Pulls the latest version from Docker Hub
+- Diffs your current branch against the base branch
+- Outputs the review as formatted markdown
+
+To include project-specific instructions, use the `--prompt-file` flag:
+
+```bash
+cagent run agentcatalog/review-pr --prompt-file AGENTS.md "Review my changes"
+```
+
+> **Tip:** cagent has a TUI, so you can interact with the agent during the review — ask follow-up questions, request clarification on findings, or drill into specific files.
 
 ---
 
@@ -115,7 +139,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-> **Note:** When using the composite action directly, feedback learning is handled automatically — the review action collects and processes any pending feedback artifacts before each review. To capture feedback, use the reusable workflow which includes the `capture-feedback` job, or add the equivalent artifact upload step to your own workflow.
+> **Note:** When using the composite action directly, learning from feedback is handled automatically — the review action collects and processes any pending feedback artifacts before each review. However, to _capture_ that feedback, use the reusable workflow which includes the `capture-feedback` job, or add the equivalent artifact upload step to your own workflow.
 
 ---
 
@@ -212,7 +236,7 @@ When using `docker/cagent-action/.github/workflows/review-pr.yml`:
 | `comment-id`        | Comment ID for reactions (auto-detected)            | -         |
 | `additional-prompt` | Additional review guidelines                        | -         |
 | `model`             | Model override (e.g., `anthropic/claude-haiku-4-5`) | -         |
-| `cagent-version`    | cagent version                                      | `v1.23.1` |
+| `cagent-version`    | cagent version                                      | `v1.23.4` |
 | `auto-review-org`   | Organization for auto-review membership check       | `docker`  |
 
 ### `review-pr` (Composite Action)
@@ -314,31 +338,6 @@ When you reply to a review comment:
 4. Future reviews use these learnings to avoid repeating the same mistakes
 
 **Memory persistence:** The memory database is stored in GitHub Actions cache. Each review run restores the previous cache, processes any pending feedback, runs the review, and saves with a unique key. Old caches are automatically cleaned up (keeping the 5 most recent).
-
----
-
-## Running Locally
-
-The reviewer agent automatically detects its environment. When running outside of GitHub Actions, it outputs the review to your console instead of posting to GitHub — even if you provide a PR URL.
-
-### Review a PR without posting
-
-```bash
-cagent run review-pr/agents/pr-review.yaml \
-  "https://github.com/docker/ai/pull/384"
-```
-
-This fetches the PR diff via `gh pr diff` and outputs the review as formatted markdown. No GitHub API calls are made.
-
-### Review local branch changes
-
-```bash
-cd ~/code/my-project
-cagent run ~/code/cagent-action/review-pr/agents/pr-review.yaml \
-  "Review my current branch changes"
-```
-
-When no PR URL is provided, the agent uses `git diff` against the base branch to review uncommitted work before you open a PR.
 
 ---
 

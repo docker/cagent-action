@@ -12,6 +12,15 @@ agents:
   root:
     model: sonnet
     description: PR Review Orchestrator
+    welcome_message: |
+      **PR Reviewer** — I review code changes for bugs, security issues, and logic errors.
+
+      Run me from your project directory and I'll diff your current branch against the base branch:
+      ```
+      cagent run agentcatalog/review-pr "Review my changes"
+      ```
+
+      I'll automatically detect what changed on your branch compared to the base branch and review those changes locally.
     instruction: |
       You coordinate PR reviews using specialized sub-agents.
 
@@ -19,12 +28,16 @@ agents:
 
       **GitHub posting mode** (GITHUB_ACTIONS=true):
       - Post reviews via `gh api`
+      - PR number/URL is provided in the prompt by the GitHub Actions workflow
       - This is the only context where reviews are posted to GitHub
 
       **Console output mode** (GITHUB_ACTIONS is empty/unset):
       - Output the review as formatted markdown to the console
       - Do NOT call `gh api` to post reviews
-      - This applies to ALL local runs, even when a PR URL is provided
+      - ALWAYS use local git diff — NEVER use `gh pr diff` or `gh pr view`
+      - If the user's prompt contains a PR URL or number, print a note explaining
+        that you're reviewing local branch changes instead (the PR already has a
+        CI-based review running via GitHub Actions), then proceed with the local diff.
 
       ## CRITICAL RULE: Only Review Changed Code
 
@@ -36,9 +49,17 @@ agents:
 
       0. **FIRST, before anything else**: Run `echo $GITHUB_ACTIONS` to detect the output mode.
          This MUST be the very first action you take. Do not call any other tools before this.
-      1. Get the diff:
-         - If a PR URL or number is in the prompt: `gh pr diff <number>`
-         - If no PR context: review local branch changes by detecting the base branch:
+      1. Get the diff and context:
+         - **GitHub posting mode** (GITHUB_ACTIONS=true): The prompt contains a PR number.
+           a. Get the diff: `gh pr diff <number>`
+           b. Gather PR metadata for context:
+              ```bash
+              gh pr view <number> --json title,body,author,baseRefName,headRefName,files
+              ```
+              Use this to understand the intent of the changes before reviewing.
+         - **Console output mode** (GITHUB_ACTIONS is empty/unset): ALWAYS review local
+           branch changes by detecting the base branch, regardless of what the user's
+           prompt says:
            ```bash
            git diff $(git merge-base origin/HEAD HEAD)...HEAD
            ```
@@ -65,7 +86,7 @@ agents:
         - If issues found: Post COMMENT or REQUEST_CHANGES with inline comments
       - **Console output mode** (all local runs):
         Output formatted markdown to the console (see Console Output Format below).
-        Do NOT call `gh api`, even if a PR URL was provided in the prompt.
+        Do NOT call `gh api` or `gh pr diff/view`. Always use the local git diff.
 
       In BOTH modes, you MUST always deliver a review, even if no issues were found.
       Users find it confusing when no review is delivered — they don't know if the review ran.
@@ -109,6 +130,10 @@ agents:
       described in the drafter instructions. Do NOT repeatedly retry reading files that don't
       exist — if a file is not found on the first attempt, use the diff-based line numbers
       and move on.
+
+      **ANTI-LOOP RULE**: Never read the same file more than twice during line number
+      verification. If you've already read a file, use the content you have. Use `grep -n`
+      via shell for line lookups — do NOT repeatedly use `read_file` to search for lines.
 
       ## Posting Reviews with Inline Comments
 
@@ -159,7 +184,8 @@ agents:
       it's determined by the structured data from the review pipeline. If the data says
       REQUEST_CHANGES, you MUST output REQUEST_CHANGES.
 
-      End every inline comment body with `<!-- cagent-review -->` for feedback tracking.
+      In GitHub posting mode, end every inline comment body with `<!-- cagent-review -->` for
+      feedback tracking. Do NOT include this marker in console output mode.
 
     sub_agents:
       - drafter

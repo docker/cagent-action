@@ -51,15 +51,15 @@ For automated pull request reviews with a multi-agent system, see the [PR Review
 ```yaml
 name: PR Review
 on:
-  issue_comment: # Enables /review command in PR comments
+  issue_comment:               # Enables /review command in PR comments
     types: [created]
   pull_request_review_comment: # Captures feedback on review comments for learning
     types: [created]
-  pull_request_target: # Triggers auto-review on PR open; uses base branch context so secrets work with forks
+  pull_request_target:         # Triggers auto-review on PR open; uses base branch context so secrets work with forks
     types: [ready_for_review, opened]
 
 permissions:
-  contents: read
+  contents: read # This is required to be a top-level permission to give `issue_comment` events (on forked PRs) access to the secrets below.
 
 jobs:
   review:
@@ -71,8 +71,8 @@ jobs:
       issues: write        # Create security incident issues if secrets are detected in output
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }} # PAT with read:org scope; gates auto-reviews to org members only
-      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }} # GitHub App ID; reviews appear as your app instead of github-actions[bot]
+      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}         # PAT with read:org scope; gates auto-reviews to org members only
+      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }}                   # GitHub App ID; reviews appear as your app instead of github-actions[bot]
       CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
 ```
 
@@ -98,7 +98,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-    cagent-version: v1.23.1
+    cagent-version: v1.23.4
     mcp-gateway: true # Set to true to install mcp-gateway
     mcp-gateway-version: v0.22.0
     yolo: false # Require manual approval
@@ -142,7 +142,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 | --------------------- | ------------------------------------------------------------------------------------ | -------- | ------------------------------- |
 | `agent`               | Agent identifier (e.g., `docker/code-analyzer`) or path to `.yaml` file              | Yes      | -                               |
 | `prompt`              | Prompt to pass to the agent                                                          | No       | -                               |
-| `cagent-version`      | Version of cagent to use                                                             | No       | `v1.23.1`                       |
+| `cagent-version`      | Version of cagent to use                                                             | No       | `v1.23.4`                       |
 | `mcp-gateway`         | Install mcp-gateway (`true`/`false`)                                                 | No       | `false`                         |
 | `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No       | `v0.22.0`                       |
 | `anthropic-api-key`   | Anthropic API key for Claude models (at least one API key required)                  | No*      | -                                   |
@@ -162,7 +162,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 | `quiet`               | Suppress verbose tool call output (`true`/`false`). Set to `false` for debugging.    | No       | `true`                          |
 | `max-retries`         | Maximum number of retries on failure (0 = no retries)                                | No       | `2`                             |
 | `retry-delay`         | Seconds to wait between retries                                                      | No       | `5`                             |
-| `extra-args`          | Additional arguments to pass to `cagent exec`                                        | No       | -                               |
+| `extra-args`          | Additional arguments to pass to `cagent run`                                         | No       | -                               |
 | `add-prompt-files`    | Comma-separated list of files to append to the prompt (e.g., `AGENTS.md,CLAUDE.md`)  | No       | -                               |
 
 ### Prompt Files (`add-prompt-files`)
@@ -192,7 +192,7 @@ add-prompt-files: "AGENTS.md"  # Found via hierarchy search
 
 | Output                  | Description                                              |
 | ----------------------- | -------------------------------------------------------- |
-| `exit-code`             | Exit code from the cagent exec                           |
+| `exit-code`             | Exit code from cagent run                                |
 | `output-file`           | Path to the output log file                              |
 | `cagent-version`        | Version of cagent that was used                          |
 | `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`)       |

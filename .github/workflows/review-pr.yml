@@ -53,7 +53,7 @@ on:
         description: "Version of cagent to use"
         required: false
         type: string
-        default: "v1.23.1"
+        default: "v1.23.4"
       add-prompt-files:
         description: "Comma-separated list of files to append to the prompt (e.g., 'AGENTS.md,CLAUDE.md')"
         required: false
