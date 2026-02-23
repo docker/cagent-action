@@ -15,7 +15,7 @@ inputs:
   cagent-version:
     description: "Version of cagent to use"
     required: false
-    default: "v1.23.4"
+    default: "v1.23.6"
   mcp-gateway:
     description: "Install mcp-gateway (true/false)"
     required: false
@@ -74,6 +74,14 @@ inputs:
     description: "Suppress verbose tool call output (true/false). Set to false for debugging."
     required: false
     default: "true"
+  max-retries:
+    description: "Maximum number of retries on failure (0 = no retries)"
+    required: false
+    default: "2"
+  retry-delay:
+    description: "Base delay in seconds between retries (doubles each attempt)"
+    required: false
+    default: "5"
   extra-args:
     description: "Additional arguments to pass to cagent run"
     required: false
@@ -426,6 +434,8 @@ runs:
         MCP_INSTALLED: ${{ steps.setup-binaries.outputs.mcp-installed }}
         QUIET: ${{ inputs.quiet }}
         ADD_PROMPT_FILES: ${{ inputs.add-prompt-files }}
+        MAX_RETRIES: ${{ inputs.max-retries }}
+        RETRY_DELAY: ${{ inputs.retry-delay }}
         TELEMETRY_TAGS: "source=github-actions,repo=${{ github.repository }},workflow=${{ github.workflow }},run_id=${{ github.run_id }}"
       run: |
         set -e
@@ -505,19 +515,56 @@ runs:
         # Track execution time
         START_TIME=$(date +%s)
 
-        # SECURE: Direct execution with quoted arguments (no eval!)
-        set +e  # Don't exit on command failure
-        if [ "$TIMEOUT" != "0" ]; then
-          printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
-          EXIT_CODE=$?
-          if [ $EXIT_CODE -eq 124 ]; then
-            echo "::error::Agent execution timed out after $TIMEOUT seconds"
+        # Retry loop with exponential backoff
+        ATTEMPT=0
+        CURRENT_DELAY="$RETRY_DELAY"
+        EXIT_CODE=1
+
+        while true; do
+          ATTEMPT=$((ATTEMPT + 1))
+
+          if [ "$ATTEMPT" -gt 1 ]; then
+            echo "🔄 Retry attempt $((ATTEMPT - 1)) of $MAX_RETRIES (waiting ${CURRENT_DELAY}s)..."
+            sleep "$CURRENT_DELAY"
+            CURRENT_DELAY=$((CURRENT_DELAY * 2))
+            # Reset output file for retry
+            > "$OUTPUT_FILE"
           fi
-        else
-          printf '%s\n' "$PROMPT_INPUT" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
-          EXIT_CODE=${PIPESTATUS[0]}
-        fi
-        set -e
+
+          # SECURE: Direct execution with quoted arguments (no eval!)
+          set +e  # Don't exit on command failure
+          # Pipeline: printf | [timeout] cagent | tee
+          # PIPESTATUS: [0]=printf  [1]=cagent/timeout  [2]=tee
+          if [ "$TIMEOUT" != "0" ]; then
+            printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
+            EXIT_CODE=${PIPESTATUS[1]}
+            if [ $EXIT_CODE -eq 124 ]; then
+              echo "::error::Agent execution timed out after $TIMEOUT seconds"
+            fi
+          else
+            printf '%s\n' "$PROMPT_INPUT" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
+            EXIT_CODE=${PIPESTATUS[1]}
+          fi
+          set -e
+
+          # Success — no retry needed
+          if [ $EXIT_CODE -eq 0 ]; then
+            break
+          fi
+
+          # Timeout (124) — don't retry, would just timeout again
+          if [ $EXIT_CODE -eq 124 ]; then
+            break
+          fi
+
+          # Max retries exhausted
+          if [ "$ATTEMPT" -gt "$MAX_RETRIES" ]; then
+            echo "::warning::Agent failed after $MAX_RETRIES retries (exit code: $EXIT_CODE)"
+            break
+          fi
+
+          echo "::warning::Agent failed (exit code: $EXIT_CODE), will retry..."
+        done
 
         END_TIME=$(date +%s)
         EXECUTION_TIME=$((END_TIME - START_TIME))

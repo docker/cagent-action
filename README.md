@@ -98,7 +98,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-    cagent-version: v1.23.4
+    cagent-version: v1.23.6
     mcp-gateway: true # Set to true to install mcp-gateway
     mcp-gateway-version: v0.22.0
     yolo: false # Require manual approval
@@ -142,7 +142,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 | --------------------- | ------------------------------------------------------------------------------------ | -------- | ------------------------------- |
 | `agent`               | Agent identifier (e.g., `docker/code-analyzer`) or path to `.yaml` file              | Yes      | -                               |
 | `prompt`              | Prompt to pass to the agent                                                          | No       | -                               |
-| `cagent-version`      | Version of cagent to use                                                             | No       | `v1.23.4`                       |
+| `cagent-version`      | Version of cagent to use                                                             | No       | `v1.23.6`                       |
 | `mcp-gateway`         | Install mcp-gateway (`true`/`false`)                                                 | No       | `false`                         |
 | `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No       | `v0.22.0`                       |
 | `anthropic-api-key`   | Anthropic API key for Claude models (at least one API key required)                  | No*      | -                                   |
@@ -161,7 +161,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 | `yolo`                | Auto-approve all prompts (`true`/`false`)                                            | No       | `true`                          |
 | `quiet`               | Suppress verbose tool call output (`true`/`false`). Set to `false` for debugging.    | No       | `true`                          |
 | `max-retries`         | Maximum number of retries on failure (0 = no retries)                                | No       | `2`                             |
-| `retry-delay`         | Seconds to wait between retries                                                      | No       | `5`                             |
+| `retry-delay`         | Base delay in seconds between retries (doubles each attempt)                          | No       | `5`                             |
 | `extra-args`          | Additional arguments to pass to `cagent run`                                         | No       | -                               |
 | `add-prompt-files`    | Comma-separated list of files to append to the prompt (e.g., `AGENTS.md,CLAUDE.md`)  | No       | -                               |
 

@@ -48,7 +48,7 @@ inputs:
   cagent-version:
     description: "Version of cagent to use"
     required: false
-    default: "v1.23.4"
+    default: "v1.23.6"
   model:
     description: "Model to use for reviews (e.g., anthropic/claude-sonnet-4-5, openai/gpt-4o)"
     required: false
@@ -64,7 +64,7 @@ outputs:
     value: ${{ steps.run-review.outputs.exit-code }}
   review-posted:
     description: "Whether a review was posted"
-    value: ${{ steps.run-review.outputs.review-posted }}
+    value: ${{ steps.verify-review.outputs.review-verified }}
   review-url:
     description: "URL to the posted review"
     value: ${{ steps.post-summary.outputs.review-url }}
@@ -325,12 +325,18 @@ runs:
     # ========================================
     # RUN REVIEW using root cagent-action
     # ========================================
+    - name: Record pre-review timestamp
+      id: pre-review
+      shell: bash
+      run: echo "timestamp=$(date -u -d '5 seconds ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-5S +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
     - name: Run PR Review
       id: run-review
       uses: docker/cagent-action@latest
       with:
         agent: ${{ github.action_path }}/agents/pr-review.yaml
         prompt: ${{ steps.context.outputs.review_prompt }}
+        timeout: "1200"  # 20 min — prevents GitHub App token expiry (1h limit)
         anthropic-api-key: ${{ inputs.anthropic-api-key }}
         openai-api-key: ${{ inputs.openai-api-key }}
         google-api-key: ${{ inputs.google-api-key }}
@@ -343,6 +349,39 @@ runs:
         extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
         add-prompt-files: ${{ inputs.add-prompt-files }}
 
+    - name: Verify review was posted
+      id: verify-review
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
+        PRE_REVIEW_TS: ${{ steps.pre-review.outputs.timestamp }}
+        EXIT_CODE: ${{ steps.run-review.outputs.exit-code }}
+      run: |
+        # If the agent failed, no review was posted
+        if [ "$EXIT_CODE" != "0" ]; then
+          echo "review-verified=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        # Check for a bot review submitted AFTER this run started
+        API_ERR=$(mktemp)
+        REVIEW_COUNT=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+          --jq --arg ts "$PRE_REVIEW_TS" \
+          '[.[] | select(.user.type == "Bot" and .submitted_at >= $ts)] | length' \
+          2>"$API_ERR" || echo "0")
+        if [ -s "$API_ERR" ]; then
+          echo "::warning::Review verification API error: $(cat "$API_ERR")"
+        fi
+        rm -f "$API_ERR"
+
+        if [ "$REVIEW_COUNT" -eq 0 ]; then
+          echo "::warning::Review agent exited successfully but no review was found on the PR. The GitHub token may have expired during execution."
+          echo "review-verified=false" >> $GITHUB_OUTPUT
+        else
+          echo "review-verified=true" >> $GITHUB_OUTPUT
+        fi
+
     - name: Save reviewer memory
       if: always()
       continue-on-error: true  # Don't fail if memory file doesn't exist (first run)
@@ -350,38 +389,6 @@ runs:
       with:
         path: ${{ github.workspace }}/.cache/pr-review-memory.db
         key: pr-review-memory-${{ github.repository }}-${{ github.run_id }}
-
-    - name: Clean up old memory caches
-      if: always()
-      shell: bash
-      env:
-        GH_TOKEN: ${{ steps.resolve-token.outputs.token }}
-      run: |
-        # Keep the 5 most recent caches, delete older ones
-        # This prevents proliferation while handling concurrent runs safely
-        CACHE_PREFIX="pr-review-memory-${{ github.repository }}-"
-
-        echo "🧹 Cleaning up old memory caches (keeping 5 most recent)"
-
-        # Get caches older than the 5 most recent (sorted by created_at descending, skip first 5)
-        OLD_CACHES=$(gh api "repos/${{ github.repository }}/actions/caches" \
-          --jq "[.actions_caches | map(select(.key | startswith(\"$CACHE_PREFIX\"))) | sort_by(.created_at) | reverse | .[5:] | .[].id] | .[]" \
-          2>/dev/null || echo "")
-
-        if [ -z "$OLD_CACHES" ]; then
-          echo "✅ No old caches to clean up"
-          exit 0
-        fi
-
-        # Delete each old cache
-        DELETED=0
-        for CACHE_ID in $OLD_CACHES; do
-          if gh api "repos/${{ github.repository }}/actions/caches/$CACHE_ID" -X DELETE 2>/dev/null; then
-            ((DELETED++)) || true
-          fi
-        done
-
-        echo "✅ Deleted $DELETED old cache(s)"
 
     # ========================================
     # POST-REVIEW: Clean summary & reactions
@@ -391,12 +398,34 @@ runs:
       if: always()
       shell: bash
       env:
+        GH_TOKEN: ${{ github.token }}
         PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
         REPOSITORY: ${{ github.repository }}
         EXIT_CODE: ${{ steps.run-review.outputs.exit-code }}
+        REVIEW_VERIFIED: ${{ steps.verify-review.outputs.review-verified }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         REVIEW_URL="https://github.com/$REPOSITORY/pull/$PR_NUMBER"
         echo "review-url=$REVIEW_URL" >> $GITHUB_OUTPUT
+
+        # Determine status and post fallback comment if review wasn't posted
+        if [ "$EXIT_CODE" != "0" ]; then
+          STATUS="❌ **Review failed** (exit code: $EXIT_CODE)"
+          if ! gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" \
+            -f body="❌ **PR Review Failed** — The review agent encountered an error and could not complete the review. [View logs]($RUN_URL)." \
+            2>&1; then
+            echo "::warning::Failed to post fallback comment to PR"
+          fi
+        elif [ "$REVIEW_VERIFIED" == "false" ]; then
+          STATUS="⚠️ **Review not posted** — agent completed but review was not found on the PR (possible token expiry)"
+          if ! gh api "repos/$REPOSITORY/issues/$PR_NUMBER/comments" \
+            -f body="⚠️ **PR Review Incomplete** — The review agent completed analysis but was unable to post the review due to an authentication timeout. [View logs]($RUN_URL)." \
+            2>&1; then
+            echo "::warning::Failed to post fallback comment to PR"
+          fi
+        else
+          STATUS="✅ **Review posted successfully**"
+        fi
 
         # Override the default summary with a cleaner one for PR reviews
         {
@@ -405,11 +434,7 @@ runs:
           echo ""
           echo "## PR Review Summary"
           echo ""
-          if [ "$EXIT_CODE" == "0" ]; then
-            echo "✅ **Review posted successfully**"
-          else
-            echo "❌ **Review failed** (exit code: $EXIT_CODE)"
-          fi
+          echo "$STATUS"
           echo ""
           echo "📝 [View Pull Request #$PR_NUMBER]($REVIEW_URL)"
         } >> $GITHUB_STEP_SUMMARY
@@ -418,9 +443,11 @@ runs:
       if: steps.resolve-context.outputs.comment-id != '' && always()
       shell: bash
       env:
-        GH_TOKEN: ${{ steps.resolve-token.outputs.token }}
+        GH_TOKEN: ${{ github.token }}  # Use github.token (6h lifetime) — App token may have expired
         EXIT_CODE: ${{ steps.run-review.outputs.exit-code }}
+        REVIEW_VERIFIED: ${{ steps.verify-review.outputs.review-verified }}
         PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
+        PRE_REVIEW_TS: ${{ steps.pre-review.outputs.timestamp }}
       run: |
         if [ "$EXIT_CODE" != "0" ]; then
           # Error: add confused reaction
@@ -429,9 +456,23 @@ runs:
           exit 0
         fi
 
-        # Get the latest review state from the PR (use last? to handle empty arrays safely)
+        if [ "$REVIEW_VERIFIED" == "false" ]; then
+          # Agent succeeded but review wasn't posted (likely token expiry)
+          gh api "repos/${{ github.repository }}/issues/comments/${{ steps.resolve-context.outputs.comment-id }}/reactions" \
+            -X POST -f content='confused' || true
+          exit 0
+        fi
+
+        # Get the state of the review posted during THIS run
+        API_ERR=$(mktemp)
         REVIEW_STATE=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
-          --jq '[.[] | select(.user.type == "Bot")] | last? | .state? // empty' 2>/dev/null || echo "")
+          --jq --arg ts "$PRE_REVIEW_TS" \
+          '[.[] | select(.user.type == "Bot" and .submitted_at >= $ts)] | last | .state // empty' \
+          2>"$API_ERR" || echo "")
+        if [ -s "$API_ERR" ]; then
+          echo "::warning::Review state API error: $(cat "$API_ERR")"
+        fi
+        rm -f "$API_ERR"
 
         if [ "$REVIEW_STATE" == "APPROVED" ]; then
           # Approved: thumbs up

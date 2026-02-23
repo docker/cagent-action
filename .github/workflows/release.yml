@@ -52,7 +52,7 @@ jobs:
 
       - name: Install cagent
         env:
-          CAGENT_VERSION: "v1.23.4"
+          CAGENT_VERSION: "v1.23.6"
         run: |
           set -e
           curl -fL -o cagent \
