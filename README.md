@@ -104,7 +104,6 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
     yolo: false # Require manual approval
     timeout: 600 # 10 minute timeout
     debug: true # Enable debug logging
-    quiet: false # Show verbose tool calls (default: true)
     working-directory: ./src
     extra-args: "--verbose"
     add-prompt-files: "AGENTS.md,CLAUDE.md" # Append these files to the prompt
@@ -159,7 +158,6 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 | `debug`               | Enable debug mode with verbose logging (`true`/`false`)                              | No       | `false`                         |
 | `working-directory`   | Working directory to run the agent in                                                | No       | `.`                             |
 | `yolo`                | Auto-approve all prompts (`true`/`false`)                                            | No       | `true`                          |
-| `quiet`               | Suppress verbose tool call output (`true`/`false`). Set to `false` for debugging.    | No       | `true`                          |
 | `max-retries`         | Maximum number of retries on failure (0 = no retries)                                | No       | `2`                             |
 | `retry-delay`         | Base delay in seconds between retries (doubles each attempt)                          | No       | `5`                             |
 | `extra-args`          | Additional arguments to pass to `cagent run`                                         | No       | -                               |
@@ -197,6 +195,7 @@ add-prompt-files: "AGENTS.md"  # Found via hierarchy search
 | `cagent-version`        | Version of cagent that was used                          |
 | `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`)       |
 | `execution-time`        | Agent execution time in seconds                          |
+| `verbose-log-file`      | Path to the full verbose agent log (includes tool calls) |
 | `secrets-detected`      | Whether secrets were detected in output                  |
 | `prompt-suspicious`     | Whether suspicious patterns were detected in user prompt |
 

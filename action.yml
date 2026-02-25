@@ -70,10 +70,6 @@ inputs:
     description: "Enable yolo mode - auto-approve all prompts (true/false)"
     required: false
     default: "true"
-  quiet:
-    description: "Suppress verbose tool call output (true/false). Set to false for debugging."
-    required: false
-    default: "true"
   max-retries:
     description: "Maximum number of retries on failure (0 = no retries)"
     required: false
@@ -107,6 +103,9 @@ outputs:
   execution-time:
     description: "Agent execution time in seconds"
     value: ${{ steps.run-agent.outputs.execution-time }}
+  verbose-log-file:
+    description: "Path to the full verbose agent log (includes tool calls)"
+    value: ${{ steps.run-agent.outputs.verbose-log-file }}
   security-blocked:
     description: "Whether execution was blocked due to security concerns"
     value: ${{ steps.sanitize-input.outputs.blocked == 'true' || steps.sanitize-output.outputs.leaked == 'true' }}
@@ -432,7 +431,6 @@ runs:
         WORKING_DIR: ${{ inputs.working-directory }}
         CAGENT_VERSION: ${{ inputs.cagent-version }}
         MCP_INSTALLED: ${{ steps.setup-binaries.outputs.mcp-installed }}
-        QUIET: ${{ inputs.quiet }}
         ADD_PROMPT_FILES: ${{ inputs.add-prompt-files }}
         MAX_RETRIES: ${{ inputs.max-retries }}
         RETRY_DELAY: ${{ inputs.retry-delay }}
@@ -461,9 +459,21 @@ runs:
 
         # Create output file early (before any validation exits)
         # This ensures downstream steps always have a valid output file reference
-        OUTPUT_FILE=$(mktemp /tmp/cagent-output.XXXXXX.log)
+        OUTPUT_FILE=$(mktemp /tmp/cagent-output-XXXXXX)
+        if [ -z "$OUTPUT_FILE" ] || [ ! -f "$OUTPUT_FILE" ]; then
+          echo "::error::Failed to create output file"
+          exit 1
+        fi
         echo "output-file=$OUTPUT_FILE" >> $GITHUB_OUTPUT
         echo "Output file: $OUTPUT_FILE"
+
+        VERBOSE_LOG_FILE=$(mktemp /tmp/cagent-verbose-XXXXXX)
+        if [ -z "$VERBOSE_LOG_FILE" ] || [ ! -f "$VERBOSE_LOG_FILE" ]; then
+          echo "::error::Failed to create verbose log file"
+          exit 1
+        fi
+        echo "verbose-log-file=$VERBOSE_LOG_FILE" >> $GITHUB_OUTPUT
+        echo "Verbose log file: $VERBOSE_LOG_FILE"
 
         # Build command arguments array (SECURE: no eval!)
         ARGS=("run" "--exec")
@@ -471,11 +481,6 @@ runs:
         # Add flags
         if [ "$YOLO" = "true" ]; then
           ARGS+=("--yolo")
-        fi
-
-        # Quiet mode: suppress verbose tool output (default: true)
-        if [ "$QUIET" = "true" ]; then
-          ARGS+=("--hide-tool-calls" "--hide-tool-results")
         fi
 
         # Set working directory so relative paths (e.g., memory toolset) resolve
@@ -527,22 +532,25 @@ runs:
             echo "🔄 Retry attempt $((ATTEMPT - 1)) of $MAX_RETRIES (waiting ${CURRENT_DELAY}s)..."
             sleep "$CURRENT_DELAY"
             CURRENT_DELAY=$((CURRENT_DELAY * 2))
-            # Reset output file for retry
+            # Reset clean output file; append a separator to verbose log to preserve earlier attempts
             > "$OUTPUT_FILE"
+            echo "" >> "$VERBOSE_LOG_FILE"
+            echo "========== RETRY ATTEMPT $ATTEMPT ($(date -u +%Y-%m-%dT%H:%M:%SZ)) ==========" >> "$VERBOSE_LOG_FILE"
+            echo "" >> "$VERBOSE_LOG_FILE"
           fi
 
           # SECURE: Direct execution with quoted arguments (no eval!)
+          # Output goes to verbose log file only (keeps console clean)
+          # PIPESTATUS: [0]=printf  [1]=cagent/timeout
           set +e  # Don't exit on command failure
-          # Pipeline: printf | [timeout] cagent | tee
-          # PIPESTATUS: [0]=printf  [1]=cagent/timeout  [2]=tee
           if [ "$TIMEOUT" != "0" ]; then
-            printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
+            printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
             EXIT_CODE=${PIPESTATUS[1]}
             if [ $EXIT_CODE -eq 124 ]; then
               echo "::error::Agent execution timed out after $TIMEOUT seconds"
             fi
           else
-            printf '%s\n' "$PROMPT_INPUT" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" 2>&1 | tee "$OUTPUT_FILE"
+            printf '%s\n' "$PROMPT_INPUT" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
             EXIT_CODE=${PIPESTATUS[1]}
           fi
           set -e
@@ -565,6 +573,28 @@ runs:
 
           echo "::warning::Agent failed (exit code: $EXIT_CODE), will retry..."
         done
+
+        # Produce clean output (strip tool calls/results) for downstream steps
+        awk '
+          /<thinking>/,/<\/thinking>/ { next }
+          /^\[thinking\]/,/^\[\/thinking\]/ { next }
+          /^Thinking:/ { next }
+          /^--- Tool:/ { in_tool=1; next }
+          in_tool && /^--- (Tool:|Agent:|$)/ { in_tool=0; next }
+          in_tool { next }
+          /^--- Agent:/ { next }
+          /^time=/ { next }
+          /^level=/ { next }
+          /^msg=/ { next }
+          /^> \[!NOTE\]/ { next }
+          /For any feedback/ { next }
+          /transfer_task/ { next }
+          /Delegating to/ { next }
+          /Task delegated/ { next }
+          NF==0 && !seen_content { next }
+          NF>0 { seen_content=1 }
+          { print }
+        ' "$VERBOSE_LOG_FILE" > "$OUTPUT_FILE"
 
         END_TIME=$(date +%s)
         EXECUTION_TIME=$((END_TIME - START_TIME))
@@ -629,58 +659,33 @@ runs:
 
         $ACTION_PATH/security/sanitize-output.sh "$OUTPUT_FILE"
 
-        # Extract clean output (remove verbose cagent internals)
-        echo "🧹 Extracting clean agent output..."
-
-        # Primary method: Extract from cagent-output code block (most reliable)
+        # Extract from cagent-output code block if present (overrides awk-filtered output)
         # Note: the code fence may not be at the start of a line if the agent
         # emits conversational text before it, so we avoid anchoring with ^.
         if grep -q '```cagent-output' "$OUTPUT_FILE"; then
+          echo "🧹 Extracting clean output from cagent-output code block..."
           awk '
             /```cagent-output/ { capturing=1; next }
-            capturing && /^```/ { capturing=0; next }
+            capturing && /```/ { capturing=0; next }
             capturing { print }
           ' "$OUTPUT_FILE" > "${OUTPUT_FILE}.clean"
-          echo "✅ Extracted clean output from cagent-output code block"
-        else
-          # Use awk to filter out thinking blocks, tool calls, and internal markers
-          awk '
-            # Skip thinking blocks entirely
-            /<thinking>/,/<\/thinking>/ { next }
-            /^\[thinking\]/,/^\[\/thinking\]/ { next }
-            /^Thinking:/ { next }
-
-            # Skip tool call blocks
-            /^--- Tool:/ { in_tool=1; next }
-            in_tool && /^---/ { in_tool=0; next }
-            in_tool { next }
-
-            # Skip agent markers and metadata
-            /^--- Agent:/ { next }
-            /^time=/ { next }
-            /^level=/ { next }
-            /^msg=/ { next }
-            /^> \[!NOTE\]/ { next }
-            /For any feedback/ { next }
-
-            # Skip transfer_task and delegation output
-            /transfer_task/ { next }
-            /Delegating to/ { next }
-            /Task delegated/ { next }
-
-            # Skip empty lines at start
-            NF==0 && !seen_content { next }
-            NF>0 { seen_content=1 }
-
-            # Print everything else
-            { print }
-          ' "$OUTPUT_FILE" > "${OUTPUT_FILE}.clean"
-
-          echo "✅ Filtered verbose output"
+          if [ -s "${OUTPUT_FILE}.clean" ]; then
+            mv "${OUTPUT_FILE}.clean" "$OUTPUT_FILE"
+            echo "✅ Extracted clean output from cagent-output code block"
+          else
+            echo "::warning::Extracted cagent-output code block is empty, keeping filtered output"
+            rm -f "${OUTPUT_FILE}.clean"
+          fi
         fi
 
-        # Use the cleaned output
-        mv "${OUTPUT_FILE}.clean" "$OUTPUT_FILE"
+    - name: Upload verbose agent log
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: cagent-verbose-log-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ steps.run-agent.outputs.verbose-log-file }}
+        retention-days: 14
+        if-no-files-found: ignore
 
     - name: Update job summary with cleaned output
       if: always()
