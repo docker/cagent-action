@@ -1,60 +1,171 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: "Version bump type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 concurrency:
   group: release
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
-  update-latest-tag:
-    name: Update latest tag
+  release:
+    name: Create release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Calculate new version
+        id: version
+        env:
+          BUMP_TYPE: ${{ inputs.version_bump }}
+        run: |
+          # Get the latest semver tag
+          LATEST_TAG=$(git tag -l 'v*.*.*' --sort=-v:refname | head -n1)
+
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No existing version tags found, starting at v0.0.0"
+            MAJOR=0; MINOR=0; PATCH=0
+          else
+            VERSION="${LATEST_TAG#v}"
+            MAJOR=$(echo "$VERSION" | cut -d. -f1)
+            MINOR=$(echo "$VERSION" | cut -d. -f2)
+            PATCH=$(echo "$VERSION" | cut -d. -f3)
+            echo "Current version: v${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
+          # Bump the chosen segment
+          case "$BUMP_TYPE" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+
+          # Collision avoidance: if tag already exists, bump patch until unique
+          while git rev-parse "$NEW_VERSION" >/dev/null 2>&1; do
+            echo "Tag $NEW_VERSION already exists, bumping patch..."
+            PATCH=$((PATCH + 1))
+            NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          done
+
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      # CI cannot push commits to main (branch protection). Instead, we create
+      # a detached release commit with pinned refs, reachable only via tags.
+      # main keeps @latest refs for development; tagged commits are self-contained.
+      - name: Create release commit with pinned refs
+        id: release-commit
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -e
+          echo "Pinning @latest refs to ${VERSION}..."
+
+          # Pin docker/cagent-action@latest -> @vX.Y.Z
+          sed -i "s|docker/cagent-action@latest|docker/cagent-action@${VERSION}|g" review-pr/action.yml
+
+          # Pin docker/cagent-action/review-pr@latest -> @vX.Y.Z
+          sed -i "s|docker/cagent-action/review-pr@latest|docker/cagent-action/review-pr@${VERSION}|g" .github/workflows/review-pr.yml
+
+          # Verify pinning succeeded — fail fast if refs weren't replaced
+          if ! grep -q "docker/cagent-action@${VERSION}" review-pr/action.yml; then
+            echo "::error::Failed to pin refs in review-pr/action.yml"
+            exit 1
+          fi
+          if ! grep -q "docker/cagent-action/review-pr@${VERSION}" .github/workflows/review-pr.yml; then
+            echo "::error::Failed to pin refs in .github/workflows/review-pr.yml"
+            exit 1
+          fi
+
+          echo "Pinned refs:"
+          grep -n "cagent-action@" review-pr/action.yml .github/workflows/review-pr.yml
+
+          # Create a detached commit (not on main) with the pinned refs
+          # Note: write-tree captures the full index (all files from HEAD),
+          # but we explicitly add CAGENT_VERSION for clarity.
+          git add review-pr/action.yml .github/workflows/review-pr.yml CAGENT_VERSION
+          TREE=$(git write-tree)
+          RELEASE_SHA=$(git commit-tree "$TREE" -p HEAD -m "release: ${VERSION}")
+
+          echo "sha=$RELEASE_SHA" >> $GITHUB_OUTPUT
+          echo "Release commit: $RELEASE_SHA"
+
+      - name: Push version tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_SHA: ${{ steps.release-commit.outputs.sha }}
+        run: |
+          git tag "$VERSION" "$RELEASE_SHA"
+          git push origin "$VERSION"
+
+      - name: Create GitHub Release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$VERSION" --generate-notes --latest
+
       - name: Update latest tag
         env:
-          GITHUB_USER: "github-actions[bot]"
-          GITHUB_EMAIL: "github-actions[bot]@users.noreply.github.com"
-          TAG_NAME: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_SHA: ${{ steps.release-commit.outputs.sha }}
         run: |
-          git config user.name "${GITHUB_USER}"
-          git config user.email "${GITHUB_EMAIL}"
-
-          # Delete the existing latest tag if it exists (both locally and remotely)
+          # Delete existing latest tag (local + remote)
           git tag -d latest 2>/dev/null || true
           git push origin :refs/tags/latest 2>/dev/null || true
 
-          # Create new latest tag pointing to the current commit
-          git tag latest
+          # Create new latest tag pointing to the release commit
+          git tag latest "$RELEASE_SHA"
           git push origin latest
 
-          echo "✅ Updated 'latest' tag to point to ${TAG_NAME}"
+          echo "Updated 'latest' tag to point to ${VERSION} ($RELEASE_SHA)"
 
   publish-agent:
     name: Push review-pr agent to Docker Hub
-    needs: update-latest-tag
+    needs: release
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.release.outputs.version }}
 
       - name: Install cagent
-        env:
-          CAGENT_VERSION: "v1.23.6"
         run: |
           set -e
+          CAGENT_VERSION=$(tr -d '[:space:]' < CAGENT_VERSION)
+          if [ -z "$CAGENT_VERSION" ]; then
+            echo "::error::Could not extract cagent version from CAGENT_VERSION"
+            exit 1
+          fi
+          echo "Using cagent version from CAGENT_VERSION: ${CAGENT_VERSION}"
           curl -fL -o cagent \
             "https://github.com/docker/cagent/releases/download/${CAGENT_VERSION}/cagent-linux-amd64"
           chmod +x cagent

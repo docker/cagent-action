@@ -49,11 +49,6 @@ on:
         required: false
         type: string
         default: ""
-      cagent-version:
-        description: "Version of cagent to use"
-        required: false
-        type: string
-        default: "v1.23.6"
       add-prompt-files:
         description: "Comma-separated list of files to append to the prompt (e.g., 'AGENTS.md,CLAUDE.md')"
         required: false
@@ -183,7 +178,6 @@ jobs:
           additional-prompt: ${{ inputs.additional-prompt }}
           add-prompt-files: ${{ inputs.add-prompt-files }}
           model: ${{ inputs.model }}
-          cagent-version: ${{ inputs.cagent-version }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -234,7 +228,6 @@ jobs:
           additional-prompt: ${{ inputs.additional-prompt }}
           add-prompt-files: ${{ inputs.add-prompt-files }}
           model: ${{ inputs.model }}
-          cagent-version: ${{ inputs.cagent-version }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}

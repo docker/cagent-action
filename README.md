@@ -98,7 +98,6 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-    cagent-version: v1.23.6
     mcp-gateway: true # Set to true to install mcp-gateway
     mcp-gateway-version: v0.22.0
     yolo: false # Require manual approval
@@ -142,7 +141,6 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 | --------------------- | ------------------------------------------------------------------------------------ | -------- | ------------------------------- |
 | `agent`               | Agent identifier (e.g., `docker/code-analyzer`) or path to `.yaml` file              | Yes      | -                               |
 | `prompt`              | Prompt to pass to the agent                                                          | No       | -                               |
-| `cagent-version`      | Version of cagent to use                                                             | No       | `v1.23.6`                       |
 | `mcp-gateway`         | Install mcp-gateway (`true`/`false`)                                                 | No       | `false`                         |
 | `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No       | `v0.22.0`                       |
 | `anthropic-api-key`   | Anthropic API key for Claude models (at least one API key required)                  | No*      | -                                   |
@@ -194,7 +192,6 @@ add-prompt-files: "AGENTS.md"  # Found via hierarchy search
 | ----------------------- | -------------------------------------------------------- |
 | `exit-code`             | Exit code from cagent run                                |
 | `output-file`           | Path to the output log file                              |
-| `cagent-version`        | Version of cagent that was used                          |
 | `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`)       |
 | `execution-time`        | Agent execution time in seconds                          |
 | `secrets-detected`      | Whether secrets were detected in output                  |
