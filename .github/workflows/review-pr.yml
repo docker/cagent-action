@@ -172,7 +172,7 @@ jobs:
         if: steps.membership.outputs.is_member == 'true'
         id: run-review
         continue-on-error: true # Don't fail the calling workflow if the review errors
-        uses: docker/cagent-action/review-pr@latest
+        uses: docker/cagent-action/review-pr@v1.2.3
         with:
           pr-number: ${{ inputs.pr-number || github.event.pull_request.number }}
           additional-prompt: ${{ inputs.additional-prompt }}
@@ -221,7 +221,7 @@ jobs:
       - name: Run PR Review
         id: run-review
         continue-on-error: true # Don't fail the calling workflow if the review errors
-        uses: docker/cagent-action/review-pr@latest
+        uses: docker/cagent-action/review-pr@v1.2.3
         with:
           pr-number: ${{ inputs.pr-number || github.event.issue.number }}
           comment-id: ${{ inputs.comment-id || github.event.comment.id }}
