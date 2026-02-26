@@ -103,14 +103,14 @@ outputs:
     description: "Path to the full verbose agent log (includes tool calls)"
     value: ${{ steps.run-agent.outputs.verbose-log-file }}
   security-blocked:
-    description: "Whether execution was blocked due to security concerns"
-    value: ${{ steps.sanitize-input.outputs.blocked == 'true' || steps.sanitize-output.outputs.leaked == 'true' }}
+    description: "Whether execution was blocked due to security concerns (true/false)"
+    value: ${{ (steps.sanitize-input.outputs.blocked == 'true' || steps.sanitize-output.outputs.leaked == 'true') && 'true' || 'false' }}
   secrets-detected:
     description: "Whether secrets were detected in output"
     value: ${{ steps.sanitize-output.outputs.leaked }}
   prompt-suspicious:
-    description: "Whether suspicious patterns were detected in user prompt"
-    value: ${{ steps.sanitize-prompt.outputs.suspicious }}
+    description: "Whether suspicious content was stripped from the prompt (true/false)"
+    value: ${{ steps.sanitize-input.outputs.stripped }}
   input-risk-level:
     description: "Risk level of input (low/medium/high)"
     value: ${{ steps.sanitize-input.outputs.risk-level }}
@@ -543,16 +543,27 @@ runs:
 
           # SECURE: Direct execution with quoted arguments (no eval!)
           # Output goes to verbose log file only (keeps console clean)
-          # PIPESTATUS: [0]=printf  [1]=cagent/timeout
+          # Prefer sanitized prompt file (comments stripped, suspicious lines removed)
+          # over raw $PROMPT_INPUT to enforce input sanitization.
+          # PIPESTATUS: [0]=cat/printf  [1]=cagent/timeout
+          PROMPT_FILE="/tmp/prompt-clean.txt"
           set +e  # Don't exit on command failure
           if [ "$TIMEOUT" != "0" ]; then
-            printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
+            if [ -f "$PROMPT_FILE" ]; then
+              cat "$PROMPT_FILE" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
+            else
+              printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
+            fi
             EXIT_CODE=${PIPESTATUS[1]}
             if [ $EXIT_CODE -eq 124 ]; then
               echo "::error::Agent execution timed out after $TIMEOUT seconds"
             fi
           else
-            printf '%s\n' "$PROMPT_INPUT" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
+            if [ -f "$PROMPT_FILE" ]; then
+              cat "$PROMPT_FILE" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
+            else
+              printf '%s\n' "$PROMPT_INPUT" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
+            fi
             EXIT_CODE=${PIPESTATUS[1]}
           fi
           set -e
@@ -584,6 +595,12 @@ runs:
           /^--- Tool:/ { in_tool=1; next }
           in_tool && /^--- (Tool:|Agent:|$)/ { in_tool=0; next }
           in_tool { next }
+          /^Calling [a-zA-Z_]+\(/ { in_call=1; next }
+          in_call && /^\)$/ { in_call=0; next }
+          in_call { next }
+          /^[a-zA-Z_]+ response →/ { in_resp=1; next }
+          in_resp && /^\)$/ { in_resp=0; next }
+          in_resp { next }
           /^--- Agent:/ { next }
           /^time=/ { next }
           /^level=/ { next }

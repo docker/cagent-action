@@ -172,6 +172,89 @@ else
   cp "$TEST_DIR/output4.log" "$TEST_DIR/output4.clean"
 fi
 
+# Test Case 5: Strip "Calling function()" and "function response →" blocks
+echo ""
+echo "Test 5: Strip Calling/response tool trace blocks"
+echo "---"
+cat > "$TEST_DIR/output5.log" <<'EOF'
+Calling read_multiple_files(
+  paths: [
+  "pr.diff",
+  "commits.txt"
+]
+)
+
+read_multiple_files response → (
+=== pr.diff ===
+diff --git a/file.txt b/file.txt
++hello
+)
+
+## Summary
+
+This PR adds a greeting.
+
+## Changes
+
+- Added hello to file.txt
+EOF
+
+# Run the same AWK filter used in action.yml
+awk '
+  /<thinking>/,/<\/thinking>/ { next }
+  /^\[thinking\]/,/^\[\/thinking\]/ { next }
+  /^Thinking:/ { next }
+  /^--- Tool:/ { in_tool=1; next }
+  in_tool && /^--- (Tool:|Agent:|$)/ { in_tool=0; next }
+  in_tool { next }
+  /^Calling [a-zA-Z_]+\(/ { in_call=1; next }
+  in_call && /^\)$/ { in_call=0; next }
+  in_call { next }
+  /^[a-zA-Z_]+ response →/ { in_resp=1; next }
+  in_resp && /^\)$/ { in_resp=0; next }
+  in_resp { next }
+  /^--- Agent:/ { next }
+  /^time=/ { next }
+  /^level=/ { next }
+  /^msg=/ { next }
+  /^> \[!NOTE\]/ { next }
+  /For any feedback/ { next }
+  /transfer_task/ { next }
+  /Delegating to/ { next }
+  /Task delegated/ { next }
+  NF==0 && !seen_content { next }
+  NF>0 { seen_content=1 }
+  { print }
+' "$TEST_DIR/output5.log" > "$TEST_DIR/output5.clean"
+
+echo "Cleaned output:"
+cat "$TEST_DIR/output5.clean"
+echo ""
+
+# Verify tool traces were stripped
+if grep -q "Calling read_multiple_files" "$TEST_DIR/output5.clean"; then
+  echo "❌ FAIL: 'Calling read_multiple_files' was not stripped"
+  exit 1
+fi
+if grep -q "read_multiple_files response" "$TEST_DIR/output5.clean"; then
+  echo "❌ FAIL: 'read_multiple_files response' was not stripped"
+  exit 1
+fi
+if grep -q "diff --git" "$TEST_DIR/output5.clean"; then
+  echo "❌ FAIL: Diff content inside response block was not stripped"
+  exit 1
+fi
+# Verify actual content survived
+if ! grep -q "## Summary" "$TEST_DIR/output5.clean"; then
+  echo "❌ FAIL: '## Summary' heading was stripped (should be kept)"
+  exit 1
+fi
+if ! grep -q "This PR adds a greeting." "$TEST_DIR/output5.clean"; then
+  echo "❌ FAIL: Description body was stripped (should be kept)"
+  exit 1
+fi
+echo "✅ Tool trace blocks correctly stripped, markdown content preserved"
+
 echo ""
 echo "=========================================="
 echo "✅ All extraction tests completed"
