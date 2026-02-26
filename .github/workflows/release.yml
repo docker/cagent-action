@@ -32,6 +32,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Configure git
         run: |
@@ -127,7 +128,7 @@ jobs:
       - name: Create GitHub Release
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: gh release create "$VERSION" --generate-notes --latest
 
       - name: Update latest tag
