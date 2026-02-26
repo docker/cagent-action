@@ -51,7 +51,8 @@ agents:
          This MUST be the very first action you take. Do not call any other tools before this.
       1. Get the diff and context:
          - **GitHub posting mode** (GITHUB_ACTIONS=true): The prompt contains a PR number.
-           a. Get the diff: `gh pr diff <number>`
+           a. Get the diff: Check if `pr.diff` exists in the working directory first (pre-fetched by the CI workflow).
+              If it exists and is non-empty, use it. If not, fall back to `gh pr diff <number>`.
            b. Gather PR metadata for context:
               ```bash
               gh pr view <number> --json title,body,author,baseRefName,headRefName,files
@@ -67,9 +68,12 @@ agents:
            If none of these exist (e.g. no remote), use `main` or `master`.
       2. Use `get_memories` to check for any learned patterns from previous feedback
       3. Delegate to `drafter` with the diff and any relevant learned patterns
-      4. Parse the drafter's JSON response. For each finding with severity "high" or "medium",
-         delegate to `verifier` with the finding details. Skip verification for "low" findings.
-      5. Parse verifier JSON responses. Filter out DISMISSED verdicts and findings where
+      4. Parse the drafter's JSON response. Collect all findings with severity "high" or "medium"
+         and delegate them to the `verifier` in a single batch. Skip verification for "low" findings.
+         **ANTI-LOOP RULE**: Delegate to the verifier exactly ONCE with all findings. If the
+         verifier returns an empty or malformed response, treat all findings as DISMISSED and
+         proceed to post an APPROVE review. Do NOT retry the delegation.
+      5. Parse the verifier's JSON response (a `verdicts` array). Filter out DISMISSED verdicts and findings where
          `in_changed_code == false` or `in_diff == false`.
       6. **Verify line numbers** before posting (see below)
       7. Apply the Decision Rules (see below) to determine the review verdict
@@ -363,9 +367,10 @@ agents:
     model: haiku
     description: Hypothesis Verifier
     instruction: |
-      Verify a specific bug hypothesis using available context.
+      Verify a batch of bug hypotheses using available context.
 
-      Your job is to filter out false positives. Check if:
+      You receive multiple findings from the drafter. Verify each one independently.
+      Your job is to filter out false positives. For each finding, check if:
       - **THE CODE IS ACTUALLY CHANGED IN THIS PR** (if not, DISMISS immediately)
       - The bug can actually happen given the surrounding code
       - Existing safeguards already prevent it
@@ -385,7 +390,8 @@ agents:
 
       ## Populating Your Response
 
-      Your response is a structured JSON object (enforced by the schema). For each finding:
+      Your response is a structured JSON object (enforced by the schema) with a `verdicts`
+      array. Return one verdict per finding you were given. For each verdict:
 
       - `verdict`: One of `"CONFIRMED"`, `"LIKELY"`, `"DISMISSED"`
         - CONFIRMED: Definitely a bug in changed code
@@ -403,33 +409,40 @@ agents:
         `false` if the issue is in existing/unchanged code.
 
     structured_output:
-      name: verification_verdict
-      description: Verdict on a single bug hypothesis
+      name: verification_verdicts
+      description: Verdicts on a batch of bug hypotheses
       strict: true
       schema:
         type: object
         properties:
-          verdict:
-            type: string
-            enum: ["CONFIRMED", "LIKELY", "DISMISSED"]
-            description: "CONFIRMED = definitely a bug in changed code. LIKELY = probably a bug. DISMISSED = not a bug or not in changed code."
-          file:
-            type: string
-          line:
-            type: integer
-          severity:
-            type: string
-            enum: ["high", "medium", "low"]
-            description: May adjust severity from drafter based on full context
-          issue:
-            type: string
-          details:
-            type: string
-            description: Full explanation including why confirmed/likely/dismissed
-          in_changed_code:
-            type: boolean
-            description: Whether the issue is in code actually changed by this PR
-        required: ["verdict", "file", "line", "severity", "issue", "details", "in_changed_code"]
+          verdicts:
+            type: array
+            items:
+              type: object
+              properties:
+                verdict:
+                  type: string
+                  enum: ["CONFIRMED", "LIKELY", "DISMISSED"]
+                  description: "CONFIRMED = definitely a bug in changed code. LIKELY = probably a bug. DISMISSED = not a bug or not in changed code."
+                file:
+                  type: string
+                line:
+                  type: integer
+                severity:
+                  type: string
+                  enum: ["high", "medium", "low"]
+                  description: May adjust severity from drafter based on full context
+                issue:
+                  type: string
+                details:
+                  type: string
+                  description: Full explanation including why confirmed/likely/dismissed
+                in_changed_code:
+                  type: boolean
+                  description: Whether the issue is in code actually changed by this PR
+              required: ["verdict", "file", "line", "severity", "issue", "details", "in_changed_code"]
+              additionalProperties: false
+        required: ["verdicts"]
         additionalProperties: false
 
     toolsets:

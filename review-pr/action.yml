@@ -153,6 +153,14 @@ runs:
         gh pr view $PR_NUMBER --json title,body,author,baseRefName,headRefName > pr_metadata.json
         echo "files_count=$(wc -l < changed_files.txt | tr -d ' ')" >> $GITHUB_OUTPUT
 
+        # Pre-fetch diff for the agent (avoids 403 on forked PRs inside cagent)
+        if gh pr diff $PR_NUMBER > pr.diff 2>/dev/null; then
+          echo "✅ Pre-fetched PR diff ($(wc -l < pr.diff | tr -d ' ') lines)"
+        else
+          echo "::warning::Failed to pre-fetch PR diff — agent will fetch it directly"
+          rm -f pr.diff
+        fi
+
     - name: Ensure cache directory exists
       shell: bash
       run: mkdir -p "${{ github.workspace }}/.cache"
@@ -328,7 +336,7 @@ runs:
       with:
         agent: ${{ github.action_path }}/agents/pr-review.yaml
         prompt: ${{ steps.context.outputs.review_prompt }}
-        timeout: "1200"  # 20 min — prevents GitHub App token expiry (1h limit)
+        timeout: "2400"  # 40 min — allows time for large diffs and retries
         anthropic-api-key: ${{ inputs.anthropic-api-key }}
         openai-api-key: ${{ inputs.openai-api-key }}
         google-api-key: ${{ inputs.google-api-key }}
