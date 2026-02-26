@@ -236,6 +236,7 @@ When using `docker/cagent-action/.github/workflows/review-pr.yml`:
 | `comment-id`        | Comment ID for reactions (auto-detected)            | -         |
 | `additional-prompt` | Additional review guidelines                        | -         |
 | `model`             | Model override (e.g., `anthropic/claude-haiku-4-5`) | -         |
+| `add-prompt-files`  | Comma-separated files to append to the prompt       | -         |
 | `auto-review-org`   | Organization for auto-review membership check       | `docker`  |
 
 ### `review-pr` (Composite Action)
@@ -260,6 +261,7 @@ PR number and comment ID are auto-detected from `github.event` when not provided
 | `github-token`             | GitHub token                                                     | No       |
 | `github-app-id`            | GitHub App ID for custom identity                                | No       |
 | `github-app-private-key`   | GitHub App private key                                           | No       |
+| `add-prompt-files`         | Comma-separated files to append to the prompt                    | No       |
 
 \*At least one API key is required.
 

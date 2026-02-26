@@ -19,11 +19,10 @@ This action includes **built-in security features for all agent executions**:
    - Environment variable names in output
    - If secrets detected: workflow fails, security issue created
 
-3. **Prompt Sanitization** - User prompts are checked for:
-   - Prompt injection patterns ("ignore previous instructions", etc.)
-   - Requests for API keys or environment variables
-   - Encoded content (base64, hex) that could hide malicious requests
-   - Warnings issued if suspicious patterns found (execution continues)
+3. **Prompt Sanitization** - User prompts are checked in two tiers:
+   - **Critical patterns** (block): Direct secret exfiltration commands (`echo $API_KEY`, `console.log(process.env)`)
+   - **Suspicious patterns** (strip + warn): Behavioral/natural language injection ("ignore previous instructions", "base64 decode", etc.) — matching lines are stripped from the prompt before it reaches the agent
+   - **Medium-risk patterns** (warn): API key variable names in configuration
 
 ## Security Architecture
 
@@ -122,9 +121,14 @@ SECRET_PATTERNS=(
 **Function:**
 
 - Removes code comments from diffs (prevents hidden instructions)
-- Detects HIGH-RISK patterns (blocks execution)
-  - Instruction override attempts ("ignore previous instructions")
+- Detects CRITICAL patterns (blocks execution with exit 1)
   - Direct secret extraction commands (`echo $API_KEY`, `console.log(process.env)`)
+  - Environment variable extraction (`printenv ANTHROPIC_API_KEY`)
+  - Secret file access (`cat .env`)
+- Detects SUSPICIOUS patterns (strips matching lines from output, warns, exit 0)
+  - Instruction override attempts ("ignore previous instructions")
+  - System/mode overrides ("system mode", "debug mode")
+  - Natural language secret requests ("show me the API key")
   - System prompt extraction attempts
   - Jailbreak attempts
   - Encoding/obfuscation (base64, hex)
@@ -139,9 +143,10 @@ SECRET_PATTERNS=(
 
 **Outputs:**
 
-- `blocked=true/false` to `$GITHUB_OUTPUT`
+- `blocked=true/false` to `$GITHUB_OUTPUT` (true only for CRITICAL patterns)
+- `stripped=true/false` to `$GITHUB_OUTPUT` (true when suspicious content was removed)
 - `risk-level=low/medium/high` to `$GITHUB_OUTPUT`
-- Exits with code 1 if HIGH-RISK patterns detected
+- Exits with code 1 only for CRITICAL patterns (direct secret exfiltration)
 
 ## Built-in Protections
 
@@ -165,7 +170,7 @@ SECRET_PATTERNS=(
 ```bash
 cd tests
 
-# Run security test suite (13 tests)
+# Run security test suite (21 tests)
 ./test-security.sh
 
 # Run exploit simulation tests (6 tests)
@@ -174,10 +179,10 @@ cd tests
 
 ### Test Coverage
 
-**test-security.sh** (13 tests):
+**test-security.sh** (21 tests):
 
 1. Clean input (should pass)
-2. Prompt injection in comment (should block)
+2. Prompt injection in comment (should strip, not block)
 3. Clean output (should pass)
 4. Leaked API key (should block)
 5. Leaked GitHub token (should block)
@@ -185,11 +190,18 @@ cd tests
 7. Authorization - COLLABORATOR (should pass)
 8. Authorization - CONTRIBUTOR (should block)
 9. Clean prompt (should pass)
-10. Prompt injection in user prompt (should block)
-11. Encoded content in prompt (should block)
+10. Prompt injection in user prompt (should strip, not block)
+11. Encoded content in prompt (should strip, not block)
 12. Low risk input - normal code (should pass)
 13. Medium risk input - API key variable (should warn but pass)
-14. High risk input - behavioral injection (should block)
+14. Critical input - secret exfiltration command (should block)
+15. Regex pattern in output (should NOT flag as leak)
+16. Real GitHub server token (should flag as leak)
+17. Release notes with 'system...models' (should NOT block)
+18. Real 'system mode' injection (should strip, not block)
+19. Verify suspicious content physically removed from output file
+20. Critical pattern (`echo $ANTHROPIC_API_KEY`) still blocks with exit 1
+21. Mixed suspicious + clean content preserves clean parts
 
 **test-exploits.sh** (6 tests):
 
@@ -213,8 +225,7 @@ All tests must pass before deployment.
   with:
     agent: my-agent
     prompt: "Analyze the logs"
-  env:
-    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
 - name: Check for security issues
   if: always()
