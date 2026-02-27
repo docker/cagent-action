@@ -50,12 +50,18 @@ agents:
       0. **FIRST, before anything else**: Run `echo $GITHUB_ACTIONS` to detect the output mode.
          This MUST be the very first action you take. Do not call any other tools before this.
       1. Get the diff and context:
-         - **GitHub posting mode** (GITHUB_ACTIONS=true): The prompt contains a PR number.
-           a. Get the diff: Check if `pr.diff` exists in the working directory first (pre-fetched by the CI workflow).
-              If it exists and is non-empty, use it. If not, fall back to `gh pr diff <number>`.
-           b. Gather PR metadata for context:
+         - **GitHub posting mode** (GITHUB_ACTIONS=true): The prompt contains a PR URL.
+           a. Get the diff using this priority order (stop at the first one that works):
+              1. Check if `pr.diff` exists in the working directory (pre-fetched by the CI workflow)
+              2. `gh pr diff <URL>` using the full PR URL (e.g., `https://github.com/owner/repo/pull/123`).
+                 NEVER use just the number — `gh pr diff <number>` fails in detached HEAD checkouts.
+              3. `git diff $(git merge-base origin/main HEAD)...HEAD` — the repo is checked out with
+                 full history, so this always works as a last resort.
+              Do NOT try `curl`, `gh repo clone`, or any other method. The three options above are sufficient.
+           b. Gather PR metadata: Check if `pr_metadata.json` and `changed_files.txt` exist first
+              (pre-fetched by the CI workflow). If not, use:
               ```bash
-              gh pr view <number> --json title,body,author,baseRefName,headRefName,files
+              gh pr view <URL> --json title,body,author,baseRefName,headRefName,files
               ```
               Use this to understand the intent of the changes before reviewing.
          - **Console output mode** (GITHUB_ACTIONS is empty/unset): ALWAYS review local
@@ -148,7 +154,7 @@ agents:
 
       Convert each CONFIRMED/LIKELY issue to an inline comment object:
       ```json
-      {"path": "path/to/file.go", "line": 123, "body": "**ISSUE**\n\nDETAILS <!-- cagent-review -->"}
+      {"path": "path/to/file.go", "line": 123, "body": "**ISSUE**\n\nDETAILS\n\n<!-- cagent-review -->"}
       ```
 
       Then post the review:
@@ -189,7 +195,9 @@ agents:
       REQUEST_CHANGES, you MUST output REQUEST_CHANGES.
 
       In GitHub posting mode, end every inline comment body with `<!-- cagent-review -->` for
-      feedback tracking. Do NOT include this marker in console output mode.
+      feedback tracking. This marker MUST be on its own line, separated by a blank line from
+      the comment content — otherwise it breaks markdown rendering if the content ends with
+      a code fence. Do NOT include this marker in console output mode.
 
     sub_agents:
       - drafter

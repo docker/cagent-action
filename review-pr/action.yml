@@ -144,16 +144,23 @@ runs:
       env:
         GH_TOKEN: ${{ steps.resolve-token.outputs.token }}
         PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
+        REPO: ${{ github.repository }}
+        READ_TOKEN: ${{ github.token }}
       run: |
-        gh pr view $PR_NUMBER --json files -q '.files[].path' > changed_files.txt
-        gh pr view $PR_NUMBER --json title,body,author,baseRefName,headRefName > pr_metadata.json
+        PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
+
+        gh pr view "$PR_URL" --json files -q '.files[].path' > changed_files.txt
+        gh pr view "$PR_URL" --json title,body,author,baseRefName,headRefName > pr_metadata.json
         echo "files_count=$(wc -l < changed_files.txt | tr -d ' ')" >> $GITHUB_OUTPUT
 
-        # Pre-fetch diff for the agent (avoids 403 on forked PRs inside cagent)
-        if gh pr diff $PR_NUMBER > pr.diff 2>/dev/null; then
+        # Pre-fetch diff for the agent so it doesn't need to call gh pr diff itself.
+        # Uses github.token (has contents:read) instead of the App token (used for posting reviews).
+        # Uses the full PR URL instead of just the number — gh can't resolve a bare number
+        # from a detached HEAD (refs/pull/N/head).
+        if GH_TOKEN="$READ_TOKEN" gh pr diff "$PR_URL" > pr.diff 2>/dev/null; then
           echo "✅ Pre-fetched PR diff ($(wc -l < pr.diff | tr -d ' ') lines)"
         else
-          echo "::warning::Failed to pre-fetch PR diff — agent will fetch it directly"
+          echo "::warning::Failed to pre-fetch PR diff — agent will use git diff as fallback"
           rm -f pr.diff
         fi
 
@@ -297,7 +304,7 @@ runs:
           echo ""
           echo "Execute the review pipeline:"
           echo ""
-          echo '1. **Gather**: Use `gh pr diff` to get the full diff'
+          echo "1. **Gather**: Read the pre-fetched \`pr.diff\` file. If missing, run \`gh pr diff https://github.com/${REPO}/pull/${PR_NUMBER}\` (use the full URL, not just the number)"
           echo '2. **Draft**: Delegate to `drafter` agent to generate bug hypotheses'
           echo '3. **Verify**: For each hypothesis, delegate to `verifier` agent'
           echo '4. **Post**: Aggregate findings and post review via `gh api`'
