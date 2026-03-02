@@ -157,11 +157,25 @@ runs:
         # Uses github.token (has contents:read) instead of the App token (used for posting reviews).
         # Uses the full PR URL instead of just the number — gh can't resolve a bare number
         # from a detached HEAD (refs/pull/N/head).
-        if GH_TOKEN="$READ_TOKEN" gh pr diff "$PR_URL" > pr.diff 2>/dev/null; then
-          echo "✅ Pre-fetched PR diff ($(wc -l < pr.diff | tr -d ' ') lines)"
+        if GH_TOKEN="$READ_TOKEN" gh pr diff "$PR_URL" > pr.diff 2>pr_diff_stderr.txt; then
+          echo "✅ Pre-fetched PR diff via gh pr diff ($(wc -l < pr.diff | tr -d ' ') lines)"
+          rm -f pr_diff_stderr.txt
         else
-          echo "::warning::Failed to pre-fetch PR diff — agent will use git diff as fallback"
-          rm -f pr.diff
+          echo "::warning::gh pr diff failed: $(cat pr_diff_stderr.txt 2>/dev/null)"
+          rm -f pr.diff pr_diff_stderr.txt
+
+          # Fallback: git diff with merge-base (repo is checked out with full history)
+          MERGE_BASE=$(git merge-base origin/main HEAD 2>/dev/null || git merge-base origin/master HEAD 2>/dev/null || echo "")
+          if [ -n "$MERGE_BASE" ]; then
+            if git diff "$MERGE_BASE"...HEAD > pr.diff; then
+              echo "✅ Pre-fetched PR diff via git diff ($(wc -l < pr.diff | tr -d ' ') lines)"
+            else
+              echo "::warning::git diff failed — agent will fetch diff itself"
+              rm -f pr.diff
+            fi
+          else
+            echo "::warning::Could not determine merge base — agent will fetch diff itself"
+          fi
         fi
 
     - name: Ensure cache directory exists
@@ -173,8 +187,9 @@ runs:
       uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
         path: ${{ github.workspace }}/.cache/pr-review-memory.db
-        key: pr-review-memory-${{ github.repository }}-${{ github.run_id }}
+        key: pr-review-memory-${{ github.repository }}-${{ github.job }}-${{ github.run_id }}
         restore-keys: |
+          pr-review-memory-${{ github.repository }}-${{ github.job }}-
           pr-review-memory-${{ github.repository }}-
 
     # ========================================
@@ -356,7 +371,7 @@ runs:
       uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
         path: ${{ github.workspace }}/.cache/pr-review-memory.db
-        key: pr-review-memory-${{ github.repository }}-${{ github.run_id }}
+        key: pr-review-memory-${{ github.repository }}-${{ github.job }}-${{ github.run_id }}
 
     # ========================================
     # POST-REVIEW: Clean summary & reactions
