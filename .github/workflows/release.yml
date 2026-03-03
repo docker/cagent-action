@@ -75,7 +75,8 @@ jobs:
           done
 
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "New version: $NEW_VERSION"
+          echo "previous=${LATEST_TAG}" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION (previous: ${LATEST_TAG:-none})"
 
       # CI cannot push commits to main (branch protection). Instead, we create
       # a detached release commit with pinned refs, reachable only via tags.
@@ -128,8 +129,14 @@ jobs:
       - name: Create GitHub Release
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          PREVIOUS: ${{ steps.version.outputs.previous }}
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: gh release create "$VERSION" --generate-notes --latest
+        run: |
+          ARGS=(--generate-notes --latest)
+          if [ -n "$PREVIOUS" ]; then
+            ARGS+=(--notes-start-tag "$PREVIOUS")
+          fi
+          gh release create "$VERSION" "${ARGS[@]}"
 
       - name: Update latest tag
         env:

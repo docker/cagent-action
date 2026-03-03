@@ -105,7 +105,7 @@ jobs:
   # Triggers when someone comments /review on a PR
   # ==========================================================================
   manual-review:
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/review')
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/review')
     runs-on: ubuntu-latest
     env:
       HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}

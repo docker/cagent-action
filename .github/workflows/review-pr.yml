@@ -194,7 +194,7 @@ jobs:
   manual-review:
     if: |
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/review') &&
+      startsWith(github.event.comment.body, '/review') &&
       (github.event.comment.user.type != 'Bot' || github.event.comment.user.login == 'docker-agent[bot]')
     runs-on: ubuntu-latest
     env:

@@ -125,7 +125,7 @@ permissions:
 
 jobs:
   review:
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/review')
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/review')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
