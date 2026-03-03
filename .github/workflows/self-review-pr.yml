@@ -17,6 +17,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  checks: write
 
 jobs:
   # ==========================================================================
@@ -111,6 +112,27 @@ jobs:
       HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
 
     steps:
+      - name: Create check run
+        id: create-check
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const prNumber = context.issue.number;
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            const { data: check } = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'PR Review',
+              head_sha: pr.head.sha,
+              status: 'in_progress',
+              started_at: new Date().toISOString()
+            });
+            core.setOutput('check-id', check.id);
+
       # Checkout PR head (not default branch)
       # Note: Authorization is handled by the composite action's built-in check
       - name: Checkout PR head
@@ -144,6 +166,24 @@ jobs:
           xai-api-key: ${{ secrets.XAI_API_KEY }}
           nebius-api-key: ${{ secrets.NEBIUS_API_KEY }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+
+      - name: Update check run
+        if: always() && steps.create-check.outputs.check-id != ''
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          CHECK_ID: ${{ steps.create-check.outputs.check-id }}
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const conclusion = process.env.JOB_STATUS === 'cancelled' ? 'cancelled' : process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: parseInt(process.env.CHECK_ID, 10),
+              status: 'completed',
+              conclusion: conclusion,
+              completed_at: new Date().toISOString()
+            });
 
   # ==========================================================================
   # CAPTURE FEEDBACK

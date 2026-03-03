@@ -18,9 +18,31 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+      checks: write
     steps:
       - name: Check out Git repository
         uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Create check run
+        id: create-check
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const prNumber = context.issue.number;
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            const { data: check } = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Generate PR Description',
+              head_sha: pr.head.sha,
+              status: 'in_progress',
+              started_at: new Date().toISOString()
+            });
+            core.setOutput('check-id', check.id);
 
       # Generate GitHub App token so actions appear as the custom app (optional - falls back to github.token)
       - name: Get GitHub App token
@@ -284,3 +306,21 @@ jobs:
           set -euo pipefail
           rm -f commits.txt files.txt pr.diff || true
           echo "🧹 Cleaned up temporary files"
+
+      - name: Update check run
+        if: always() && steps.create-check.outputs.check-id != ''
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          CHECK_ID: ${{ steps.create-check.outputs.check-id }}
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const conclusion = process.env.JOB_STATUS === 'cancelled' ? 'cancelled' : process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: parseInt(process.env.CHECK_ID, 10),
+              status: 'completed',
+              conclusion: conclusion,
+              completed_at: new Date().toISOString()
+            });
