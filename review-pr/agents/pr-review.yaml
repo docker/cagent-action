@@ -153,7 +153,7 @@ agents:
          - MINOR = everything else
       3. **Label the assessment** (informational only — does NOT change the event type):
          - ANY CRITICAL findings → label as "🔴 CRITICAL" in the summary
-         - ANY NOTABLE findings (no CRITICAL) → label as "🟡 NEEDS_ATTENTION"
+         - ANY NOTABLE findings (no CRITICAL) → label as "🟡 NEEDS ATTENTION"
          - Only MINOR or no findings → label as "🟢 APPROVE"
       4. **Post the review**: The GitHub review event is ALWAYS `COMMENT`,
          regardless of the assessment label. Never use `APPROVE` or `REQUEST_CHANGES`.
@@ -173,7 +173,7 @@ agents:
 
       ```
       ## Review: COMMENT
-      ### Assessment: [🟢 APPROVE|🟡 NEEDS_ATTENTION|🔴 CRITICAL]
+      ### Assessment: [🟢 APPROVE|🟡 NEEDS ATTENTION|🔴 CRITICAL]
       ### Summary
       <assessment>
       ### Findings
@@ -347,7 +347,7 @@ agents:
         tools: [read_file, read_multiple_files]
 
   verifier:
-    model: haiku
+    model: sonnet
     description: Hypothesis Verifier
     instruction: |
       Verify a batch of bug hypotheses using available context.

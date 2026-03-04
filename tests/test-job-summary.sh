@@ -4,6 +4,8 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 echo "=========================================="
 echo "Testing Job Summary Format"
 echo "=========================================="
@@ -35,7 +37,7 @@ echo "---"
   echo "| Agent | \`agents/security-scanner.yaml\` |"
   echo "| Exit Code | 0 |"
   echo "| Execution Time | 45s |"
-  echo "| cagent Version | v1.27.1 |"
+  echo "| cagent Version | $(cat "$SCRIPT_DIR/../CAGENT_VERSION" | tr -d '[:space:]') |"
   echo "| MCP Gateway | false |"
   echo ""
   echo "✅ **Status:** Success"

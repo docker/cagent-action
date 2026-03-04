@@ -178,6 +178,195 @@ runs:
           fi
         fi
 
+    - name: Resolve stale review threads
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.resolve-token.outputs.token }}
+        PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
+        REPO: ${{ github.repository }}
+      run: |
+        echo "🔍 Checking for stale bot review threads to resolve..."
+
+        # A. Parse diff → file:line set
+        # Tracks current file from "diff --git" headers, line numbers from @@ hunks,
+        # and emits "file:line" for each added (+) line.
+        if [ ! -f pr.diff ]; then
+          echo "ℹ️  No pr.diff found — skipping stale thread resolution"
+          exit 0
+        fi
+
+        DIFF_LINES_FILE=$(mktemp)
+        trap "rm -f '$DIFF_LINES_FILE'" EXIT
+
+        awk '
+          /^\+\+\+ b\// {
+            # Extract file path from "+++ b/foo" (unambiguous, unlike diff --git header)
+            file = substr($0, 7)
+          }
+          /^@@ / {
+            # Parse new file line number from "@@ -X,Y +Z,W @@"
+            match($0, /\+([0-9]+)/, arr)
+            line = arr[1]
+            next
+          }
+          /^\+[^+]/ || /^\+$/ {
+            # Added line (but not the +++ header)
+            if (file != "" && line > 0) {
+              print file ":" line
+            }
+            line++
+          }
+          /^ / { line++ }
+          /^-/ { next }
+        ' pr.diff | sort -u > $DIFF_LINES_FILE
+
+        DIFF_LINE_COUNT=$(wc -l < $DIFF_LINES_FILE | tr -d ' ')
+        echo "📄 Found $DIFF_LINE_COUNT unique file:line pairs in diff"
+
+        # B. Fetch all review threads via GraphQL (paginated)
+        OWNER="${REPO%%/*}"
+        REPO_NAME="${REPO##*/}"
+
+        QUERY='
+        query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $pr) {
+              reviewThreads(first: 100, after: $cursor) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id
+                  isResolved
+                  path
+                  line
+                  comments(first: 5) {
+                    nodes { body }
+                  }
+                }
+              }
+            }
+          }
+        }'
+
+        ALL_THREADS="[]"
+        CURSOR=""
+        PAGE=0
+        FETCH_OK=true
+
+        while true; do
+          PAGE=$((PAGE + 1))
+
+          GQL_ARGS=(-f query="$QUERY" -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER")
+          if [ -n "$CURSOR" ]; then
+            GQL_ARGS+=(-f cursor="$CURSOR")
+          fi
+
+          RESULT=$(gh api graphql "${GQL_ARGS[@]}" 2>&1) || {
+            echo "::warning::GraphQL query failed (page $PAGE): $RESULT"
+            FETCH_OK=false
+            break
+          }
+
+          # Check for GraphQL errors in response (HTTP 200 can still contain errors)
+          if echo "$RESULT" | jq -e '.errors' > /dev/null 2>&1; then
+            echo "::warning::GraphQL returned errors: $(echo "$RESULT" | jq -c '.errors')"
+            FETCH_OK=false
+            break
+          fi
+
+          THREADS=$(echo "$RESULT" | jq '.data.repository.pullRequest.reviewThreads.nodes // []') || {
+            echo "::warning::Failed to parse threads on page $PAGE"
+            FETCH_OK=false
+            break
+          }
+          ALL_THREADS=$(echo "$ALL_THREADS" "$THREADS" | jq -s '.[0] + .[1]') || {
+            echo "::warning::Failed to merge threads on page $PAGE"
+            FETCH_OK=false
+            break
+          }
+
+          HAS_NEXT=$(echo "$RESULT" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')
+          if [ "$HAS_NEXT" != "true" ]; then
+            break
+          fi
+          CURSOR=$(echo "$RESULT" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
+        done
+
+        if [ "$FETCH_OK" != "true" ]; then
+          echo "::warning::Thread fetch incomplete — skipping resolution to avoid acting on partial data"
+          exit 0
+        fi
+
+        TOTAL_THREADS=$(echo "$ALL_THREADS" | jq 'length')
+        echo "📋 Fetched $TOTAL_THREADS review threads (across $PAGE page(s))"
+
+        # C. Filter to unresolved bot threads (containing <!-- cagent-review --> marker)
+        BOT_THREADS=$(echo "$ALL_THREADS" | jq '[
+          .[] | select(
+            .isResolved == false and
+            (.comments.nodes | any(.body | contains("<!-- cagent-review -->")))
+          )
+        ]')
+
+        BOT_COUNT=$(echo "$BOT_THREADS" | jq 'length')
+        if [ -z "$BOT_COUNT" ] || ! [[ "$BOT_COUNT" =~ ^[0-9]+$ ]]; then
+          echo "::warning::Failed to count bot threads"
+          exit 0
+        fi
+        echo "🤖 Found $BOT_COUNT unresolved bot review thread(s)"
+
+        if [ "$BOT_COUNT" -eq 0 ]; then
+          echo "✅ No stale bot threads to resolve"
+          exit 0
+        fi
+
+        # D. Resolve stale threads (file:line no longer in diff)
+        RESOLVED=0
+        KEPT=0
+
+        for i in $(seq 0 $((BOT_COUNT - 1))); do
+          THREAD_ID=$(echo "$BOT_THREADS" | jq -r ".[$i].id")
+          THREAD_PATH=$(echo "$BOT_THREADS" | jq -r ".[$i].path")
+          THREAD_LINE=$(echo "$BOT_THREADS" | jq -r ".[$i].line")
+
+          # Skip threads with null path or line (outdated diff positions, file-level comments)
+          if [ "$THREAD_PATH" = "null" ] || [ -z "$THREAD_PATH" ] || \
+             [ "$THREAD_LINE" = "null" ] || [ -z "$THREAD_LINE" ]; then
+            echo "  ⏭️  Keeping open: thread $THREAD_ID (path or line is null/outdated)"
+            KEPT=$((KEPT + 1))
+            continue
+          fi
+
+          FILE_LINE="${THREAD_PATH}:${THREAD_LINE}"
+
+          if grep -qFx "$FILE_LINE" "$DIFF_LINES_FILE"; then
+            echo "  ⏭️  Keeping open: $FILE_LINE (still in diff)"
+            KEPT=$((KEPT + 1))
+          else
+            MUTATION_RESULT=$(gh api graphql -f query='
+              mutation($threadId: ID!) {
+                resolveReviewThread(input: { threadId: $threadId }) {
+                  thread { id isResolved }
+                }
+              }
+            ' -f threadId="$THREAD_ID" 2>&1) || {
+              echo "  ⚠️  Failed to resolve thread $THREAD_ID (API error)"
+              continue
+            }
+
+            if echo "$MUTATION_RESULT" | jq -e '.errors' > /dev/null 2>&1; then
+              echo "  ⚠️  Failed to resolve thread $THREAD_ID: $(echo "$MUTATION_RESULT" | jq -c '.errors')"
+              continue
+            fi
+
+            echo "  ✅ Resolved: $FILE_LINE (no longer in diff)"
+            RESOLVED=$((RESOLVED + 1))
+          fi
+        done
+
+        echo ""
+        echo "📋 Summary: Resolved $RESOLVED thread(s), kept $KEPT thread(s) open"
+
     - name: Ensure cache directory exists
       shell: bash
       run: mkdir -p "${{ github.workspace }}/.cache"
@@ -324,7 +513,7 @@ runs:
           echo '3. **Verify**: For each hypothesis, delegate to `verifier` agent'
           echo '4. **Post**: Aggregate findings and post review via `gh api`'
           echo ""
-          echo "Only report CONFIRMED and LIKELY findings. Approve if no issues found."
+          echo "Only report CONFIRMED and LIKELY findings. Always post as COMMENT (never APPROVE or REQUEST_CHANGES)."
         } > review_context.md
 
         # Append extra prompt if provided
