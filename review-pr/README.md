@@ -69,16 +69,25 @@ cagent run agentcatalog/review-pr "Review my changes"
 
 The agent automatically:
 - Pulls the latest version from Docker Hub
+- Reads `AGENTS.md` or `CLAUDE.md` from your repo root for project-specific context (language versions, conventions, etc.)
 - Diffs your current branch against the base branch
 - Outputs the review as formatted markdown
 
-To include project-specific instructions, use the `--prompt-file` flag:
+> **Tip:** cagent has a TUI, so you can interact with the agent during the review — ask follow-up questions, request clarification on findings, or drill into specific files.
+
+### Project Context via `AGENTS.md`
+
+The reviewer automatically looks for an `AGENTS.md` (or `CLAUDE.md`) file in your repository root before analyzing code. This file is read and passed to all sub-agents (drafter and verifier), so project-specific context like language versions, build tools, and coding conventions are respected during the review.
+
+For example, if your `AGENTS.md` says "Look at go.mod for the Go version," the reviewer will check `go.mod` before flagging APIs as nonexistent — avoiding false positives from newer language features.
+
+No workflow configuration is needed — just commit an `AGENTS.md` to your repo root.
+
+You can also pass additional files explicitly with `--prompt-file`:
 
 ```bash
-cagent run agentcatalog/review-pr --prompt-file AGENTS.md "Review my changes"
+cagent run agentcatalog/review-pr --prompt-file CONTRIBUTING.md "Review my changes"
 ```
-
-> **Tip:** cagent has a TUI, so you can interact with the agent during the review — ask follow-up questions, request clarification on findings, or drill into specific files.
 
 ---
 
@@ -143,9 +152,11 @@ jobs:
 
 ---
 
-## Adding Language-Specific Guidelines
+## Adding Project-Specific Guidelines
 
-Use the `additional-prompt` input to customize reviews for your stack:
+The recommended approach is to add an `AGENTS.md` file to your repository root. The reviewer automatically reads it before every review — no workflow changes needed. This is ideal for project conventions, language versions, and coding standards that should always apply.
+
+For workflow-level overrides or guidelines that apply across multiple repos, use the `additional-prompt` input:
 
 ```yaml
 - uses: docker/cagent-action/review-pr@latest
@@ -325,7 +336,7 @@ The action uses emoji reactions on your `/review` comment to indicate progress:
 ### Review Pipeline
 
 ```
-PR Diff → Drafter (hypotheses) → Verifier (confirm) → Post Comments
+AGENTS.md + PR Diff → Drafter (hypotheses) → Verifier (confirm) → Post Comments
 ```
 
 ### Learning System
@@ -409,6 +420,8 @@ Each eval file in `review-pr/agents/evals/` contains:
 ## What It Reviews
 
 **Catches:** Logic errors, null dereferences, resource leaks, security issues, error handling mistakes, concurrency bugs
+
+**Context-aware:** Reads `AGENTS.md`/`CLAUDE.md` for project conventions and checks build files (e.g., `go.mod`, `package.json`) to validate findings against the project's actual toolchain version.
 
 **Ignores:** Style, formatting, documentation, test files, unchanged code
 

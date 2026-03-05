@@ -163,7 +163,9 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 
 ### Prompt Files (`add-prompt-files`)
 
-The `add-prompt-files` input allows you to include additional context files (like `AGENTS.md`, `CLAUDE.md`) as system messages. This uses cagent's `--prompt-file` flag under the hood.
+The `add-prompt-files` input allows you to include additional context files as system messages. This uses cagent's `--prompt-file` flag under the hood.
+
+> **Note:** The `review-pr` action automatically reads `AGENTS.md` and `CLAUDE.md` from the repository root — you don't need to specify them via `add-prompt-files`. Use this input for additional files beyond those defaults.
 
 **File Resolution (handled by cagent):**
 - Searches up the directory hierarchy (like `.gitignore`)
@@ -173,15 +175,12 @@ The `add-prompt-files` input allows you to include additional context files (lik
 **Examples:**
 
 ```yaml
-# Single file
-add-prompt-files: "AGENTS.md"
-
-# Multiple files
-add-prompt-files: "AGENTS.md,CLAUDE.md"
+# Additional files beyond the auto-discovered AGENTS.md/CLAUDE.md
+add-prompt-files: "CONTRIBUTING.md,docs/REVIEW_GUIDELINES.md"
 
 # With custom working directory
 working-directory: ./src
-add-prompt-files: "AGENTS.md"  # Found via hierarchy search
+add-prompt-files: "STYLE_GUIDE.md"  # Found via hierarchy search
 ```
 
 ## Outputs

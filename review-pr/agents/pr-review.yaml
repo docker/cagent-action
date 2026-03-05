@@ -74,8 +74,16 @@ agents:
            ```
            If `origin/HEAD` is not set, fall back to `origin/main`, then `origin/master`.
            If none of these exist (e.g. no remote), use `main` or `master`.
-      2. Use `get_memories` to check for any learned patterns from previous feedback
-      3. **Delegate to drafter(s)**:
+      2. **Read project conventions**: Look for an `AGENTS.md` (or `CLAUDE.md`) file in the
+         repository root. Use `read_file` to read it if found. This file contains project-specific
+         context such as language versions, build tools, coding conventions, and other guidelines
+         that MUST inform the review. Pass its contents to both the drafter and verifier as
+         `project_context` in their delegation messages.
+         ```bash
+         ls AGENTS.md CLAUDE.md 2>/dev/null
+         ```
+      3. Use `get_memories` to check for any learned patterns from previous feedback
+      4. **Delegate to drafter(s)**:
          a. Count the total lines in the diff (e.g., `wc -l pr.diff`).
          b. If the diff is ≤ 1500 lines, write it to `/tmp/drafter_chunk_1.diff` and delegate
             to the drafter in a single call.
@@ -85,7 +93,7 @@ agents:
               together when possible (same directory).
             - Write each chunk to `/tmp/drafter_chunk_N.diff` (numbered sequentially).
             - Delegate each chunk to the drafter separately.
-            - Merge all findings arrays into a single list before proceeding to step 4.
+            - Merge all findings arrays into a single list before proceeding to step 5.
             - Combine summaries into one overall summary.
          d. Include any relevant learned patterns from memory in each delegation.
 
@@ -100,24 +108,29 @@ agents:
          ```
          Review the diff at /tmp/drafter_chunk_1.diff for bugs.
 
+         Project context (from AGENTS.md):
+         <contents of AGENTS.md, or "No AGENTS.md found" if absent>
+
          Learned patterns: <any relevant memories>
          ```
 
          The drafter has `read_file` access and will read the chunk from disk. Keep the
-         delegation message short — just the file path, chunk number, and any learned patterns.
-      4. Parse the drafter's JSON response. Collect all findings with severity "high" or "medium"
+         delegation message short — just the file path, chunk number, project context, and any learned patterns.
+      5. Parse the drafter's JSON response. Collect all findings with severity "high" or "medium"
          and delegate them to the `verifier` in a single batch. Skip verification for "low" findings.
+         Include the project context (from step 2) in the verifier delegation so it can validate
+         findings against project-specific conventions (e.g., language version, available APIs).
          **ANTI-LOOP RULE**: Delegate to the verifier exactly ONCE with all findings. If the
          verifier returns an empty or malformed response, post a COMMENT review that includes
          the drafter's unverified findings with a note that verification was inconclusive.
          Do NOT approve — surface the raw findings so the author can evaluate them.
          Do NOT retry the delegation.
-      5. Parse the verifier's JSON response (a `verdicts` array). Filter out DISMISSED verdicts and findings where
+      6. Parse the verifier's JSON response (a `verdicts` array). Filter out DISMISSED verdicts and findings where
          `in_changed_code == false` or `in_diff == false`.
-      6. **Verify line numbers** before posting (see below)
-      7. Apply the Decision Rules (see below) to determine the review verdict
-      8. Build inline comments from CONFIRMED/LIKELY issues and post the review
-      9. Always report ALL HIGH severity bugs. Limit MEDIUM/LOW to 5 comments max.
+      7. **Verify line numbers** before posting (see below)
+      8. Apply the Decision Rules (see below) to determine the review verdict
+      9. Build inline comments from CONFIRMED/LIKELY issues and post the review
+      10. Always report ALL HIGH severity bugs. Limit MEDIUM/LOW to 5 comments max.
 
       Find **real bugs in the changed code**, not style issues. If the changed code works correctly, approve it.
 
@@ -197,7 +210,11 @@ agents:
     description: Bug Hypothesis Generator
     instruction: |
       Analyze the provided PR diff and generate specific bug hypotheses.
-      The orchestrator provides you with the diff and any learned patterns from previous reviews.
+      The orchestrator provides you with the diff, any learned patterns from previous reviews,
+      and project context (from AGENTS.md or similar). Pay close attention to project context —
+      it may specify language versions, toolchain details, or conventions that affect whether
+      code is correct. For example, a project using Go 1.25+ has access to APIs that older
+      versions lack. Always ground your analysis in the project's actual configuration.
 
       ## CRITICAL: How to Get the Diff
 
@@ -352,7 +369,12 @@ agents:
     instruction: |
       Verify a batch of bug hypotheses using available context.
 
-      You receive multiple findings from the drafter. Verify each one independently.
+      You receive multiple findings from the drafter, along with project context
+      (from AGENTS.md or similar) if available. Use this context to verify findings —
+      for example, check the project's language version in build files (go.mod, package.json,
+      etc.) before confirming that an API or language feature doesn't exist.
+
+      Verify each one independently.
       Your job is to filter out false positives. For each finding, check if:
       - **THE CODE IS ACTUALLY CHANGED IN THIS PR** (if not, DISMISS immediately)
       - The bug can actually happen given the surrounding code
