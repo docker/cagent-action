@@ -218,3 +218,112 @@ jobs:
             -d "$(jq -n --arg desc "Docker Agent-powered PR review team. Analyzes code changes, posts reviews, and learns from feedback." \
                        --rawfile readme review-pr/README.md \
                        '{description: $desc, full_description: $readme}')"
+
+  notify:
+    name: Notify Slack
+    needs: [release, publish-agent]
+    if: success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch release notes from GitHub
+        id: release-notes
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          if ! NOTES=$(gh release view "$VERSION" --repo docker/cagent-action --json body --jq '.body'); then
+            echo "::warning::Failed to fetch release notes, using fallback"
+            NOTES="Release ${VERSION} — see GitHub for details."
+          fi
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate Slack summary
+        id: slack-summary
+        # @latest resolves to the previous release here, not the one just created.
+        # This is fine — the release-notes agent doesn't change between versions.
+        # GitHub Actions requires static `uses:` values, so we can't pin dynamically.
+        uses: docker/cagent-action@latest
+        with:
+          agent: agentcatalog/github-action-release-notes
+          prompt: |
+            Convert these release notes to a SHORT plain text Slack message.
+
+            VERSION: ${{ needs.release.outputs.version }}
+            RELEASE URL: https://github.com/docker/cagent-action/releases/tag/${{ needs.release.outputs.version }}
+
+            ORIGINAL RELEASE NOTES:
+            ${{ steps.release-notes.outputs.notes }}
+
+            CRITICAL - PLAIN TEXT ONLY:
+            This goes through Slack Workflow Builder which does NOT support formatting.
+            - DO NOT use *asterisks* - they show literally
+            - DO NOT use <url|text> links - use plain URLs
+            - DO use :emoji: codes - those work
+            - DO use bullet points with •
+            - Use CAPS for section headers instead of bold
+
+            OUTPUT REQUIREMENTS:
+            - Keep it SHORT - max 5-7 bullet points total
+            - Include the release URL at the end (plain URL, not link syntax)
+            - Output ONLY the Slack message, nothing else
+            - Skip the "Platforms" line — this is a GitHub Action, not a binary
+
+            EXAMPLE FORMAT:
+            :tada: cagent-action v1.3.0 Released
+
+            :package: WHAT'S NEW
+            • New feature one
+            • New feature two
+
+            :wrench: IMPROVEMENTS
+            • Enhancement description
+
+            :bug: BUG FIXES
+            • Fix description
+
+            :inbox_tray: Release: https://github.com/docker/cagent-action/releases/tag/v1.3.0
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Send Slack notification
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_RELEASE_WEBHOOK }}
+          VERSION: ${{ needs.release.outputs.version }}
+          SLACK_SUMMARY_FILE: ${{ steps.slack-summary.outputs.output-file }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "⚠️ SLACK_RELEASE_WEBHOOK not configured, skipping notification"
+            exit 0
+          fi
+
+          RELEASE_URL="https://github.com/docker/cagent-action/releases/tag/${VERSION}"
+
+          # Use the AI-generated Slack summary
+          if [ -f "$SLACK_SUMMARY_FILE" ] && [ -s "$SLACK_SUMMARY_FILE" ]; then
+            MESSAGE_TEXT=$(cat "$SLACK_SUMMARY_FILE")
+          else
+            # Fallback message if summary generation failed
+            MESSAGE_TEXT=$(printf ':tada: cagent-action %s Released\n\n:package: See the full release notes for details.\n\n:inbox_tray: Release: %s' "$VERSION" "$RELEASE_URL")
+          fi
+
+          # Create payload with text and release_url fields (matching Slack Workflow Builder webhook)
+          PAYLOAD=$(jq -n \
+            --arg text "$MESSAGE_TEXT" \
+            --arg release_url "$RELEASE_URL" \
+            '{
+              text: $text,
+              release_url: $release_url
+            }')
+
+          if ! HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/slack_response.txt -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"); then
+            echo "⚠️ Slack notification failed (curl error)"
+          elif [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ Slack notification sent"
+          else
+            echo "⚠️ Slack notification failed (HTTP $HTTP_CODE)"
+            cat /tmp/slack_response.txt
+          fi
+          # Don't fail the workflow if Slack fails
