@@ -329,20 +329,29 @@ runs:
           THREAD_PATH=$(echo "$BOT_THREADS" | jq -r ".[$i].path")
           THREAD_LINE=$(echo "$BOT_THREADS" | jq -r ".[$i].line")
 
-          # Skip threads with null path or line (outdated diff positions, file-level comments)
-          if [ "$THREAD_PATH" = "null" ] || [ -z "$THREAD_PATH" ] || \
-             [ "$THREAD_LINE" = "null" ] || [ -z "$THREAD_LINE" ]; then
-            echo "  ⏭️  Keeping open: thread $THREAD_ID (path or line is null/outdated)"
+          # Skip threads with null path (file-level or unknown context)
+          if [ "$THREAD_PATH" = "null" ] || [ -z "$THREAD_PATH" ]; then
+            echo "  ⏭️  Keeping open: thread $THREAD_ID (no file path)"
             KEPT=$((KEPT + 1))
             continue
           fi
 
-          FILE_LINE="${THREAD_PATH}:${THREAD_LINE}"
-
-          if grep -qFx "$FILE_LINE" "$DIFF_LINES_FILE"; then
-            echo "  ⏭️  Keeping open: $FILE_LINE (still in diff)"
+          # Null line means GitHub marked the comment "outdated" — the code changed
+          # since the comment was posted and the position is no longer valid.
+          # These are stale by definition and should be resolved.
+          SHOULD_RESOLVE=false
+          if [ "$THREAD_LINE" = "null" ] || [ -z "$THREAD_LINE" ]; then
+            echo "  🔄 Outdated: $THREAD_PATH (position invalidated by push)"
+            SHOULD_RESOLVE=true
+          elif grep -qFx "${THREAD_PATH}:${THREAD_LINE}" "$DIFF_LINES_FILE"; then
+            echo "  ⏭️  Keeping open: ${THREAD_PATH}:${THREAD_LINE} (still in diff)"
             KEPT=$((KEPT + 1))
           else
+            echo "  🔄 Stale: ${THREAD_PATH}:${THREAD_LINE} (no longer in diff)"
+            SHOULD_RESOLVE=true
+          fi
+
+          if [ "$SHOULD_RESOLVE" = "true" ]; then
             MUTATION_RESULT=$(gh api graphql -f query='
               mutation($threadId: ID!) {
                 resolveReviewThread(input: { threadId: $threadId }) {
@@ -359,7 +368,7 @@ runs:
               continue
             fi
 
-            echo "  ✅ Resolved: $FILE_LINE (no longer in diff)"
+            echo "  ✅ Resolved thread $THREAD_ID"
             RESOLVED=$((RESOLVED + 1))
           fi
         done

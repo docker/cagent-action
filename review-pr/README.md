@@ -29,6 +29,7 @@ jobs:
       contents: read       # Read repository files and PR diffs
       pull-requests: write # Post review comments and approve/request changes
       issues: write        # Create security incident issues if secrets are detected in output
+      checks: write        # (Optional) Show review progress as a check run on the PR
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}         # PAT with read:org scope; gates auto-reviews to org members only
@@ -53,7 +54,7 @@ The workflow automatically handles:
 | Trigger                 | Behavior                                                                                |
 | ----------------------- | --------------------------------------------------------------------------------------- |
 | PR opened/ready         | Auto-reviews PRs from your org members (if `CAGENT_ORG_MEMBERSHIP_TOKEN` is configured) |
-| `/review` comment       | Manual review on any PR                                                                 |
+| `/review` comment       | Manual review on any PR (shows as a check run on the PR if `checks: write` is granted)  |
 | Reply to review comment | Learns from feedback to improve future reviews                                          |
 
 ---
@@ -122,6 +123,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  checks: write         # Optional: show review progress as a check run
 
 jobs:
   review:
@@ -307,9 +309,15 @@ When no issues are found:
 
 ---
 
-## Reactions
+## Progress Indicators
 
-The action uses emoji reactions on your `/review` comment to indicate progress:
+### Check Runs
+
+When the workflow has `checks: write` permission, reviews appear as check runs on the PR's Checks tab. This makes it easy to see review status at a glance — `in_progress` while reviewing, then `success`, `failure`, or `cancelled` when done. If `checks: write` is not granted, the workflow still works normally without check runs.
+
+### Reactions
+
+The action also uses emoji reactions on your `/review` comment to indicate progress:
 
 | Stage             | Reaction | Meaning                        |
 | ----------------- | -------- | ------------------------------ |
@@ -426,6 +434,11 @@ Each eval file in `review-pr/agents/evals/` contains:
 
 - Ensure the workflow has `pull-requests: write` permission
 - Check if the `github-token` has access to react to comments
+
+**No check run showing on the PR?**
+
+- Add `checks: write` to your workflow permissions (it's optional — the review works without it)
+- Check runs are created for manual (`/review`) triggers. Auto-reviews from `pull_request_target` already appear as workflow runs natively
 
 **Learning doesn't seem to work?**
 
