@@ -451,7 +451,7 @@ runs:
     - name: Process pending feedback
       if: steps.pending-feedback.outputs.has_feedback == 'true'
       continue-on-error: true
-      uses: docker/cagent-action@latest
+      uses: docker/cagent-action@v1.2.7
       with:
         agent: ${{ github.action_path }}/agents/pr-review-feedback.yaml
         prompt: |
@@ -547,7 +547,7 @@ runs:
     # ========================================
     - name: Run PR Review
       id: run-review
-      uses: docker/cagent-action@latest
+      uses: docker/cagent-action@v1.2.7
       with:
         agent: ${{ github.action_path }}/agents/pr-review.yaml
         prompt: ${{ steps.context.outputs.review_prompt }}
