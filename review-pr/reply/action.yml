@@ -1,0 +1,97 @@
+name: "PR Review Reply"
+description: "Responds to developer feedback on PR review comments"
+author: "Docker"
+
+inputs:
+  thread-context:
+    description: "Thread context (original comment + replies) to respond to"
+    required: true
+  comment-id:
+    description: "ID of the triggering comment (for failure notification reaction)"
+    required: false
+  anthropic-api-key:
+    description: "Anthropic API key"
+    required: false
+  openai-api-key:
+    description: "OpenAI API key"
+    required: false
+  google-api-key:
+    description: "Google API key for Gemini models"
+    required: false
+  aws-bearer-token-bedrock:
+    description: "AWS Bearer token for Bedrock models"
+    required: false
+  xai-api-key:
+    description: "xAI API key for Grok models"
+    required: false
+  nebius-api-key:
+    description: "Nebius API key"
+    required: false
+  mistral-api-key:
+    description: "Mistral API key"
+    required: false
+  github-token:
+    description: "GitHub token for API access"
+    required: false
+
+outputs:
+  agent-outcome:
+    description: "Outcome of the reply agent (success/failure/skipped)"
+    value: ${{ steps.run-reply.outcome }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Ensure cache directory exists
+      shell: bash
+      run: mkdir -p "${{ github.workspace }}/.cache"
+
+    - name: Restore reviewer memory
+      id: restore-memory
+      uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        path: ${{ github.workspace }}/.cache/pr-review-memory.db
+        key: pr-review-memory-${{ github.repository }}-reply-${{ github.run_id }}
+        restore-keys: |
+          pr-review-memory-${{ github.repository }}-reply-
+          pr-review-memory-${{ github.repository }}-
+
+    - name: Run reply agent
+      id: run-reply
+      continue-on-error: true
+      uses: docker/cagent-action@latest
+      with:
+        agent: ${{ github.action_path }}/../agents/pr-review-reply.yaml
+        prompt: ${{ inputs.thread-context }}
+        timeout: "300"
+        anthropic-api-key: ${{ inputs.anthropic-api-key }}
+        openai-api-key: ${{ inputs.openai-api-key }}
+        google-api-key: ${{ inputs.google-api-key }}
+        aws-bearer-token-bedrock: ${{ inputs.aws-bearer-token-bedrock }}
+        xai-api-key: ${{ inputs.xai-api-key }}
+        nebius-api-key: ${{ inputs.nebius-api-key }}
+        mistral-api-key: ${{ inputs.mistral-api-key }}
+        github-token: ${{ inputs.github-token }}
+
+    - name: Save reviewer memory
+      if: always() && steps.run-reply.outcome != 'skipped'
+      continue-on-error: true
+      uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        path: ${{ github.workspace }}/.cache/pr-review-memory.db
+        key: pr-review-memory-${{ github.repository }}-reply-${{ github.run_id }}
+
+    # Add a "confused" reaction to the triggering comment if the agent failed,
+    # so the developer knows their reply wasn't processed.
+    - name: React on failure
+      if: always() && steps.run-reply.outcome == 'failure' && inputs.comment-id != ''
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        COMMENT_ID: ${{ inputs.comment-id }}
+      run: |
+        gh api "repos/$REPO/pulls/comments/$COMMENT_ID/reactions" \
+          -f content="confused" --silent || true
+        echo "😕 Added reaction to indicate reply failed"

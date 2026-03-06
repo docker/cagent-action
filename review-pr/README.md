@@ -55,7 +55,7 @@ The workflow automatically handles:
 | ----------------------- | --------------------------------------------------------------------------------------- |
 | PR opened/ready         | Auto-reviews PRs from your org members (if `CAGENT_ORG_MEMBERSHIP_TOKEN` is configured) |
 | `/review` comment       | Manual review on any PR (shows as a check run on the PR if `checks: write` is granted)  |
-| Reply to review comment | Learns from feedback to improve future reviews                                          |
+| Reply to review comment | Responds in-thread and learns from feedback to improve future reviews                   |
 
 ---
 
@@ -349,12 +349,32 @@ AGENTS.md + PR Diff → Drafter (hypotheses) → Verifier (confirm) → Post Com
 
 ### Learning System
 
-When you reply to a review comment:
+When you reply to a review comment, two things happen in parallel:
 
-1. The `capture-feedback` job checks if it's a reply to an agent comment (via `<!-- cagent-review -->` marker)
-2. If yes, saves the feedback as a GitHub Actions artifact (no secrets required — works for fork PRs)
-3. On the next review run, pending feedback artifacts are downloaded and processed into the memory database
-4. Future reviews use these learnings to avoid repeating the same mistakes
+**Synchronous reply** (`reply-to-feedback` job):
+1. Checks if the reply is to an agent comment (via `<!-- cagent-review -->` marker)
+2. Verifies the author is an org member/collaborator (authorization gate)
+3. Builds the full thread context (original comment + all replies in chronological order)
+4. Runs a Sonnet-powered reply agent that posts a contextual response in the same thread
+5. The agent also stores learnings in the memory database for future reviews
+
+**Async artifact capture** (`capture-feedback` job):
+1. Saves the feedback as a GitHub Actions artifact (no secrets required — works for fork PRs)
+2. On the next review run, pending feedback artifacts are downloaded and processed into the memory database
+3. Acts as a resilient fallback if the reply agent fails or isn't configured
+
+This dual approach means the developer gets an immediate conversational response while also ensuring learnings are captured even if the reply job encounters an issue.
+
+### Conversational Replies
+
+The reviewer supports true multi-turn conversation in PR review threads. When you reply to a review comment:
+
+- **Ask a question** — the agent explains its reasoning, references specific code, and offers suggestions
+- **Correct a false positive** — the agent acknowledges the mistake and remembers it for future reviews
+- **Disagree** — the agent engages thoughtfully, discusses trade-offs, and considers your perspective
+- **Add context** — the agent thanks you, reassesses its finding, and stores the insight
+
+Agent replies are marked with `<!-- cagent-review-reply -->` (distinct from `<!-- cagent-review -->` on original review comments) to prevent infinite loops. Multi-turn threading works automatically because GitHub's `in_reply_to_id` always points to the root comment.
 
 **Memory persistence:** The memory database is stored in GitHub Actions cache. Each review run restores the previous cache, processes any pending feedback, runs the review, and saves with a unique key. Old caches are automatically cleaned up (keeping the 5 most recent).
 
