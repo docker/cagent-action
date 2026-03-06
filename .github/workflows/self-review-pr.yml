@@ -124,13 +124,15 @@ jobs:
               repo: context.repo.repo,
               pull_number: prNumber
             });
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const { data: check } = await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               name: 'PR Review',
               head_sha: pr.head.sha,
               status: 'in_progress',
-              started_at: new Date().toISOString()
+              started_at: new Date().toISOString(),
+              details_url: runUrl
             });
             core.setOutput('check-id', check.id);
 

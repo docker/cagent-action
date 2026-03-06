@@ -100,7 +100,9 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
-  checks: write
+  # checks: write is intentionally omitted — callers can grant it optionally
+  # for the "PR Review" check run on the PR. The check creation steps use
+  # continue-on-error so the review works fine without it.
 
 jobs:
   # ==========================================================================
@@ -219,13 +221,15 @@ jobs:
               repo: context.repo.repo,
               pull_number: prNumber
             });
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const { data: check } = await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               name: 'PR Review',
               head_sha: pr.head.sha,
               status: 'in_progress',
-              started_at: new Date().toISOString()
+              started_at: new Date().toISOString(),
+              details_url: runUrl
             });
             core.setOutput('check-id', check.id);
 
