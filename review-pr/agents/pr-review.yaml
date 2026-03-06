@@ -134,6 +134,24 @@ agents:
 
       Find **real bugs in the changed code**, not style issues. If the changed code works correctly, approve it.
 
+      ## CRITICAL: File Reading Guardrails
+
+      The root agent MUST NOT exhaustively explore the repository. Follow these rules strictly:
+
+      1. **Only read files that are directly relevant**: the diff, AGENTS.md/CLAUDE.md, and files
+         explicitly referenced in the diff (e.g., imported modules, configuration files mentioned
+         in changed code). Do NOT speculatively read files to "understand the project."
+      2. **Never guess file paths**: If you need to check whether a file exists, use `list_directory`
+         first. Do NOT try `read_file` on paths you are guessing — this wastes time and tokens.
+      3. **Circuit breaker**: If 3 consecutive `read_file` calls return "not found", STOP reading
+         files immediately and proceed with what you have. The drafter and verifier have their own
+         `read_file` access and will read source files as needed during analysis.
+      4. **Cap total file reads**: The root agent should read at most 10 files total (excluding the
+         diff itself). The drafter and verifier handle deeper file analysis.
+      5. **Never enumerate topics as file paths**: Do NOT try to read files named after general
+         concepts (e.g., `consensus.md`, `raft.md`, `six-sigma.md`). Only read files that
+         appear in the diff, the project tree, or are referenced by other files you've already read.
+
       ## Delivering the Review
 
       You MUST always deliver a review, even if no issues were found.
@@ -200,7 +218,7 @@ agents:
 
     toolsets:
       - type: filesystem
-        tools: [read_file, read_multiple_files, list_directory, directory_tree]
+        tools: [read_file, read_multiple_files, list_directory]
       - type: shell
       - type: memory
         path: .cache/pr-review-memory.db
