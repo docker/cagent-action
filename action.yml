@@ -78,6 +78,10 @@ inputs:
     description: "Additional arguments to pass to cagent run"
     required: false
     default: ""
+  trusted-bot-app-id:
+    description: "GitHub App ID of a trusted bot that can bypass comment-based auth checks (e.g., for self-review triggers)"
+    required: false
+    default: ""
   add-prompt-files:
     description: "Comma-separated list of files to append to the prompt (e.g., 'AGENTS.md,CLAUDE.md')"
     required: false
@@ -190,16 +194,32 @@ runs:
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
-        # Get author_association from comment events (the main risk)
-        COMMENT_ASSOCIATION: ${{ github.event.comment.author_association }}
+        TRUSTED_BOT_APP_ID: ${{ inputs.trusted-bot-app-id }}
         DEBUG: ${{ inputs.debug }}
       run: |
+        # Read comment fields directly from the event payload (cannot be overridden by workflow env vars)
+        COMMENT_ASSOCIATION=$(jq -r '.comment.author_association // empty' "$GITHUB_EVENT_PATH")
+
         # Only enforce auth for comment-triggered events
         # This prevents abuse via /commands while allowing PR-triggered workflows to run
         if [ -z "$COMMENT_ASSOCIATION" ]; then
           echo "ℹ️ Skipping auth check (not a comment-triggered event)"
           echo "authorized=skipped" >> $GITHUB_OUTPUT
           exit 0
+        fi
+
+        # Allow a trusted GitHub App bot to bypass auth (e.g., auto-triage posts /review).
+        # Verified via user type + app ID from the event payload to prevent spoofing.
+        if [ -n "$TRUSTED_BOT_APP_ID" ]; then
+          COMMENT_USER_TYPE=$(jq -r '.comment.user.type // empty' "$GITHUB_EVENT_PATH")
+          COMMENT_APP_ID=$(jq -r '.comment.performed_via_github_app.id // empty' "$GITHUB_EVENT_PATH")
+
+          if [ "$COMMENT_USER_TYPE" = "Bot" ] && [ -n "$COMMENT_APP_ID" ] && [ "$COMMENT_APP_ID" = "$TRUSTED_BOT_APP_ID" ]; then
+            COMMENT_USER_LOGIN=$(jq -r '.comment.user.login // empty' "$GITHUB_EVENT_PATH")
+            echo "ℹ️ Skipping auth check (trusted bot: $COMMENT_USER_LOGIN, app_id: $COMMENT_APP_ID)"
+            echo "authorized=bot" >> $GITHUB_OUTPUT
+            exit 0
+          fi
         fi
 
         echo "Using comment author_association: $COMMENT_ASSOCIATION"

@@ -112,11 +112,25 @@ jobs:
       HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
 
     steps:
+      # Generate GitHub App token first so the check run is created under the app's identity
+      # (prevents GitHub from nesting it under unrelated pull_request-triggered workflows)
+      - name: Generate GitHub App token
+        if: env.HAS_APP_SECRETS == 'true'
+        id: app-token
+        continue-on-error: true # Don't fail workflow if token generation fails
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+
       - name: Create check run
         id: create-check
         continue-on-error: true # Don't fail if checks: write permission is missing
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
             const prNumber = context.issue.number;
             const { data: pr } = await github.rest.pulls.get({
@@ -144,16 +158,6 @@ jobs:
           fetch-depth: 0
           ref: refs/pull/${{ github.event.issue.number }}/head
 
-      # Generate GitHub App token for custom app identity (optional - falls back to github.token)
-      - name: Generate GitHub App token
-        if: env.HAS_APP_SECRETS == 'true'
-        id: app-token
-        continue-on-error: true # Don't fail workflow if token generation fails
-        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
-        with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
-
       - name: Run PR Review
         id: run-review
         continue-on-error: true # Don't fail the calling workflow if the review errors
@@ -177,6 +181,7 @@ jobs:
           CHECK_ID: ${{ steps.create-check.outputs.check-id }}
           JOB_STATUS: ${{ job.status }}
         with:
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
             const conclusion = process.env.JOB_STATUS === 'cancelled' ? 'cancelled' : process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
             try {

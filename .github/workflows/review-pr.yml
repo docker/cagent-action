@@ -207,6 +207,17 @@ jobs:
       exit-code: ${{ steps.run-review.outputs.exit-code }}
 
     steps:
+      # Generate GitHub App token first so the check run is created under the app's identity
+      # (prevents GitHub from nesting it under unrelated pull_request-triggered workflows)
+      - name: Generate GitHub App token
+        if: env.HAS_APP_SECRETS == 'true'
+        id: app-token
+        continue-on-error: true # Don't fail workflow if token generation fails
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+
       - name: Create check run
         id: create-check
         continue-on-error: true # Don't fail if caller didn't grant checks: write
@@ -214,6 +225,7 @@ jobs:
         env:
           PR_NUMBER: ${{ inputs.pr-number || github.event.issue.number }}
         with:
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
             const prNumber = parseInt(process.env.PR_NUMBER, 10);
             const { data: pr } = await github.rest.pulls.get({
@@ -241,16 +253,6 @@ jobs:
           fetch-depth: 0
           ref: refs/pull/${{ github.event.issue.number }}/head
 
-      # Generate GitHub App token for custom app identity (optional - falls back to github.token)
-      - name: Generate GitHub App token
-        if: env.HAS_APP_SECRETS == 'true'
-        id: app-token
-        continue-on-error: true # Don't fail workflow if token generation fails
-        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
-        with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
-
       - name: Run PR Review
         id: run-review
         continue-on-error: true # Don't fail the calling workflow if the review errors
@@ -262,6 +264,7 @@ jobs:
           add-prompt-files: ${{ inputs.add-prompt-files }}
           model: ${{ inputs.model }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
+          trusted-bot-app-id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
@@ -277,6 +280,7 @@ jobs:
           CHECK_ID: ${{ steps.create-check.outputs.check-id }}
           JOB_STATUS: ${{ job.status }}
         with:
+          github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
             const conclusion = process.env.JOB_STATUS === 'cancelled' ? 'cancelled' : process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
             try {

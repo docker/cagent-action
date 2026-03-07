@@ -53,6 +53,10 @@ inputs:
     description: "Comma-separated list of files to append to the prompt (e.g., 'AGENTS.md,CLAUDE.md')"
     required: false
     default: ""
+  trusted-bot-app-id:
+    description: "GitHub App ID of a trusted bot that can bypass comment-based auth checks"
+    required: false
+    default: ""
 
 outputs:
   exit-code:
@@ -473,6 +477,7 @@ runs:
         nebius-api-key: ${{ inputs.nebius-api-key }}
         mistral-api-key: ${{ inputs.mistral-api-key }}
         github-token: ${{ steps.resolve-token.outputs.token }}
+        trusted-bot-app-id: ${{ inputs.trusted-bot-app-id }}
         extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
 
     # ========================================
@@ -560,6 +565,7 @@ runs:
         nebius-api-key: ${{ inputs.nebius-api-key }}
         mistral-api-key: ${{ inputs.mistral-api-key }}
         github-token: ${{ steps.resolve-token.outputs.token }}
+        trusted-bot-app-id: ${{ inputs.trusted-bot-app-id }}
         extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
         add-prompt-files: ${{ inputs.add-prompt-files }}
         max-retries: "0"  # Disable retries — the review agent recovers internally (root falls back when sub-agents fail), so retrying the pipeline produces duplicate reviews
