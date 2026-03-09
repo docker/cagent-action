@@ -190,10 +190,15 @@ agents:
 
       ..."
 
-      # Build the comments array using jq (one per finding)
-      jq -n --arg path "file.go" --argjson line 123 \
-        --arg body $'**ISSUE**\n\nDETAILS\n\n<!-- cagent-review -->' \
-        '[{path: $path, line: $line, body: $body}]' > /tmp/review_comments.json
+      # Start with an empty comments array
+      echo '[]' > /tmp/review_comments.json
+
+      # Append each finding (loop over your confirmed/likely results)
+      jq --arg path "$file_path" --argjson line "$line_number" \
+        --arg body "$comment_body" \
+        '. += [{path: $path, line: $line, body: $body}]' \
+        /tmp/review_comments.json > /tmp/review_comments.tmp \
+        && mv /tmp/review_comments.tmp /tmp/review_comments.json
 
       # Use jq to assemble the final payload with proper escaping
       jq -n \
