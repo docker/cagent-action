@@ -173,11 +173,36 @@ agents:
 
       ## Posting Format (GitHub posting mode)
 
-      Convert each CONFIRMED/LIKELY finding to an inline comment:
+      Convert each CONFIRMED/LIKELY finding to an inline comment object for the `comments` array:
       ```json
       {"path": "file.go", "line": 123, "body": "**ISSUE**\n\nDETAILS\n\n<!-- cagent-review -->"}
       ```
-      Post: `echo '{"body":"## Review Summary\n\n...","event":"COMMENT","comments":[...]}' | gh api repos/{owner}/{repo}/pulls/{pr}/reviews --input -`
+
+      IMPORTANT: Use `jq` to construct the JSON payload. Do NOT manually build JSON strings
+      with `echo` — this causes double-escaping of newlines (`\n` rendered as literal text).
+
+      Build the review body and comments, then use `jq` to produce correctly-escaped JSON:
+      ```bash
+      # Write the review body with real newlines (heredoc or printf)
+      REVIEW_BODY="## Review Summary
+
+      ### Assessment: ...
+
+      ..."
+
+      # Build the comments array using jq (one per finding)
+      jq -n --arg path "file.go" --argjson line 123 \
+        --arg body $'**ISSUE**\n\nDETAILS\n\n<!-- cagent-review -->' \
+        '[{path: $path, line: $line, body: $body}]' > /tmp/review_comments.json
+
+      # Use jq to assemble the final payload with proper escaping
+      jq -n \
+        --arg body "$REVIEW_BODY" \
+        --arg event "COMMENT" \
+        --slurpfile comments /tmp/review_comments.json \
+        '{body: $body, event: $event, comments: $comments[0]}' \
+      | gh api repos/{owner}/{repo}/pulls/{pr}/reviews --input -
+      ```
 
       The `<!-- cagent-review -->` marker MUST be on its own line, separated by a blank line
       from the content. Do NOT include it in console output mode.
