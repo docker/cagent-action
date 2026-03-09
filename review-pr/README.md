@@ -61,7 +61,7 @@ The workflow automatically handles:
 
 ## Running Locally
 
-Requires [cagent](https://github.com/docker/cagent) installed locally. The reviewer agent automatically detects its environment. When running locally, it diffs your current branch against the base branch and outputs findings to the console.
+Requires [Docker Agent](https://github.com/docker/docker-agent) installed locally. The reviewer agent automatically detects its environment. When running locally, it diffs your current branch against the base branch and outputs findings to the console.
 
 ```bash
 cd ~/code/my-project

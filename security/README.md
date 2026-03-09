@@ -13,7 +13,6 @@ This action includes **built-in security features for all agent executions**:
    - Comment-triggered actions are the main abuse vector - this protects against cost/spam attacks
 
 2. **Output Scanning** - All agent responses are scanned for leaked secrets:
-
    - API key patterns: `sk-ant-*`, `sk-*`, `sk-proj-*`
    - GitHub tokens: `ghp_*`, `gho_*`, `ghu_*`, `ghs_*`, `github_pat_*`
    - Environment variable names in output
@@ -310,4 +309,4 @@ If you discover a security vulnerability, please:
 
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
 - [GitHub Security Best Practices](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions)
-- [cagent Repository](https://github.com/docker/cagent)
+- [Docker Agent Repository](https://github.com/docker/docker-agent)

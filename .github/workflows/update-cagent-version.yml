@@ -96,7 +96,7 @@ jobs:
           CURRENT: ${{ steps.check.outputs.current }}
         run: |
           BRANCH="auto/update-cagent-version"
-          RELEASE_URL="https://github.com/docker/cagent/releases/tag/$VERSION"
+          RELEASE_URL="https://github.com/docker/docker-agent/releases/tag/$VERSION"
 
           # Configure git
           git config user.name "github-actions[bot]"

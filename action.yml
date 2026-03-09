@@ -361,7 +361,7 @@ runs:
         if [[ "$CAGENT_CACHE_HIT" != "true" ]]; then
           echo "Downloading cagent $CAGENT_VERSION for $PLATFORM-$ARCH_NAME..."
           retry_download \
-            "https://github.com/docker/cagent/releases/download/$CAGENT_VERSION/$CAGENT_BINARY" \
+            "https://github.com/docker/docker-agent/releases/download/$CAGENT_VERSION/$CAGENT_BINARY" \
             "$GITHUB_WORKSPACE/cagent"
           chmod +x "$GITHUB_WORKSPACE/cagent"
         else

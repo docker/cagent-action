@@ -175,7 +175,7 @@ jobs:
           fi
           echo "Using cagent version from CAGENT_VERSION: ${CAGENT_VERSION}"
           curl -fL -o cagent \
-            "https://github.com/docker/cagent/releases/download/${CAGENT_VERSION}/cagent-linux-amd64"
+            "https://github.com/docker/docker-agent/releases/download/${CAGENT_VERSION}/cagent-linux-amd64"
           chmod +x cagent
           sudo mv cagent /usr/local/bin/
 

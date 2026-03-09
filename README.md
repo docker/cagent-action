@@ -1,6 +1,6 @@
 # cagent GitHub Action
 
-A GitHub Action for running [cagent](https://github.com/docker/cagent) AI agents in your workflows. This action simplifies the setup and execution of cagent, handling binary downloads and environment configuration automatically.
+A GitHub Action for running [Docker Agent](https://github.com/docker/docker-agent) AI agents in your workflows. This action simplifies the setup and execution of cagent, handling binary downloads and environment configuration automatically.
 
 ## Quick Start
 
@@ -15,7 +15,6 @@ A GitHub Action for running [cagent](https://github.com/docker/cagent) AI agents
    ```
 
 2. **Configure API key** in your repository settings:
-
    - Go to `Settings` → `Secrets and variables` → `Actions`
    - Add `ANTHROPIC_API_KEY` (or another provider's key) from [Anthropic Console](https://console.anthropic.com/)
 
@@ -51,11 +50,11 @@ For automated pull request reviews with a multi-agent system, see the [PR Review
 ```yaml
 name: PR Review
 on:
-  issue_comment:               # Enables /review command in PR comments
+  issue_comment: # Enables /review command in PR comments
     types: [created]
   pull_request_review_comment: # Captures feedback on review comments for learning
     types: [created]
-  pull_request_target:         # Triggers auto-review on PR open; uses base branch context so secrets work with forks
+  pull_request_target: # Triggers auto-review on PR open; uses base branch context so secrets work with forks
     types: [ready_for_review, opened]
 
 permissions:
@@ -66,14 +65,14 @@ jobs:
     uses: docker/cagent-action/.github/workflows/review-pr.yml@latest
     # Scoped to the job so other jobs in this workflow aren't over-permissioned
     permissions:
-      contents: read       # Read repository files and PR diffs
+      contents: read # Read repository files and PR diffs
       pull-requests: write # Post review comments and approve/request changes
-      issues: write        # Create security incident issues if secrets are detected in output
-      checks: write        # (Optional) Show review progress as a check run on the PR
+      issues: write # Create security incident issues if secrets are detected in output
+      checks: write # (Optional) Show review progress as a check run on the PR
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}         # PAT with read:org scope; gates auto-reviews to org members only
-      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }}                   # GitHub App ID; reviews appear as your app instead of github-actions[bot]
+      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }} # PAT with read:org scope; gates auto-reviews to org members only
+      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }} # GitHub App ID; reviews appear as your app instead of github-actions[bot]
       CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
 ```
 
@@ -137,30 +136,30 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 
 ## Inputs
 
-| Input                 | Description                                                                          | Required | Default                         |
-| --------------------- | ------------------------------------------------------------------------------------ | -------- | ------------------------------- |
-| `agent`               | Agent identifier (e.g., `docker/code-analyzer`) or path to `.yaml` file              | Yes      | -                               |
-| `prompt`              | Prompt to pass to the agent                                                          | No       | -                               |
-| `mcp-gateway`         | Install mcp-gateway (`true`/`false`)                                                 | No       | `false`                         |
-| `mcp-gateway-version` | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No       | `v0.22.0`                       |
-| `anthropic-api-key`   | Anthropic API key for Claude models (at least one API key required)                  | No*      | -                                   |
-| `openai-api-key`      | OpenAI API key (at least one API key required)                                       | No*      | -                                   |
-| `google-api-key`      | Google API key for Gemini models (at least one API key required)                     | No*      | -                                   |
-| `aws-bearer-token-bedrock` | AWS Bearer token for Bedrock models (at least one API key required)             | No*      | -                                   |
-| `xai-api-key`         | xAI API key for Grok models (at least one API key required)                          | No*      | -                                   |
-| `nebius-api-key`      | Nebius API key (at least one API key required)                                       | No*      | -                                   |
-| `mistral-api-key`     | Mistral API key (at least one API key required)                                      | No*      | -                                   |
-| `github-token`        | GitHub token for API access                                                          | No       | `github.token`                      |
-| `github-app-id`       | GitHub App ID for custom identity (comments/reviews appear as the app)               | No       | -                                   |
-| `github-app-private-key` | GitHub App private key (required if `github-app-id` is provided)                  | No       | -                                   |
-| `timeout`             | Timeout in seconds for agent execution (0 for no timeout)                            | No       | `0`                             |
-| `debug`               | Enable debug mode with verbose logging (`true`/`false`)                              | No       | `false`                         |
-| `working-directory`   | Working directory to run the agent in                                                | No       | `.`                             |
-| `yolo`                | Auto-approve all prompts (`true`/`false`)                                            | No       | `true`                          |
-| `max-retries`         | Maximum number of retries on failure (0 = no retries)                                | No       | `2`                             |
-| `retry-delay`         | Base delay in seconds between retries (doubles each attempt)                          | No       | `5`                             |
-| `extra-args`          | Additional arguments to pass to `cagent run`                                         | No       | -                               |
-| `add-prompt-files`    | Comma-separated list of files to append to the prompt (e.g., `AGENTS.md,CLAUDE.md`)  | No       | -                               |
+| Input                      | Description                                                                          | Required | Default        |
+| -------------------------- | ------------------------------------------------------------------------------------ | -------- | -------------- |
+| `agent`                    | Agent identifier (e.g., `docker/code-analyzer`) or path to `.yaml` file              | Yes      | -              |
+| `prompt`                   | Prompt to pass to the agent                                                          | No       | -              |
+| `mcp-gateway`              | Install mcp-gateway (`true`/`false`)                                                 | No       | `false`        |
+| `mcp-gateway-version`      | Version of mcp-gateway to use (specifying this will enable mcp-gateway installation) | No       | `v0.22.0`      |
+| `anthropic-api-key`        | Anthropic API key for Claude models (at least one API key required)                  | No\*     | -              |
+| `openai-api-key`           | OpenAI API key (at least one API key required)                                       | No\*     | -              |
+| `google-api-key`           | Google API key for Gemini models (at least one API key required)                     | No\*     | -              |
+| `aws-bearer-token-bedrock` | AWS Bearer token for Bedrock models (at least one API key required)                  | No\*     | -              |
+| `xai-api-key`              | xAI API key for Grok models (at least one API key required)                          | No\*     | -              |
+| `nebius-api-key`           | Nebius API key (at least one API key required)                                       | No\*     | -              |
+| `mistral-api-key`          | Mistral API key (at least one API key required)                                      | No\*     | -              |
+| `github-token`             | GitHub token for API access                                                          | No       | `github.token` |
+| `github-app-id`            | GitHub App ID for custom identity (comments/reviews appear as the app)               | No       | -              |
+| `github-app-private-key`   | GitHub App private key (required if `github-app-id` is provided)                     | No       | -              |
+| `timeout`                  | Timeout in seconds for agent execution (0 for no timeout)                            | No       | `0`            |
+| `debug`                    | Enable debug mode with verbose logging (`true`/`false`)                              | No       | `false`        |
+| `working-directory`        | Working directory to run the agent in                                                | No       | `.`            |
+| `yolo`                     | Auto-approve all prompts (`true`/`false`)                                            | No       | `true`         |
+| `max-retries`              | Maximum number of retries on failure (0 = no retries)                                | No       | `2`            |
+| `retry-delay`              | Base delay in seconds between retries (doubles each attempt)                         | No       | `5`            |
+| `extra-args`               | Additional arguments to pass to `cagent run`                                         | No       | -              |
+| `add-prompt-files`         | Comma-separated list of files to append to the prompt (e.g., `AGENTS.md,CLAUDE.md`)  | No       | -              |
 
 ### Prompt Files (`add-prompt-files`)
 
@@ -169,6 +168,7 @@ The `add-prompt-files` input allows you to include additional context files as s
 > **Note:** The `review-pr` action automatically reads `AGENTS.md` and `CLAUDE.md` from the repository root — you don't need to specify them via `add-prompt-files`. Use this input for additional files beyond those defaults.
 
 **File Resolution (handled by cagent):**
+
 - Searches up the directory hierarchy (like `.gitignore`)
 - Also checks the home folder (`~/`)
 - Files are added as system messages, not appended to the user prompt
@@ -201,6 +201,7 @@ add-prompt-files: "STYLE_GUIDE.md"  # Found via hierarchy search
 **At least one API key is required.** The action validates this at startup and fails fast with a clear error if no API key is provided.
 
 Supported providers:
+
 - **Anthropic** (`anthropic-api-key`): Claude models - [Get API key](https://console.anthropic.com/)
 - **OpenAI** (`openai-api-key`): GPT models - [Get API key](https://platform.openai.com/)
 - **Google** (`google-api-key`): Gemini models - [Get API key](https://aistudio.google.com/)
@@ -218,9 +219,8 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
-  checks: write         # Optional: show review progress as a check run on PRs
+  checks: write # Optional: show review progress as a check run on PRs
 ```
-
 
 ## Examples
 
@@ -314,5 +314,5 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Links
 
-- [cagent Repository](https://github.com/docker/cagent)
+- [Docker Agent Repository](https://github.com/docker/docker-agent)
 - [MCP Gateway Repository](https://github.com/docker/mcp-gateway)
