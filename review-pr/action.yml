@@ -474,6 +474,7 @@ runs:
         mistral-api-key: ${{ inputs.mistral-api-key }}
         github-token: ${{ steps.resolve-token.outputs.token }}
         extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
+        skip-summary: "true"
 
     # ========================================
     # BUILD REVIEW CONTEXT
@@ -563,6 +564,7 @@ runs:
         extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
         add-prompt-files: ${{ inputs.add-prompt-files }}
         max-retries: "0"  # Disable retries — the review agent recovers internally (root falls back when sub-agents fail), so retrying the pipeline produces duplicate reviews
+        skip-summary: "true"
 
     - name: Save reviewer memory
       if: always()

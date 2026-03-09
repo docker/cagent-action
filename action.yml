@@ -82,6 +82,10 @@ inputs:
     description: "Comma-separated list of files to append to the prompt (e.g., 'AGENTS.md,CLAUDE.md')"
     required: false
     default: ""
+  skip-summary:
+    description: "Skip writing agent output to the job summary (useful when callers write their own summary)"
+    required: false
+    default: "false"
 
 outputs:
   exit-code:
@@ -624,7 +628,8 @@ runs:
         echo "exit-code=$EXIT_CODE" >> $GITHUB_OUTPUT
         echo "execution-time=$EXECUTION_TIME" >> $GITHUB_OUTPUT
 
-        # Create job summary
+        # Create job summary (skipped when caller handles its own summary)
+        if [[ "${{ inputs.skip-summary }}" != "true" ]]; then
         {
           echo "## cagent Execution Summary"
           echo ""
@@ -648,6 +653,7 @@ runs:
             echo "❌ **Status:** Failed"
           fi
         } >> $GITHUB_STEP_SUMMARY
+        fi
 
         if [[ "$DEBUG" == "true" ]]; then
           echo "::debug::Exit code: $EXIT_CODE"
@@ -709,7 +715,7 @@ runs:
         if-no-files-found: ignore
 
     - name: Update job summary with cleaned output
-      if: always()
+      if: always() && inputs.skip-summary != 'true'
       shell: bash
       env:
         OUTPUT_FILE: ${{ steps.run-agent.outputs.output-file }}
