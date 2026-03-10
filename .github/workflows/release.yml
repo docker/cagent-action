@@ -89,29 +89,40 @@ jobs:
           set -e
           echo "Pinning @latest refs to ${VERSION}..."
 
-          # Pin docker/cagent-action@latest -> @vX.Y.Z
-          sed -i "s|docker/cagent-action@latest|docker/cagent-action@${VERSION}|g" review-pr/action.yml
+          # Pin all docker/cagent-action*@latest refs -> @vX.Y.Z
+          # Uses a capture group so any sub-path (e.g., /review-pr, /review-pr/reply) is preserved.
+          # Automatically covers new sub-actions without needing to update this workflow.
+          # Only targets `uses:` lines to avoid pinning refs in comments or documentation.
+          PIN_PATTERN='s|^\([^#]*uses: *docker/cagent-action\)\([^@]*\)@latest|\1\2@'"${VERSION}"'|g'
+          PINNED_FILES=()
+          while IFS= read -r file; do
+            sed -i "$PIN_PATTERN" "$file"
+            PINNED_FILES+=("$file")
+            echo "  Pinned: $file"
+          done < <(grep -rl 'uses: *docker/cagent-action[^@]*@latest' --include='*.yml' --include='*.yaml' \
+            --exclude-dir=.git \
+            review-pr/ .github/workflows/review-pr.yml)
 
-          # Pin docker/cagent-action/review-pr@latest -> @vX.Y.Z
-          sed -i "s|docker/cagent-action/review-pr@latest|docker/cagent-action/review-pr@${VERSION}|g" .github/workflows/review-pr.yml
-
-          # Verify pinning succeeded — fail fast if refs weren't replaced
-          if ! grep -q "docker/cagent-action@${VERSION}" review-pr/action.yml; then
-            echo "::error::Failed to pin refs in review-pr/action.yml"
+          if [ ${#PINNED_FILES[@]} -eq 0 ]; then
+            echo "::error::No @latest refs found to pin — expected at least one. Check that review-pr/ actions still reference @latest."
             exit 1
           fi
-          if ! grep -q "docker/cagent-action/review-pr@${VERSION}" .github/workflows/review-pr.yml; then
-            echo "::error::Failed to pin refs in .github/workflows/review-pr.yml"
+
+          # Verify no @latest uses: refs remain in pinned files
+          REMAINING=$(grep -n '^[^#]*uses: *docker/cagent-action[^@]*@latest' "${PINNED_FILES[@]}" 2>/dev/null || true)
+          if [ -n "$REMAINING" ]; then
+            echo "::error::Unpinned @latest refs remain after release:"
+            echo "$REMAINING"
             exit 1
           fi
 
           echo "Pinned refs:"
-          grep -n "cagent-action@" review-pr/action.yml .github/workflows/review-pr.yml
+          grep -rn "cagent-action@" "${PINNED_FILES[@]}"
 
           # Create a detached commit (not on main) with the pinned refs
           # Note: write-tree captures the full index (all files from HEAD),
           # but we explicitly add CAGENT_VERSION for clarity.
-          git add review-pr/action.yml .github/workflows/review-pr.yml CAGENT_VERSION
+          git add "${PINNED_FILES[@]}" CAGENT_VERSION
           TREE=$(git write-tree)
           RELEASE_SHA=$(git commit-tree "$TREE" -p HEAD -m "release: ${VERSION}")
 
