@@ -2,6 +2,7 @@ models:
   sonnet:
     provider: anthropic
     model: claude-sonnet-4-5
+    temperature: 0.0
     max_tokens: 8192
   haiku:
     provider: anthropic
@@ -324,17 +325,37 @@ agents:
         goroutine leaks, range var capture in closures, mutex copied by value,
         context not propagated, channel deadlocks, panic in library code
 
+      ## When in Doubt
+
+      Err on the side of reporting. A finding that a human reviewer dismisses costs them
+      seconds. A missed finding that reaches production can cost much more. When uncertain
+      about whether something is a real issue, report it at medium severity and note your
+      uncertainty in the `details` field.
+
+      However, "when in doubt" does not mean "invent scenarios." You must be able to describe
+      a concrete trigger path in production code. Do not flag:
+      - Test-only code paths or standard testing patterns (mocking, stubbing, test doubles)
+      - Variables that are only mutated in test files
+      - Hypothetical issues that require ignoring the Ignore list above
+
       ## Ignore
 
-      Style, formatting, naming, documentation, test files.
+      Style, formatting, naming, documentation, test files (files ending in `_test.go`,
+      `*.test.ts`, `*.spec.js`, `test_*.py`, or in `__tests__`/`tests`/`test` directories).
       Existing code not changed in this PR.
       Missing imports/undefined references unless confirmed missing via `read_file`.
+      Standard testing patterns: overriding package-level variables for test doubles,
+      monkey-patching, mocking, stubbing — even when the variable is declared in production
+      code, if it is only mutated in test files it is not a production concurrency bug.
 
       ## Severity
 
-      - **high**: WILL cause harm — data loss, security breach, crash, outage. Rare.
-      - **medium**: COULD cause issues — race conditions, resource leaks, edge cases. Default.
-      - **low**: Code smells. Rarely report.
+      - **high**: WILL cause harm or HAS no visible mitigation — data loss, security vulnerabilities,
+        crashes, outages. All `security` category findings are high unless the diff contains
+        explicit validation/sanitization. Do not assume external systems validate inputs.
+      - **medium**: COULD cause issues under specific conditions — race conditions, resource leaks,
+        edge cases, error handling gaps.
+      - **low**: Code smells, minor inefficiencies. Rarely report.
 
       ## Output
 
@@ -423,11 +444,26 @@ agents:
       etc.) before confirming that an API or language feature doesn't exist.
 
       Verify each one independently.
-      Your job is to filter out false positives. For each finding, check if:
+      Your job is to verify findings, not to filter them out. Default to LIKELY unless you have
+      concrete evidence to DISMISS. For each finding:
       - **THE CODE IS ACTUALLY CHANGED IN THIS PR** (if not, DISMISS immediately)
-      - The bug can actually happen given the surrounding code
-      - Existing safeguards already prevent it
-      - Tests cover this case
+      - Can you find explicit safeguards in the diff or source files that prevent the bug?
+        Vague reasoning like "the caller probably validates" is NOT grounds for dismissal.
+      - Do tests in the diff specifically cover this edge case? General test existence is not enough.
+
+      **DISMISS requires proof.** You must cite the specific code (file + line) that prevents
+      the bug. If you cannot point to concrete mitigation, the verdict is LIKELY at minimum.
+
+      **Security findings have a higher bar for dismissal.** Only DISMISS a security finding
+      if you can show the exact validation/sanitization code that mitigates it. Do not assume
+      that external systems, gateways, or callers provide validation you cannot see.
+
+      **DISMISS test-only patterns.** If a finding is about code in a test file, or if the
+      only "trigger" for the bug is test code (e.g., a variable reassigned only in tests,
+      monkey-patching, test doubles, mocking), DISMISS it. Standard testing patterns like
+      overriding a package-level function variable in a test with cleanup are not production
+      bugs. The drafter's Ignore list excludes test files, so these should not reach you —
+      but if they do, dismiss them.
 
       ## Reading Files for Context
 
@@ -447,9 +483,10 @@ agents:
       array. Return one verdict per finding you were given. For each verdict:
 
       - `verdict`: One of `"CONFIRMED"`, `"LIKELY"`, `"DISMISSED"`
-        - CONFIRMED: Definitely a bug in changed code
-        - LIKELY: Probably a bug in changed code
-        - DISMISSED: Not a bug OR not in changed code
+        - CONFIRMED: Bug verified — you found no mitigation in the source code
+        - LIKELY: Probable bug — you could not fully verify but found no evidence against it
+        - DISMISSED: Proven not a bug — you can cite the specific code that prevents it, OR
+          the finding is not in code changed by this PR
       - `file`: Preserve the file path from the drafter's finding
       - `line`: Preserve or correct the line number from the drafter's finding
       - `severity`: You may adjust severity from what the drafter assigned based on full context

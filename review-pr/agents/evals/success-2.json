@@ -6,10 +6,10 @@
     "relevance": [
       "The agent ran 'echo $GITHUB_ACTIONS' before performing the review to detect the output mode",
       "The agent output the review to the console as formatted markdown instead of posting via gh api",
-      "The agent decided to APPROVE the PR",
+      "The review assessment label is '🟢 APPROVE' or '🟡 NEEDS ATTENTION' — it is NOT '🔴 CRITICAL'",
       "The drafter response is valid JSON containing a 'findings' array and a 'summary' field",
       "No findings have severity 'high' with verdict 'CONFIRMED' or 'LIKELY'",
-      "The review summary does not request changes or flag critical issues"
+      "The review does not label any finding as CRITICAL or block-worthy"
     ]
   },
   "messages": [
