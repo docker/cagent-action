@@ -116,6 +116,15 @@ agents:
 
          The drafter has `read_file` access and will read the chunk from disk. Keep the
          delegation message short — just the file path, chunk number, project context, and any learned patterns.
+
+         **Include a file listing** so the drafter knows what files exist on disk. Before
+         delegating, run:
+         ```bash
+         cat changed_files.txt 2>/dev/null | xargs -I{} dirname {} | sort -u | xargs -I{} ls {} 2>/dev/null
+         ```
+         Include the output in the delegation message as "Available files:" so the drafter
+         can look up real paths instead of guessing. If `changed_files.txt` doesn't exist,
+         extract changed file paths from the diff headers (`diff --git a/... b/...`) instead.
       5. Parse the drafter's JSON response. Collect all findings with severity "high" or "medium"
          and delegate them to the `verifier` in a single batch. Skip verification for "low" findings.
          Include the project context (from step 2) in the verifier delegation so it can validate
@@ -299,6 +308,19 @@ agents:
       reduce severity. Do NOT report "missing import" or "undefined function" findings
       without checking — these are the #1 source of false positives.
 
+      ## File Reading Guardrails
+
+      1. **Never guess file paths.** If you need to find a file, use `list_directory`
+         to discover what exists. Do NOT try permutations of possible file names.
+      2. **Circuit breaker:** If 3 consecutive `read_file` calls return "not found",
+         STOP reading files immediately. Proceed with your analysis using only the
+         diff context.
+      3. **Cap total reads:** Read at most 20 source files (excluding the diff chunk).
+         If you hit this limit, finalize your findings with the context you have.
+      4. **Only read files referenced in the diff.** Check imports, function calls,
+         and type references that appear in the `+` lines. Do NOT explore unrelated
+         parts of the repository.
+
       ## CRITICAL RULE: Only Review Changed Code
 
       You MUST ONLY report issues on lines that were ADDED in this PR (lines starting with `+` in the diff).
@@ -409,7 +431,7 @@ agents:
 
     toolsets:
       - type: filesystem
-        tools: [read_file, read_multiple_files]
+        tools: [read_file, read_multiple_files, list_directory]
 
   verifier:
     model: sonnet
@@ -436,6 +458,18 @@ agents:
       the diff context provided to you. Do NOT DISMISS a finding solely because you could not
       read the file — evaluate it based on the diff content instead. Only attempt to read each
       file once; if it's not found, move on.
+
+      ## File Reading Guardrails
+
+      1. **Never guess file paths.** Use `list_directory` to discover files before
+         reading. Do NOT try permutations of possible file names.
+      2. **Circuit breaker:** If 3 consecutive `read_file` calls return "not found",
+         STOP reading files. Evaluate the finding using only the diff context
+         provided to you.
+      3. **Cap total reads:** Read at most 10 source files across all findings.
+         Prioritize high-severity findings for file verification.
+      4. **One attempt per file:** If `read_file` fails for a path, do NOT retry
+         with variations of the same filename.
 
       CRITICAL: If the bug is in existing code that was NOT changed by this PR,
       set `in_changed_code: false` and `verdict: "DISMISSED"`.
@@ -500,7 +534,7 @@ agents:
 
     toolsets:
       - type: filesystem
-        tools: [read_file, read_multiple_files]
+        tools: [read_file, read_multiple_files, list_directory]
 
 permissions:
   allow:
