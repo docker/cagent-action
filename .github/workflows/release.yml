@@ -174,19 +174,11 @@ jobs:
       group: update-pinata
       cancel-in-progress: false
     steps:
-      - name: Generate GitHub App token
-        id: app-token
-        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
-        with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
-          repository: docker/pinata
-
       - name: Checkout pinata
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: docker/pinata
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Update cagent-action reference
         id: update
@@ -224,15 +216,15 @@ jobs:
       - name: Create or update PR
         if: steps.update.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           VERSION: ${{ needs.release.outputs.version }}
           SHA: ${{ needs.release.outputs.sha }}
         run: |
           BRANCH="auto/update-cagent-action"
           RELEASE_URL="https://github.com/docker/cagent-action/releases/tag/$VERSION"
 
-          git config user.name "docker-agent[bot]"
-          git config user.email "259137750+docker-agent[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git checkout -B "$BRANCH"
           git add .github/workflows/pr-review.yml

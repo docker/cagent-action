@@ -275,15 +275,19 @@ jobs:
       - name: Post summary
         if: always()
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          PR_TITLE: ${{ steps.pr_details.outputs.title }}
+          PR_BRANCH: ${{ steps.pr_details.outputs.branch }}
+          PR_BASE: ${{ steps.pr_details.outputs.base }}
+          PR_CONCLUSION: ${{ steps.generate.conclusion }}
         with:
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           script: |
-            // Use context.issue.number directly - always available, doesn't depend on previous steps
             const prNumber = context.issue.number;
-            const title = '${{ steps.pr_details.outputs.title }}' || 'Unknown';
-            const branch = '${{ steps.pr_details.outputs.branch }}' || 'Unknown';
-            const base = '${{ steps.pr_details.outputs.base }}' || 'Unknown';
-            const conclusion = '${{ steps.generate.conclusion }}' || 'failure';
+            const title = process.env.PR_TITLE || 'Unknown';
+            const branch = process.env.PR_BRANCH || 'Unknown';
+            const base = process.env.PR_BASE || 'Unknown';
+            const conclusion = process.env.PR_CONCLUSION || 'failure';
 
             const summary = [
               '## 📝 PR Description Generator',
