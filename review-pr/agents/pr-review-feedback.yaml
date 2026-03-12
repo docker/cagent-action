@@ -1,3 +1,5 @@
+version: "6"
+
 models:
   haiku:
     provider: anthropic
