@@ -95,6 +95,13 @@ jobs:
           FILE_PATH=$(jq -r '.file_path' /tmp/feedback/metadata.json)
           LINE=$(jq -r '.line' /tmp/feedback/metadata.json)
 
+          # Validate PR number is numeric
+          if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || [ "$PR_NUMBER" -lt 1 ]; then
+            echo "::error::Invalid PR number: $PR_NUMBER"
+            echo "proceed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           # Skip if not an agent comment or if commenter is a bot
           if [ "$IS_AGENT" != "true" ] || [ "$AUTHOR_TYPE" = "Bot" ]; then
             echo "⏭️ Not an agent comment reply or author is a bot — skipping"
@@ -205,6 +212,11 @@ jobs:
           TRIGGER_COMMENT_BODY=$(jq -r '.body // ""' /tmp/feedback/feedback.json)
           TRIGGER_COMMENT_AUTHOR=$(jq -r '.user.login // ""' /tmp/feedback/feedback.json)
 
+          if [ -z "$TRIGGER_COMMENT_BODY" ]; then
+            echo "::error::Triggering comment body is empty or missing"
+            exit 1
+          fi
+
           # Fetch the root comment
           root=$(gh api "repos/$REPO/pulls/comments/$ROOT_ID") || {
             echo "::error::Failed to fetch root comment $ROOT_ID" >&2
@@ -273,6 +285,8 @@ jobs:
       # ----------------------------------------------------------------
       - name: Checkout PR head
         if: steps.meta.outputs.proceed == 'true' && steps.auth.outputs.authorized == 'true'
+        id: checkout
+        continue-on-error: true
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
@@ -288,7 +302,7 @@ jobs:
           private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Run reply
-        if: steps.meta.outputs.proceed == 'true' && steps.auth.outputs.authorized == 'true'
+        if: steps.meta.outputs.proceed == 'true' && steps.auth.outputs.authorized == 'true' && steps.checkout.outcome == 'success'
         id: run-reply
         continue-on-error: true
         uses: ./review-pr/reply
@@ -312,7 +326,7 @@ jobs:
           always() &&
           steps.meta.outputs.proceed == 'true' &&
           steps.auth.outputs.authorized == 'true' &&
-          (steps.thread.outcome == 'failure' || steps.run-reply.outcome == 'failure')
+          (steps.checkout.outcome == 'failure' || steps.thread.outcome == 'failure' || steps.run-reply.outcome == 'failure')
         continue-on-error: true
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
