@@ -109,12 +109,15 @@ jobs:
             exit 0
           fi
 
+          AUTHOR_ASSOCIATION=$(jq -r '.author_association // ""' /tmp/feedback/metadata.json)
+
           echo "proceed=true" >> $GITHUB_OUTPUT
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "repo=$REPO" >> $GITHUB_OUTPUT
           echo "parent_comment_id=$PARENT_COMMENT_ID" >> $GITHUB_OUTPUT
           echo "comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
           echo "author=$AUTHOR" >> $GITHUB_OUTPUT
+          echo "author_association=$AUTHOR_ASSOCIATION" >> $GITHUB_OUTPUT
           echo "file_path=$FILE_PATH" >> $GITHUB_OUTPUT
           echo "line=$LINE" >> $GITHUB_OUTPUT
 
@@ -143,6 +146,9 @@ jobs:
 
       # ----------------------------------------------------------------
       # Authorization check via org membership
+      # author_association is saved in metadata for logging but NOT used for
+      # auth decisions — on pull_request_review_comment events, fork PR authors
+      # get CONTRIBUTOR which is too permissive for gating agent compute.
       # ----------------------------------------------------------------
       - name: Check authorization
         if: steps.meta.outputs.proceed == 'true'

@@ -260,6 +260,7 @@ jobs:
           COMMENT_ID: ${{ github.event.comment.id }}
           AUTHOR: ${{ github.event.comment.user.login }}
           AUTHOR_TYPE: ${{ github.event.comment.user.type }}
+          AUTHOR_ASSOCIATION: ${{ github.event.comment.author_association }}
           FILE_PATH: ${{ steps.check.outputs.file_path }}
           LINE: ${{ steps.check.outputs.line }}
         run: |
@@ -267,6 +268,7 @@ jobs:
           echo "$COMMENT_JSON" > feedback/feedback.json
 
           # Save metadata for the workflow_run reply job
+          # author_association is saved for logging (not used for auth — see reply-to-feedback.yml)
           jq -n \
             --arg pr_number "$PR_NUMBER" \
             --arg repo "$REPO" \
@@ -274,6 +276,7 @@ jobs:
             --arg comment_id "$COMMENT_ID" \
             --arg author "$AUTHOR" \
             --arg author_type "$AUTHOR_TYPE" \
+            --arg author_association "$AUTHOR_ASSOCIATION" \
             --arg file_path "$FILE_PATH" \
             --arg line "$LINE" \
             --argjson is_agent_comment true \
@@ -284,6 +287,7 @@ jobs:
               comment_id: $comment_id,
               author: $author,
               author_type: $author_type,
+              author_association: $author_association,
               file_path: $file_path,
               line: $line,
               is_agent_comment: $is_agent_comment

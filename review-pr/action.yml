@@ -133,8 +133,59 @@ runs:
         EXPLICIT_TOKEN: ${{ inputs.github-token }}
         DEFAULT_TOKEN: ${{ github.token }}
 
+    # Concurrent review guard: best-effort lock using GitHub Actions cache.
+    # There is a narrow race window where two runs starting within seconds
+    # can both pass the check before either saves its lock. This is accepted
+    # because reviews are idempotent (duplicate reviews are harmless) and
+    # the window is small enough that it rarely occurs in practice.
+    - name: Check for concurrent review
+      id: review-lock
+      uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        path: .cache/review-lock
+        # Exact key will never match (saves include run_id), so this always
+        # falls through to restore-keys prefix match — finding the most recent lock
+        key: pr-review-lock-${{ github.repository }}-${{ steps.resolve-context.outputs.pr-number }}-exact
+        restore-keys: |
+          pr-review-lock-${{ github.repository }}-${{ steps.resolve-context.outputs.pr-number }}-
+
+    - name: Evaluate review lock
+      id: lock-check
+      shell: bash
+      run: |
+        # cache-hit is only true on exact key match; prefix matches via restore-keys
+        # set cache-matched-key but leave cache-hit as false
+        if [ -n "${{ steps.review-lock.outputs.cache-matched-key }}" ]; then
+          LOCK_TIME=$(cat .cache/review-lock/timestamp 2>/dev/null || echo "0")
+          NOW=$(date +%s)
+          AGE=$(( NOW - LOCK_TIME ))
+          if [ "$AGE" -lt 2500 ]; then  # ~42 min TTL (slightly longer than the 40-min review timeout)
+            echo "⏭️ Review already in progress (started ${AGE}s ago) — skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "🔓 Stale lock (${AGE}s old) — proceeding"
+        fi
+        echo "skip=false" >> $GITHUB_OUTPUT
+
+    - name: Acquire review lock
+      if: steps.lock-check.outputs.skip != 'true'
+      shell: bash
+      run: |
+        mkdir -p .cache/review-lock
+        date +%s > .cache/review-lock/timestamp
+
+    - name: Save review lock
+      if: steps.lock-check.outputs.skip != 'true'
+      uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        path: .cache/review-lock
+        # Use run_id in save key so each run can save (cache keys are immutable)
+        # The restore step uses the fixed key with no run_id, so it matches via prefix
+        key: pr-review-lock-${{ github.repository }}-${{ steps.resolve-context.outputs.pr-number }}-${{ github.run_id }}
+
     - name: Add eyes reaction
-      if: steps.resolve-context.outputs.comment-id != ''
+      if: steps.resolve-context.outputs.comment-id != '' && steps.lock-check.outputs.skip != 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ steps.resolve-token.outputs.token }}
@@ -143,6 +194,7 @@ runs:
           -X POST -f content='eyes' || true
 
     - name: Get PR information
+      if: steps.lock-check.outputs.skip != 'true'
       id: pr-info
       shell: bash
       env:
@@ -201,6 +253,7 @@ runs:
         echo "✅ Generated history for $ENTRIES file(s)"
 
     - name: Resolve stale review threads
+      if: steps.lock-check.outputs.skip != 'true'
       continue-on-error: true
       shell: bash
       env:
@@ -399,10 +452,12 @@ runs:
         echo "📋 Summary: Resolved $RESOLVED thread(s), kept $KEPT thread(s) open"
 
     - name: Ensure cache directory exists
+      if: steps.lock-check.outputs.skip != 'true'
       shell: bash
       run: mkdir -p "${{ github.workspace }}/.cache"
 
     - name: Restore reviewer memory
+      if: steps.lock-check.outputs.skip != 'true'
       id: restore-memory
       uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
@@ -418,6 +473,7 @@ runs:
     # and processes them into memory before the review runs.
     # ========================================
     - name: Collect pending feedback
+      if: steps.lock-check.outputs.skip != 'true'
       id: pending-feedback
       continue-on-error: true
       shell: bash
@@ -471,7 +527,7 @@ runs:
         fi
 
     - name: Process pending feedback
-      if: steps.pending-feedback.outputs.has_feedback == 'true'
+      if: steps.lock-check.outputs.skip != 'true' && steps.pending-feedback.outputs.has_feedback == 'true'
       continue-on-error: true
       uses: docker/cagent-action@latest
       with:
@@ -503,6 +559,7 @@ runs:
     # BUILD REVIEW CONTEXT
     # ========================================
     - name: Build review context
+      if: steps.lock-check.outputs.skip != 'true'
       id: context
       shell: bash
       env:
@@ -570,6 +627,7 @@ runs:
     # RUN REVIEW using root cagent-action
     # ========================================
     - name: Run PR Review
+      if: steps.lock-check.outputs.skip != 'true'
       id: run-review
       uses: docker/cagent-action@latest
       with:
@@ -590,8 +648,24 @@ runs:
         max-retries: "0"  # Disable retries — the review agent recovers internally (root falls back when sub-agents fail), so retrying the pipeline produces duplicate reviews
         skip-summary: "true"
 
+    - name: Release review lock
+      if: always() && steps.lock-check.outputs.skip != 'true'
+      continue-on-error: true  # Release failures are safe — stale locks expire via TTL (2500s)
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.resolve-token.outputs.token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ steps.resolve-context.outputs.pr-number }}
+      run: |
+        # Delete all cache entries matching this PR's lock prefix
+        gh api --paginate "repos/$REPO/actions/caches?key=pr-review-lock-${REPO}-${PR_NUMBER}-" \
+          --jq '.actions_caches[].id' 2>/dev/null | while read -r CACHE_ID; do
+          gh api "repos/$REPO/actions/caches/$CACHE_ID" -X DELETE 2>/dev/null || true
+        done
+        echo "🔓 Released review lock for PR #$PR_NUMBER"
+
     - name: Save reviewer memory
-      if: always()
+      if: always() && steps.lock-check.outputs.skip != 'true'
       continue-on-error: true  # Don't fail if memory file doesn't exist (first run)
       uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
