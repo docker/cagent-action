@@ -87,18 +87,13 @@ agents:
          ```
       3. Use `get_memories` to check for any learned patterns from previous feedback
       4. **Delegate to drafter(s)**:
-         a. Count the total lines in the diff (e.g., `wc -l pr.diff`).
-         b. If the diff is ≤ 1500 lines, write it to `/tmp/drafter_chunk_1.diff` and delegate
-            to the drafter in a single call.
-         c. If the diff is > 1500 lines:
-            - Split the diff at file boundaries (`diff --git` headers) using shell commands.
-            - Group files into chunks targeting ~1000 lines each. Keep related files
-              together when possible (same directory).
-            - Write each chunk to `/tmp/drafter_chunk_N.diff` (numbered sequentially).
-            - Delegate each chunk to the drafter separately.
-            - Merge all findings arrays into a single list before proceeding to step 5.
-            - Combine summaries into one overall summary.
-         d. Include any relevant learned patterns from memory in each delegation.
+         a. Check for pre-split chunk files at `/tmp/drafter_chunk_*.diff`
+            (the CI workflow splits the diff deterministically before the agent runs).
+         b. For each chunk file, delegate to the drafter with the file path.
+         c. If no chunk files exist (console mode), read the diff and write it
+            to `/tmp/drafter_chunk_1.diff` yourself, then delegate.
+         d. Merge all findings arrays into a single list before proceeding.
+         e. Include any relevant learned patterns from memory in each delegation.
 
          ## CRITICAL: How to delegate to the drafter
 
@@ -114,6 +109,9 @@ agents:
          Project context (from AGENTS.md):
          <contents of AGENTS.md, or "No AGENTS.md found" if absent>
 
+         File risk scores (prioritize high-risk files):
+         <contents of /tmp/file_risk_scores.json, or "No risk scores available" if absent>
+
          File history (recent commits):
          <contents of /tmp/file_history.txt, or "No file history available" if absent>
 
@@ -122,7 +120,11 @@ agents:
 
          The drafter has `read_file` access and will read the chunk from disk. Keep the
          delegation message short — just the file path, chunk number, project context,
-         file history, and any learned patterns.
+         risk scores, file history, and any learned patterns.
+
+         If `/tmp/file_risk_scores.json` exists, read it and include the scores. The drafter
+         should spend more time on high-scoring files. If it doesn't exist (console mode),
+         skip it.
 
          If `/tmp/file_history.txt` exists, read it and include relevant entries for the
          files in the current chunk. This helps the drafter understand what kinds of bugs

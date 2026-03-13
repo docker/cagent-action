@@ -182,6 +182,139 @@ runs:
           fi
         fi
 
+    - name: Split diff into chunks
+      if: hashFiles('pr.diff') != ''
+      id: chunk-diff
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Clean up stale chunk files from previous runs
+        rm -f /tmp/drafter_chunk_*.diff
+        TOTAL_LINES=$(wc -l < pr.diff | tr -d ' ')
+        echo "📄 Diff is $TOTAL_LINES lines"
+
+        if [ "$TOTAL_LINES" -le 1500 ]; then
+          # Small diff — single chunk
+          cp pr.diff /tmp/drafter_chunk_1.diff
+          echo "chunk_count=1" >> $GITHUB_OUTPUT
+          # Build manifest: list all files in the diff
+          FILES=$(grep '^diff --git' pr.diff | sed 's|diff --git a/.* b/||' | jq -R . | jq -s '.')
+          echo "chunk_manifest=$(jq -nc --argjson f "$FILES" '{"1": $f}')" >> $GITHUB_OUTPUT
+          echo "✅ Single chunk ($TOTAL_LINES lines)"
+        else
+          # Large diff — split at file boundaries, targeting ~1000 lines per chunk
+          CHUNK=1
+          CHUNK_LINES=0
+          CURRENT_FILE=""
+          CURRENT_DIR=""
+          MANIFEST="{}"
+          CHUNK_FILES="[]"
+
+          # Create first chunk file
+          > /tmp/drafter_chunk_1.diff
+
+          while IFS= read -r line; do
+            if [[ "$line" == "diff --git"* ]]; then
+              FILE=$(echo "$line" | sed 's|diff --git a/.* b/||')
+              DIR=$(dirname "$FILE")
+
+              # Start new chunk if:
+              #   - over soft limit (1000 lines) and directory changed, OR
+              #   - over hard limit (2000 lines) regardless of directory
+              if ([ "$CHUNK_LINES" -gt 1000 ] && [ "$DIR" != "$CURRENT_DIR" ]) || [ "$CHUNK_LINES" -gt 2000 ]; then
+                # Save current chunk's file list to manifest
+                MANIFEST=$(echo "$MANIFEST" | jq --argjson files "$CHUNK_FILES" --arg k "$CHUNK" '.[$k] = $files')
+                CHUNK=$((CHUNK + 1))
+                CHUNK_LINES=0
+                CHUNK_FILES="[]"
+                > /tmp/drafter_chunk_${CHUNK}.diff
+              fi
+
+              CURRENT_FILE="$FILE"
+              CURRENT_DIR="$DIR"
+              CHUNK_FILES=$(echo "$CHUNK_FILES" | jq --arg f "$FILE" '. += [$f]')
+            fi
+
+            echo "$line" >> /tmp/drafter_chunk_${CHUNK}.diff
+            CHUNK_LINES=$((CHUNK_LINES + 1))
+          done < pr.diff
+
+          # Save final chunk's file list
+          MANIFEST=$(echo "$MANIFEST" | jq --argjson files "$CHUNK_FILES" --arg k "$CHUNK" '.[$k] = $files')
+
+          echo "chunk_count=$CHUNK" >> $GITHUB_OUTPUT
+          echo "chunk_manifest=$(echo "$MANIFEST" | jq -c .)" >> $GITHUB_OUTPUT
+          echo "✅ Split into $CHUNK chunks (target ~1000 lines each)"
+
+          for i in $(seq 1 $CHUNK); do
+            LINES=$(wc -l < /tmp/drafter_chunk_${i}.diff | tr -d ' ')
+            FILES_IN_CHUNK=$(echo "$MANIFEST" | jq -r --arg k "$i" '.[$k] | length')
+            echo "  Chunk $i: $LINES lines, $FILES_IN_CHUNK files"
+          done
+        fi
+
+    - name: Score file risk
+      if: hashFiles('pr.diff') != ''
+      shell: bash
+      run: |
+        # Extract per-file diff stats (added lines, hunk count)
+        awk '
+        /^diff --git/ {
+          if (file != "") print file, added, hunks
+          file = $0; sub(/.*b\//, "", file)
+          added = 0; hunks = 0
+        }
+        /^@@/ { hunks++ }
+        /^\+[^+]/ { added++ }
+        END { if (file != "") print file, added, hunks }
+        ' pr.diff > /tmp/file_diff_stats.txt
+
+        # Build final scores
+        jq -n '{}' > /tmp/file_risk_scores.json
+        while read -r file added hunks; do
+          SCORE=0
+
+          # Security-sensitive paths: +2
+          if echo "$file" | grep -qiE 'auth|security|crypto|session|secret|token|password|credential'; then
+            SCORE=$((SCORE + 2))
+          fi
+
+          # Large change (>100 added lines): +2
+          if [ "$added" -gt 100 ]; then
+            SCORE=$((SCORE + 2))
+          fi
+
+          # Many hunks (>3): +1
+          if [ "$hunks" -gt 3 ]; then
+            SCORE=$((SCORE + 1))
+          fi
+
+          # Test/doc/config files: score = 0
+          if echo "$file" | grep -qiE '_test\.go$|\.test\.[tj]sx?$|\.spec\.[tj]sx?$|test_.*\.py$|\.md$|\.ya?ml$|\.json$|\.toml$'; then
+            SCORE=0
+          fi
+
+          # Error handling patterns in diff for this file: +1
+          ERROR_LINES=$(awk -v f="$file" '
+            /^diff --git/ { cur=$0; sub(/.*b\//, "", cur) }
+            cur == f && /^\+[^+]/ && /catch|rescue|except|recover|error|panic/ { count++ }
+            END { print count+0 }
+          ' pr.diff)
+          if [ "$ERROR_LINES" -gt 0 ]; then
+            SCORE=$((SCORE + 1))
+          fi
+
+          if jq --arg f "$file" --argjson s "$SCORE" '.[$f] = $s' /tmp/file_risk_scores.json > /tmp/file_risk_scores.tmp; then
+            mv /tmp/file_risk_scores.tmp /tmp/file_risk_scores.json
+          else
+            echo "⚠️ Failed to score $file, skipping"
+            rm -f /tmp/file_risk_scores.tmp
+          fi
+        done < /tmp/file_diff_stats.txt
+
+        rm -f /tmp/file_diff_stats.txt
+        echo "✅ File risk scores: $(jq -c . /tmp/file_risk_scores.json)"
+
     - name: Generate file history
       if: hashFiles('changed_files.txt') != ''
       shell: bash
