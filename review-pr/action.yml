@@ -188,6 +188,8 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
+        # Clean up stale chunk files from previous runs
+        rm -f /tmp/drafter_chunk_*.diff
         TOTAL_LINES=$(wc -l < pr.diff | tr -d ' ')
         echo "📄 Diff is $TOTAL_LINES lines"
 
