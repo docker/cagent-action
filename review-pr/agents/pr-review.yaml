@@ -97,7 +97,6 @@ agents:
             - Write each chunk to `/tmp/drafter_chunk_N.diff` (numbered sequentially).
             - Delegate each chunk to the drafter separately.
             - Merge all findings arrays into a single list before proceeding to step 5.
-            - Combine summaries into one overall summary.
          d. Include any relevant learned patterns from memory in each delegation.
 
          ## CRITICAL: How to delegate to the drafter
@@ -221,12 +220,8 @@ agents:
 
       Build the review body and comments, then use `jq` to produce correctly-escaped JSON:
       ```bash
-      # Write the review body with real newlines (heredoc or printf)
-      REVIEW_BODY="## Review Summary
-
-      ### Assessment: ...
-
-      ..."
+      # Review body is just the assessment badge — findings go in inline comments
+      REVIEW_BODY="### Assessment: 🟢 APPROVE"   # or 🟡 NEEDS ATTENTION / 🔴 CRITICAL
 
       # Start with an empty comments array
       echo '[]' > /tmp/review_comments.json
@@ -255,8 +250,6 @@ agents:
       ```
       ## Review: COMMENT
       ### Assessment: [🟢 APPROVE|🟡 NEEDS ATTENTION|🔴 CRITICAL]
-      ### Summary
-      <assessment>
       ### Findings
       **[SEVERITY] file:line — issue**
       details
@@ -298,6 +291,16 @@ agents:
       Do NOT guess other file paths or search the filesystem for the diff. Read the ONE path
       the orchestrator gave you, or return the error above.
 
+      ## ANTI-LOOP: Read the diff file exactly ONCE
+
+      After you `read_file` on the diff chunk path, you have the diff contents. Do NOT
+      call `read_file` on the same diff chunk path again — you already have the data.
+      Immediately proceed to analyze the diff and produce your findings JSON.
+
+      If you find yourself about to call `read_file` on a path you have already read,
+      STOP and instead produce your `findings` and `summary` output with whatever
+      context you have. Never read the same file more than twice total.
+
       You also have `read_file` access for reading full source files when analyzing findings
       (e.g., to check imports, surrounding code, or related functions).
 
@@ -335,6 +338,11 @@ agents:
       4. **Only read files referenced in the diff.** Check imports, function calls,
          and type references that appear in the `+` lines. Do NOT explore unrelated
          parts of the repository.
+      5. **No duplicate reads.** Never call `read_file` on the same path more than
+         twice. If you have already read a file, use the content from your previous
+         read. For the diff chunk file specifically (`/tmp/drafter_chunk_*.diff`),
+         read it exactly once — a second read means you are looping. For source
+         files, skip the duplicate and continue verifying remaining findings.
 
       ## CRITICAL RULE: Only Review Changed Code
 
@@ -461,7 +469,7 @@ agents:
           summary:
             type: string
             description: Brief overall assessment of the diff quality
-        required: ["findings", "summary"]
+        required: ["findings"]
         additionalProperties: false
 
     toolsets:
