@@ -26,7 +26,7 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+      HAS_APP_SECRETS: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID != '' }}
 
     steps:
       # ----------------------------------------------------------------
@@ -157,7 +157,7 @@ jobs:
         env:
           USERNAME: ${{ steps.meta.outputs.author }}
         with:
-          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
+          github-token: ${{ secrets.DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN }}
           script: |
             const org = 'docker';
             const username = process.env.USERNAME;
@@ -171,7 +171,7 @@ jobs:
                 core.setOutput('authorized', 'false');
                 console.log(`⏭️ ${username} is not a ${org} org member — not authorized`);
               } else if (error.status === 401) {
-                core.warning('CAGENT_ORG_MEMBERSHIP_TOKEN secret is missing or invalid');
+                core.warning('DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN secret is missing or invalid');
                 core.setOutput('authorized', 'false');
               } else {
                 core.warning(`Failed to check org membership: ${error.message}`);
@@ -191,7 +191,7 @@ jobs:
         with:
           script: |
             const [owner, repo] = process.env.REPO.split('/');
-            const body = 'Sorry @' + process.env.AUTHOR + ', conversational replies are currently available to repository collaborators only. Your feedback has still been captured and will be used to improve future reviews.\n\n<!-- cagent-review-reply -->';
+            const body = 'Sorry @' + process.env.AUTHOR + ', conversational replies are currently available to repository collaborators only. Your feedback has still been captured and will be used to improve future reviews.\n\n<!-- docker-agent-review-reply -->';
             await github.rest.pulls.createReplyForReviewComment({
               owner,
               repo,
@@ -306,8 +306,8 @@ jobs:
         continue-on-error: true
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Run reply
         if: steps.meta.outputs.proceed == 'true' && steps.auth.outputs.authorized == 'true' && steps.checkout.outcome == 'success' && steps.thread.outcome == 'success'

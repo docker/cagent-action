@@ -12,7 +12,7 @@
 #
 #   jobs:
 #     review:
-#       uses: docker/cagent-action/.github/workflows/review-pr.yml@latest
+#       uses: docker/docker-agent-action/.github/workflows/review-pr.yml@latest
 #       # Scoped to the job so other jobs in this workflow aren't over-permissioned
 #       permissions:
 #         contents: read       # Read repository files and PR diffs
@@ -21,9 +21,9 @@
 #         checks: write        # (Optional) Show review progress as a check run on the PR
 #       secrets:
 #         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-#         CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }} # PAT with read:org scope; gates auto-reviews to org members only
-#         CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }} # GitHub App ID; reviews appear as your app instead of github-actions[bot]
-#         CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
+#         DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN }} # PAT with read:org scope; gates auto-reviews to org members only
+#         DOCKER_AGENT_REVIEWER_APP_ID: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }} # GitHub App ID; reviews appear as your app instead of github-actions[bot]
+#         DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
 
 name: PR Review
 
@@ -61,7 +61,7 @@ on:
         type: string
         default: "docker"
     secrets:
-      CAGENT_ORG_MEMBERSHIP_TOKEN:
+      DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN:
         description: "PAT with read:org scope to check org membership for auto-reviews"
         required: false
       ANTHROPIC_API_KEY:
@@ -85,10 +85,10 @@ on:
       MISTRAL_API_KEY:
         description: "Mistral API key (at least one API key required)"
         required: false
-      CAGENT_REVIEWER_APP_ID:
+      DOCKER_AGENT_REVIEWER_APP_ID:
         description: "GitHub App ID for reviewer identity"
         required: false
-      CAGENT_REVIEWER_APP_PRIVATE_KEY:
+      DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY:
         description: "GitHub App private key"
         required: false
     outputs:
@@ -116,7 +116,7 @@ jobs:
       !github.event.pull_request.draft
     runs-on: ubuntu-latest
     env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+      HAS_APP_SECRETS: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID != '' }}
     outputs:
       exit-code: ${{ steps.run-review.outputs.exit-code }}
 
@@ -125,7 +125,7 @@ jobs:
         id: membership
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
-          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
+          github-token: ${{ secrets.DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN }}
           script: |
             const org = '${{ inputs.auto-review-org }}';
             const username = context.payload.pull_request.user.login;
@@ -143,11 +143,11 @@ jobs:
                 console.log(`⏭️ ${username} is not a ${org} org member - skipping auto-review`);
               } else if (error.status === 401) {
                 core.setFailed(
-                  '❌ CAGENT_ORG_MEMBERSHIP_TOKEN secret is missing or invalid.\n\n' +
+                  '❌ DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN secret is missing or invalid.\n\n' +
                   `This secret is required to check ${org} org membership for auto-reviews.\n\n` +
                   'To fix this:\n' +
                   '1. Create a classic PAT with read:org scope at https://github.com/settings/tokens/new\n' +
-                  '2. Add it as an org secret named CAGENT_ORG_MEMBERSHIP_TOKEN'
+                  '2. Add it as an org secret named DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN'
                 );
               } else {
                 core.setFailed(`Failed to check org membership: ${error.message}`);
@@ -169,14 +169,14 @@ jobs:
         continue-on-error: true # Don't fail workflow if token generation fails
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Run PR Review
         if: steps.membership.outputs.is_member == 'true'
         id: run-review
         continue-on-error: true # Don't fail the calling workflow if the review errors
-        uses: docker/cagent-action/review-pr@latest
+        uses: docker/docker-agent-action/review-pr@latest
         with:
           pr-number: ${{ inputs.pr-number || github.event.pull_request.number }}
           additional-prompt: ${{ inputs.additional-prompt }}
@@ -202,7 +202,7 @@ jobs:
       (github.event.comment.user.type != 'Bot' || github.event.comment.user.login == 'docker-agent[bot]')
     runs-on: ubuntu-latest
     env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+      HAS_APP_SECRETS: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID != '' }}
     outputs:
       exit-code: ${{ steps.run-review.outputs.exit-code }}
 
@@ -215,8 +215,8 @@ jobs:
         continue-on-error: true # Don't fail workflow if token generation fails
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Create check run
         id: create-check
@@ -256,7 +256,7 @@ jobs:
       - name: Run PR Review
         id: run-review
         continue-on-error: true # Don't fail the calling workflow if the review errors
-        uses: docker/cagent-action/review-pr@latest
+        uses: docker/docker-agent-action/review-pr@latest
         with:
           pr-number: ${{ inputs.pr-number || github.event.issue.number }}
           comment-id: ${{ inputs.comment-id || github.event.comment.id }}
@@ -264,7 +264,7 @@ jobs:
           add-prompt-files: ${{ inputs.add-prompt-files }}
           model: ${{ inputs.model }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
-          trusted-bot-app-id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          trusted-bot-app-id: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
@@ -322,7 +322,7 @@ jobs:
           fi
 
           parent=$(gh api repos/${{ github.repository }}/pulls/comments/$PARENT_ID 2>/dev/null || echo "{}")
-          if echo "$parent" | jq -r '.body // ""' | grep -q "<!-- cagent-review -->"; then
+          if echo "$parent" | jq -r '.body // ""' | grep -q "<!-- docker-agent-review -->"; then
             echo "is_agent=true" >> $GITHUB_OUTPUT
             echo "✅ Reply is to an agent review comment"
           else
@@ -362,7 +362,7 @@ jobs:
       github.event.comment.user.type != 'Bot'
     runs-on: ubuntu-latest
     env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+      HAS_APP_SECRETS: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID != '' }}
 
     steps:
       - name: Check if reply is to agent comment
@@ -398,8 +398,8 @@ jobs:
           # The user.type check prevents matching human comments that happen to contain
           # the marker text (e.g., in discussions about the review system).
           if [ "$parent_user_type" = "Bot" ] && \
-             echo "$body" | grep -q "<!-- cagent-review -->" && \
-             ! echo "$body" | grep -q "<!-- cagent-review-reply -->"; then
+             echo "$body" | grep -q "<!-- docker-agent-review -->" && \
+             ! echo "$body" | grep -q "<!-- docker-agent-review-reply -->"; then
             echo "is_agent=true" >> $GITHUB_OUTPUT
             echo "root_comment_id=$PARENT_ID" >> $GITHUB_OUTPUT
 
@@ -417,7 +417,7 @@ jobs:
         id: auth
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
+          GH_TOKEN: ${{ secrets.DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN }}
           ORG: ${{ inputs.auto-review-org }}
           USERNAME: ${{ github.event.comment.user.login }}
           # Use the event context expression — $GITHUB_EVENT_PATH is empty/minimal
@@ -425,7 +425,7 @@ jobs:
           AUTHOR_ASSOCIATION: ${{ github.event.comment.author_association }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::CAGENT_ORG_MEMBERSHIP_TOKEN not configured — falling back to author_association"
+            echo "::warning::DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN not configured — falling back to author_association"
             case "$AUTHOR_ASSOCIATION" in
               OWNER|MEMBER|COLLABORATOR)
                 echo "authorized=true" >> $GITHUB_OUTPUT
@@ -490,7 +490,7 @@ jobs:
           jq -n \
             --arg body "Sorry @$AUTHOR, conversational replies are currently available to repository collaborators only. Your feedback has still been captured and will be used to improve future reviews.
 
-          <!-- cagent-review-reply -->" \
+          <!-- docker-agent-review-reply -->" \
             --argjson reply_to "$ROOT_COMMENT_ID" \
             '{body: $body, in_reply_to: $reply_to}' | \
           gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --input -
@@ -600,13 +600,13 @@ jobs:
         continue-on-error: true
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Run reply
         if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true'
         continue-on-error: true
-        uses: docker/cagent-action/review-pr/reply@latest
+        uses: docker/docker-agent-action/review-pr/reply@latest
         with:
           thread-context: ${{ steps.thread.outputs.prompt }}
           comment-id: ${{ github.event.comment.id }}

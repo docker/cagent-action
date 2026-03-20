@@ -1,13 +1,13 @@
-# cagent GitHub Action
+# Docker Agent GitHub Action
 
-A GitHub Action for running [Docker Agent](https://github.com/docker/docker-agent) AI agents in your workflows. This action simplifies the setup and execution of cagent, handling binary downloads and environment configuration automatically.
+A GitHub Action for running [Docker Agent](https://github.com/docker/docker-agent) AI agents in your workflows. This action simplifies the setup and execution of Docker Agent, handling binary downloads and environment configuration automatically.
 
 ## Quick Start
 
 1. **Add the action to your workflow**:
 
    ```yaml
-   - uses: docker/cagent-action@latest
+   - uses: docker/docker-agent-action@latest
      with:
        agent: path/to/agent.yaml
        prompt: "Analyze this code"
@@ -19,7 +19,7 @@ A GitHub Action for running [Docker Agent](https://github.com/docker/docker-agen
    - Add `ANTHROPIC_API_KEY` (or another provider's key) from [Anthropic Console](https://console.anthropic.com/)
 
 3. **That's it!** The action will automatically:
-   - Download the cagent binary
+   - Download the Docker Agent binary
    - Run your specified agent
    - Scan outputs for leaked secrets
    - Provide results in workflow logs
@@ -62,7 +62,7 @@ permissions:
 
 jobs:
   review:
-    uses: docker/cagent-action/.github/workflows/review-pr.yml@latest
+    uses: docker/docker-agent-action/.github/workflows/review-pr.yml@latest
     # Scoped to the job so other jobs in this workflow aren't over-permissioned
     permissions:
       contents: read # Read repository files and PR diffs
@@ -71,9 +71,9 @@ jobs:
       checks: write # (Optional) Show review progress as a check run on the PR
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }} # PAT with read:org scope; gates auto-reviews to org members only
-      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }} # GitHub App ID; reviews appear as your app instead of github-actions[bot]
-      CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
+      DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN }} # PAT with read:org scope; gates auto-reviews to org members only
+      DOCKER_AGENT_REVIEWER_APP_ID: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }} # GitHub App ID; reviews appear as your app instead of github-actions[bot]
+      DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
 ```
 
 See the [full PR Review documentation](review-pr/README.md) for more details.
@@ -82,7 +82,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 
 ```yaml
 - name: Run Custom Agent
-  uses: docker/cagent-action@latest
+  uses: docker/docker-agent-action@latest
   with:
     agent: ./agents/my-agent.yaml
     prompt: "Analyze the codebase"
@@ -92,8 +92,8 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 ### Advanced Configuration
 
 ```yaml
-- name: Run cagent with Custom Settings
-  uses: docker/cagent-action@latest
+- name: Run Docker Agent with Custom Settings
+  uses: docker/docker-agent-action@latest
   with:
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
@@ -111,9 +111,9 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 ### Using Outputs
 
 ```yaml
-- name: Run cagent
+- name: Run Docker Agent
   id: agent
-  uses: docker/cagent-action@latest
+  uses: docker/docker-agent-action@latest
   with:
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
@@ -158,16 +158,16 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 | `yolo`                     | Auto-approve all prompts (`true`/`false`)                                            | No       | `true`         |
 | `max-retries`              | Maximum number of retries on failure (0 = no retries)                                | No       | `2`            |
 | `retry-delay`              | Base delay in seconds between retries (doubles each attempt)                         | No       | `5`            |
-| `extra-args`               | Additional arguments to pass to `cagent run`                                         | No       | -              |
+| `extra-args`               | Additional arguments to pass to `Docker Agent run`                                         | No       | -              |
 | `add-prompt-files`         | Comma-separated list of files to append to the prompt (e.g., `AGENTS.md,CLAUDE.md`)  | No       | -              |
 
 ### Prompt Files (`add-prompt-files`)
 
-The `add-prompt-files` input allows you to include additional context files as system messages. This uses cagent's `--prompt-file` flag under the hood.
+The `add-prompt-files` input allows you to include additional context files as system messages. This uses Docker Agent's `--prompt-file` flag under the hood.
 
 > **Note:** The `review-pr` action automatically reads `AGENTS.md` and `CLAUDE.md` from the repository root — you don't need to specify them via `add-prompt-files`. Use this input for additional files beyond those defaults.
 
-**File Resolution (handled by cagent):**
+**File Resolution (handled by Docker Agent):**
 
 - Searches up the directory hierarchy (like `.gitignore`)
 - Also checks the home folder (`~/`)
@@ -188,7 +188,7 @@ add-prompt-files: "STYLE_GUIDE.md"  # Found via hierarchy search
 
 | Output                  | Description                                              |
 | ----------------------- | -------------------------------------------------------- |
-| `exit-code`             | Exit code from cagent run                                |
+| `exit-code`             | Exit code from Docker Agent run                          |
 | `output-file`           | Path to the output log file                              |
 | `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`)       |
 | `execution-time`        | Agent execution time in seconds                          |
@@ -243,14 +243,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Security Review
-        uses: docker/cagent-action@latest
+        uses: docker/docker-agent-action@latest
         with:
           agent: docker/github-action-security-scanner
           prompt: "Analyze for security issues"
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Code Quality Analysis
-        uses: docker/cagent-action@latest
+        uses: docker/docker-agent-action@latest
         with:
           agent: docker/code-quality-analyzer
           prompt: "Analyze code quality and best practices"
@@ -283,7 +283,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Agent
-        uses: docker/cagent-action@latest
+        uses: docker/docker-agent-action@latest
         with:
           agent: ${{ github.event.inputs.agent }}
           prompt: ${{ github.event.inputs.prompt }}
@@ -304,8 +304,8 @@ Please also read our [Code of Conduct](CODE_OF_CONDUCT.md).
 ## Support
 
 - 📖 [Documentation](README.md)
-- 🐛 [Report Issues](https://github.com/docker/cagent-action/issues)
-- 💬 [Discussions](https://github.com/docker/cagent-action/discussions)
+- 🐛 [Report Issues](https://github.com/docker/docker-agent-action/issues)
+- 💬 [Discussions](https://github.com/docker/docker-agent-action/discussions)
 - 🔒 [Security Policy](security/README.md)
 
 ## License
