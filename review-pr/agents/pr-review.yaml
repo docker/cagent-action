@@ -20,7 +20,7 @@ agents:
 
       Run me from your project directory and I'll diff your current branch against the base branch:
       ```
-      cagent run agentcatalog/review-pr "Review my changes"
+      docker agent run agentcatalog/review-pr "Review my changes"
       ```
 
       I'll automatically detect what changed on your branch compared to the base branch and review those changes locally.
@@ -215,7 +215,7 @@ agents:
 
       Convert each CONFIRMED/LIKELY finding to an inline comment object for the `comments` array:
       ```json
-      {"path": "file.go", "line": 123, "body": "**ISSUE**\n\nDETAILS\n\n<!-- cagent-review -->"}
+      {"path": "file.go", "line": 123, "body": "**ISSUE**\n\nDETAILS\n\n<!-- docker-agent-review -->"}
       ```
 
       IMPORTANT: Use `jq` to construct the JSON payload. Do NOT manually build JSON strings
@@ -245,7 +245,7 @@ agents:
       | gh api repos/{owner}/{repo}/pulls/{pr}/reviews --input -
       ```
 
-      The `<!-- cagent-review -->` marker MUST be on its own line, separated by a blank line
+      The `<!-- docker-agent-review -->` marker MUST be on its own line, separated by a blank line
       from the content. Do NOT include it in console output mode.
 
       ## Console Format

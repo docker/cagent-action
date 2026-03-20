@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   review:
-    uses: docker/cagent-action/.github/workflows/review-pr.yml@latest
+    uses: docker/docker-agent-action/.github/workflows/review-pr.yml@latest
     # Scoped to the job so other jobs in this workflow aren't over-permissioned
     permissions:
       contents: read       # Read repository files and PR diffs
@@ -32,9 +32,9 @@ jobs:
       checks: write        # (Optional) Show review progress as a check run on the PR
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}         # PAT with read:org scope; gates auto-reviews to org members only
-      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }}                   # GitHub App ID; reviews appear as your app instead of github-actions[bot]
-      CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
+      DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN }}         # PAT with read:org scope; gates auto-reviews to org members only
+      DOCKER_AGENT_REVIEWER_APP_ID: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }}                   # GitHub App ID; reviews appear as your app instead of github-actions[bot]
+      DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
 ```
 
 > **Why explicit secrets instead of `secrets: inherit`?** This follows the principle of least privilege — the called workflow only receives the secrets it actually needs, not every secret in your repository. This is the recommended approach for public repos and security-conscious teams.
@@ -53,7 +53,7 @@ The workflow automatically handles:
 
 | Trigger                 | Behavior                                                                                |
 | ----------------------- | --------------------------------------------------------------------------------------- |
-| PR opened/ready         | Auto-reviews PRs from your org members (if `CAGENT_ORG_MEMBERSHIP_TOKEN` is configured) |
+| PR opened/ready         | Auto-reviews PRs from your org members (if `DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN` is configured) |
 | `/review` comment       | Manual review on any PR (shows as a check run on the PR if `checks: write` is granted)  |
 | Reply to review comment | Responds in-thread and learns from feedback to improve future reviews                   |
 
@@ -65,7 +65,7 @@ Requires [Docker Agent](https://github.com/docker/docker-agent) installed locall
 
 ```bash
 cd ~/code/my-project
-cagent run agentcatalog/review-pr "Review my changes"
+docker agent run agentcatalog/review-pr "Review my changes"
 ```
 
 The agent automatically:
@@ -74,7 +74,7 @@ The agent automatically:
 - Diffs your current branch against the base branch
 - Outputs the review as formatted markdown
 
-> **Tip:** cagent has a TUI, so you can interact with the agent during the review — ask follow-up questions, request clarification on findings, or drill into specific files.
+> **Tip:** Docker Agent has a TUI, so you can interact with the agent during the review — ask follow-up questions, request clarification on findings, or drill into specific files.
 
 ### Project Context via `AGENTS.md`
 
@@ -87,7 +87,7 @@ No workflow configuration is needed — just commit an `AGENTS.md` to your repo 
 You can also pass additional files explicitly with `--prompt-file`:
 
 ```bash
-cagent run agentcatalog/review-pr --prompt-file CONTRIBUTING.md "Review my changes"
+docker agent run agentcatalog/review-pr --prompt-file CONTRIBUTING.md "Review my changes"
 ```
 
 ---
@@ -109,11 +109,11 @@ With just an API key, you can use `/review` comments to trigger reviews manually
 | Secret                            | Description                   | Purpose                                              |
 | --------------------------------- | ----------------------------- | ---------------------------------------------------- |
 | `ANTHROPIC_API_KEY`               | API key for your LLM provider | Required                                             |
-| `CAGENT_ORG_MEMBERSHIP_TOKEN`     | PAT with `read:org` scope     | Auto-review PRs from org members                     |
-| `CAGENT_REVIEWER_APP_ID`          | GitHub App ID                 | Reviews appear as your app (not github-actions[bot]) |
-| `CAGENT_REVIEWER_APP_PRIVATE_KEY` | GitHub App private key        | Required with App ID                                 |
+| `DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN`     | PAT with `read:org` scope     | Auto-review PRs from org members                     |
+| `DOCKER_AGENT_REVIEWER_APP_ID`          | GitHub App ID                 | Reviews appear as your app (not github-actions[bot]) |
+| `DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY` | GitHub App private key        | Required with App ID                                 |
 
-**Note:** Without `CAGENT_ORG_MEMBERSHIP_TOKEN`, only `/review` comments work (no auto-review on PR open).
+**Note:** Without `DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN`, only `/review` comments work (no auto-review on PR open).
 Without GitHub App secrets, reviews appear as "github-actions[bot]" which is fine for most teams.
 
 ---
@@ -144,7 +144,7 @@ jobs:
           fetch-depth: 0
           ref: refs/pull/${{ github.event.issue.number }}/head
 
-      - uses: docker/cagent-action/review-pr@latest
+      - uses: docker/docker-agent-action/review-pr@latest
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -161,7 +161,7 @@ The recommended approach is to add an `AGENTS.md` file to your repository root. 
 For workflow-level overrides or guidelines that apply across multiple repos, use the `additional-prompt` input:
 
 ```yaml
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/docker-agent-action/review-pr@latest
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     additional-prompt: |
@@ -172,7 +172,7 @@ For workflow-level overrides or guidelines that apply across multiple repos, use
 ```
 
 ```yaml
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/docker-agent-action/review-pr@latest
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     additional-prompt: |
@@ -184,7 +184,7 @@ For workflow-level overrides or guidelines that apply across multiple repos, use
 
 ```yaml
 # Project-specific conventions
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/docker-agent-action/review-pr@latest
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     additional-prompt: |
@@ -205,7 +205,7 @@ Override for more thorough or cost-effective reviews:
 
 ```yaml
 # Anthropic (default provider)
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/docker-agent-action/review-pr@latest
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     model: anthropic/claude-opus-4 # More thorough reviews
@@ -213,7 +213,7 @@ Override for more thorough or cost-effective reviews:
 
 ```yaml
 # OpenAI Codex
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/docker-agent-action/review-pr@latest
   with:
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
     model: openai/codex-mini
@@ -221,7 +221,7 @@ Override for more thorough or cost-effective reviews:
 
 ```yaml
 # Google Gemini
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/docker-agent-action/review-pr@latest
   with:
     google-api-key: ${{ secrets.GOOGLE_API_KEY }}
     model: gemini/gemini-2.0-flash
@@ -229,7 +229,7 @@ Override for more thorough or cost-effective reviews:
 
 ```yaml
 # xAI Grok
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/docker-agent-action/review-pr@latest
   with:
     xai-api-key: ${{ secrets.XAI_API_KEY }}
     model: xai/grok-2
@@ -241,7 +241,7 @@ Override for more thorough or cost-effective reviews:
 
 ### Reusable Workflow
 
-When using `docker/cagent-action/.github/workflows/review-pr.yml`:
+When using `docker/docker-agent-action/.github/workflows/review-pr.yml`:
 
 | Input               | Description                                         | Default   |
 | ------------------- | --------------------------------------------------- | --------- |
@@ -309,7 +309,7 @@ but the error check happens after this line accesses `user.ID`.
 
 Consider moving the nil check before accessing user properties.
 
-<!-- cagent-review -->
+<!-- docker-agent-review -->
 ```
 
 When no issues are found:
@@ -352,7 +352,7 @@ AGENTS.md + PR Diff → Drafter (hypotheses) → Verifier (confirm) → Post Com
 When you reply to a review comment, two things happen in parallel:
 
 **Synchronous reply** (`reply-to-feedback` job):
-1. Checks if the reply is to an agent comment (via `<!-- cagent-review -->` marker)
+1. Checks if the reply is to an agent comment (via `<!-- docker-agent-review -->` marker)
 2. Verifies the author is an org member/collaborator (authorization gate)
 3. Builds the full thread context (original comment + all replies in chronological order)
 4. Runs a Sonnet-powered reply agent that posts a contextual response in the same thread
@@ -374,7 +374,7 @@ The reviewer supports true multi-turn conversation in PR review threads. When yo
 - **Disagree** — the agent engages thoughtfully, discusses trade-offs, and considers your perspective
 - **Add context** — the agent thanks you, reassesses its finding, and stores the insight
 
-Agent replies are marked with `<!-- cagent-review-reply -->` (distinct from `<!-- cagent-review -->` on original review comments) to prevent infinite loops. Multi-turn threading works automatically because GitHub's `in_reply_to_id` always points to the root comment.
+Agent replies are marked with `<!-- docker-agent-review-reply -->` (distinct from `<!-- docker-agent-review -->` on original review comments) to prevent infinite loops. Multi-turn threading works automatically because GitHub's `in_reply_to_id` always points to the root comment.
 
 **Memory persistence:** The memory database is stored in GitHub Actions cache. Each review run restores the previous cache, processes any pending feedback, runs the review, and saves with a unique key. Old caches are automatically cleaned up (keeping the 5 most recent).
 
@@ -387,8 +387,8 @@ Evals verify that the reviewer produces consistent, correct results across multi
 ### Run all evals
 
 ```bash
-cd cagent-action
-cagent eval review-pr/agents/pr-review.yaml review-pr/agents/evals/ \
+cd docker-agent-action
+docker agent eval review-pr/agents/pr-review.yaml review-pr/agents/evals/ \
   -e GITHUB_TOKEN -e GH_TOKEN
 ```
 
@@ -476,7 +476,7 @@ Each eval file in `review-pr/agents/evals/` contains:
 **Learning doesn't seem to work?**
 
 - You must **reply directly** to an agent comment (use the reply button, not a new comment)
-- The agent detects its own comments via the `<!-- cagent-review -->` marker
+- The agent detects its own comments via the `<!-- docker-agent-review -->` marker
 - Check Actions → Caches to verify `pr-review-memory-*` exists
 
 **Reviews are too slow?**

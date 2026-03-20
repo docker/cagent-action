@@ -31,14 +31,14 @@ jobs:
       !github.event.pull_request.draft
     runs-on: ubuntu-latest
     env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+      HAS_APP_SECRETS: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID != '' }}
 
     steps:
       - name: Check if PR author is org member
         id: membership
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
-          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
+          github-token: ${{ secrets.DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN }}
           script: |
             const org = 'docker';
             const username = context.payload.pull_request.user.login;
@@ -56,11 +56,11 @@ jobs:
                 console.log(`⏭️ ${username} is not a ${org} org member - skipping auto-review`);
               } else if (error.status === 401) {
                 core.setFailed(
-                  '❌ CAGENT_ORG_MEMBERSHIP_TOKEN secret is missing or invalid.\n\n' +
+                  '❌ DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN secret is missing or invalid.\n\n' +
                   `This secret is required to check ${org} org membership for auto-reviews.\n\n` +
                   'To fix this:\n' +
                   '1. Create a classic PAT with read:org scope at https://github.com/settings/tokens/new\n' +
-                  '2. Add it as an org secret named CAGENT_ORG_MEMBERSHIP_TOKEN'
+                  '2. Add it as an org secret named DOCKER_AGENT_ORG_MEMBERSHIP_TOKEN'
                 );
               } else {
                 core.setFailed(`Failed to check org membership: ${error.message}`);
@@ -82,8 +82,8 @@ jobs:
         continue-on-error: true # Don't fail workflow if token generation fails
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Run PR Review
         if: steps.membership.outputs.is_member == 'true'
@@ -112,7 +112,7 @@ jobs:
       (github.event.comment.user.type != 'Bot' || github.event.comment.user.login == 'docker-agent[bot]')
     runs-on: ubuntu-latest
     env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+      HAS_APP_SECRETS: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID != '' }}
 
     steps:
       # Generate GitHub App token first so the check run is created under the app's identity
@@ -123,8 +123,8 @@ jobs:
         continue-on-error: true # Don't fail workflow if token generation fails
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Create check run
         id: create-check
@@ -169,7 +169,7 @@ jobs:
           pr-number: ${{ github.event.issue.number }}
           comment-id: ${{ github.event.comment.id }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
-          trusted-bot-app-id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          trusted-bot-app-id: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
@@ -236,8 +236,8 @@ jobs:
           # Defense-in-depth: verify the root comment was posted by a Bot (agent) AND
           # contains the review marker but NOT the reply marker.
           if [ "$parent_user_type" = "Bot" ] && \
-             echo "$body" | grep -q "<!-- cagent-review -->" && \
-             ! echo "$body" | grep -q "<!-- cagent-review-reply -->"; then
+             echo "$body" | grep -q "<!-- docker-agent-review -->" && \
+             ! echo "$body" | grep -q "<!-- docker-agent-review-reply -->"; then
             echo "is_agent=true" >> $GITHUB_OUTPUT
 
             # Extract file path and line from the root comment for context

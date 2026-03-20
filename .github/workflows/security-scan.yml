@@ -17,10 +17,10 @@ permissions:
 
 jobs:
   security-scan:
-    name: Security Scan with cagent
+    name: Security Scan with Docker Agent
     runs-on: ubuntu-latest
     env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+      HAS_APP_SECRETS: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID != '' }}
     permissions:
       contents: read
       issues: write
@@ -37,8 +37,8 @@ jobs:
         continue-on-error: true  # Don't fail workflow if token generation fails
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app_id: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.DOCKER_AGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Get commits from past week
         id: commits

@@ -12,9 +12,9 @@ echo "=========================================="
 TEST_DIR=$(mktemp -d)
 trap "rm -rf $TEST_DIR" EXIT
 
-# Test Case 1: With cagent-output code block (preferred method)
+# Test Case 1: With docker-agent-output code block (preferred method)
 echo ""
-echo "Test 1: Extracting from cagent-output code block"
+echo "Test 1: Extracting from docker-agent-output code block"
 echo "---"
 cat > "$TEST_DIR/output1.log" <<'EOF'
 For any feedback, please visit: https://docker.qualtrics.com/jfe/form/SV_cNsCIg92nQemlfw
@@ -23,7 +23,7 @@ time=2025-11-05T21:22:35.664Z level=WARN msg="rootSessionID not set"
 
 --- Agent: root ---
 
-```cagent-output
+```docker-agent-output
 ## ✅ No security issues detected
 
 Scanned 15 commits from the past 2 days. No security vulnerabilities were identified.
@@ -31,15 +31,15 @@ Scanned 15 commits from the past 2 days. No security vulnerabilities were identi
 EOF
 
 # Extract using the primary method
-if grep -q '```cagent-output' "$TEST_DIR/output1.log"; then
+if grep -q '```docker-agent-output' "$TEST_DIR/output1.log"; then
   awk '
-    /```cagent-output/ { capturing=1; next }
+    /```docker-agent-output/ { capturing=1; next }
     capturing && /^```/ { capturing=0; next }
     capturing { print }
   ' "$TEST_DIR/output1.log" > "$TEST_DIR/output1.clean"
   echo "✅ Extraction successful"
 else
-  echo "❌ cagent-output block not found"
+  echo "❌ docker-agent-output block not found"
 fi
 
 echo "Cleaned output:"
@@ -48,7 +48,7 @@ echo ""
 
 # Test Case 1b: Code fence NOT at start of line (agent emits thoughts before it)
 echo ""
-echo "Test 1b: Extracting cagent-output when code fence is mid-line"
+echo "Test 1b: Extracting docker-agent-output when code fence is mid-line"
 echo "---"
 cat > "$TEST_DIR/output1b.log" <<'EOF'
 For any feedback, please visit: https://docker.qualtrics.com/jfe/form/SV_cNsCIg92nQemlfw
@@ -57,7 +57,7 @@ time=2025-11-05T21:22:35.664Z level=WARN msg="rootSessionID not set"
 
 --- Agent: root ---
 
-I'll analyze the PR by reading the actual diff and related files to generate a comprehensive description.```cagent-output
+I'll analyze the PR by reading the actual diff and related files to generate a comprehensive description.```docker-agent-output
 ## Summary
 
 Implements automated PR review functionality.
@@ -69,15 +69,15 @@ Implements automated PR review functionality.
 ```
 EOF
 
-if grep -q '```cagent-output' "$TEST_DIR/output1b.log"; then
+if grep -q '```docker-agent-output' "$TEST_DIR/output1b.log"; then
   awk '
-    /```cagent-output/ { capturing=1; next }
+    /```docker-agent-output/ { capturing=1; next }
     capturing && /^```/ { capturing=0; next }
     capturing { print }
   ' "$TEST_DIR/output1b.log" > "$TEST_DIR/output1b.clean"
   echo "✅ Extraction successful"
 else
-  echo "❌ cagent-output block not found"
+  echo "❌ docker-agent-output block not found"
 fi
 
 echo "Cleaned output:"
