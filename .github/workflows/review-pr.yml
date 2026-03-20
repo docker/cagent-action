@@ -417,25 +417,53 @@ jobs:
         id: auth
         shell: bash
         env:
+          GH_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
+          ORG: ${{ inputs.auto-review-org }}
+          USERNAME: ${{ github.event.comment.user.login }}
           # Use the event context expression — $GITHUB_EVENT_PATH is empty/minimal
           # in workflow_call context, so jq parsing it fails silently.
           AUTHOR_ASSOCIATION: ${{ github.event.comment.author_association }}
         run: |
-          if [ -z "$AUTHOR_ASSOCIATION" ]; then
-            echo "::warning::Could not read author_association from event context"
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::CAGENT_ORG_MEMBERSHIP_TOKEN not configured — falling back to author_association"
+            case "$AUTHOR_ASSOCIATION" in
+              OWNER|MEMBER|COLLABORATOR)
+                echo "authorized=true" >> $GITHUB_OUTPUT
+                echo "✅ Authorized via author_association (fallback)"
+                ;;
+              *)
+                echo "authorized=false" >> $GITHUB_OUTPUT
+                echo "⏭️ Not authorized via author_association (fallback)"
+                ;;
+            esac
+            exit 0
+          fi
+          # Check org membership with explicit error handling
+          if ! RESPONSE=$(gh api "orgs/$ORG/members/$USERNAME" --silent -i 2>/dev/null); then
+            echo "authorized=false" >> $GITHUB_OUTPUT
+            echo "⏭️ API call failed or @$USERNAME is not a $ORG org member — not authorized"
+            exit 0
+          fi
+          # Verify response starts with HTTP status line before parsing
+          if ! echo "$RESPONSE" | head -1 | grep -q '^HTTP/'; then
+            echo "::warning::Unexpected API response format"
             echo "authorized=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          case "$AUTHOR_ASSOCIATION" in
-            OWNER|MEMBER|COLLABORATOR)
-              echo "authorized=true" >> $GITHUB_OUTPUT
-              echo "✅ Author is $AUTHOR_ASSOCIATION — authorized to trigger reply"
-              ;;
-            *)
-              echo "authorized=false" >> $GITHUB_OUTPUT
-              echo "⏭️ Author is $AUTHOR_ASSOCIATION — not authorized for reply"
-              ;;
-          esac
+          # Extract status code from HTTP/1.1 204 No Content format
+          STATUS=$(echo "$RESPONSE" | head -1 | grep -oP 'HTTP/[0-9.]+ \K[0-9]+')
+          if [ -z "$STATUS" ]; then
+            echo "::warning::Failed to extract HTTP status code"
+            echo "authorized=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if [ "$STATUS" = "204" ]; then
+            echo "authorized=true" >> $GITHUB_OUTPUT
+            echo "✅ @$USERNAME is a $ORG org member — authorized"
+          else
+            echo "authorized=false" >> $GITHUB_OUTPUT
+            echo "⏭️ @$USERNAME is not a $ORG org member — not authorized"
+          fi
 
       - name: Notify unauthorized user
         if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'false'
@@ -448,12 +476,23 @@ jobs:
           ROOT_COMMENT_ID: ${{ steps.check.outputs.root_comment_id }}
           AUTHOR: ${{ github.event.comment.user.login }}
         run: |
+          # Validate ROOT_COMMENT_ID is a valid integer before using it
+          if [ -z "$ROOT_COMMENT_ID" ]; then
+            echo "::error::ROOT_COMMENT_ID is not set"
+            exit 1
+          fi
+          
+          if ! [[ "$ROOT_COMMENT_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::ROOT_COMMENT_ID is not a valid integer: '$ROOT_COMMENT_ID'"
+            exit 1
+          fi
+          
           jq -n \
             --arg body "Sorry @$AUTHOR, conversational replies are currently available to repository collaborators only. Your feedback has still been captured and will be used to improve future reviews.
 
           <!-- cagent-review-reply -->" \
             --argjson reply_to "$ROOT_COMMENT_ID" \
-            '{body: $body, in_reply_to_id: $reply_to}' | \
+            '{body: $body, in_reply_to: $reply_to}' | \
           gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --input -
 
       - name: Build thread context
