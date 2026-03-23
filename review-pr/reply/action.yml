@@ -33,6 +33,18 @@ inputs:
   github-token:
     description: "GitHub token for API access"
     required: false
+  org-membership-token:
+    description: "PAT with read:org scope for org membership authorization checks"
+    required: false
+    default: ""
+  auth-org:
+    description: "GitHub organization to check membership against"
+    required: false
+    default: ""
+  skip-auth:
+    description: "Skip the built-in authorization check (caller already verified auth)"
+    required: false
+    default: "false"
 
 outputs:
   agent-outcome:
@@ -72,6 +84,9 @@ runs:
         nebius-api-key: ${{ inputs.nebius-api-key }}
         mistral-api-key: ${{ inputs.mistral-api-key }}
         github-token: ${{ inputs.github-token }}
+        org-membership-token: ${{ inputs.org-membership-token }}
+        auth-org: ${{ inputs.auth-org }}
+        skip-auth: ${{ inputs.skip-auth }}
 
     - name: Save reviewer memory
       if: always() && steps.run-reply.outcome != 'skipped'

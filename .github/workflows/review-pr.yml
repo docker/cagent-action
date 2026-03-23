@@ -190,6 +190,7 @@ jobs:
           xai-api-key: ${{ secrets.XAI_API_KEY }}
           nebius-api-key: ${{ secrets.NEBIUS_API_KEY }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          skip-auth: "true" # Org membership already verified above
 
   # ==========================================================================
   # MANUAL REVIEW PIPELINE
@@ -207,10 +208,50 @@ jobs:
       exit-code: ${{ steps.run-review.outputs.exit-code }}
 
     steps:
+      - name: Check if commenter is org member
+        id: membership
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
+          script: |
+            const org = '${{ inputs.auto-review-org }}';
+            const username = context.payload.comment.user.login;
+            const userType = context.payload.comment.user.type;
+
+            // Allow trusted bot to bypass org membership check
+            if (userType === 'Bot') {
+              core.setOutput('is_member', 'true');
+              console.log(`✅ ${username} is a Bot — allowing /review command`);
+              return;
+            }
+
+            try {
+              await github.rest.orgs.checkMembershipForUser({ org, username });
+              core.setOutput('is_member', 'true');
+              console.log(`✅ ${username} is a ${org} org member — proceeding with manual review`);
+            } catch (error) {
+              if (error.status === 404 || error.status === 302) {
+                core.setOutput('is_member', 'false');
+                console.log(`⏭️ ${username} is not a ${org} org member — skipping manual review`);
+              } else if (error.status === 401) {
+                core.warning(
+                  '❌ CAGENT_ORG_MEMBERSHIP_TOKEN secret is missing or invalid.\n\n' +
+                  `This secret is required to check ${org} org membership.\n\n` +
+                  'To fix this:\n' +
+                  '1. Create a classic PAT with read:org scope at https://github.com/settings/tokens/new\n' +
+                  '2. Add it as an org secret named CAGENT_ORG_MEMBERSHIP_TOKEN'
+                );
+                core.setOutput('is_member', 'false');
+              } else {
+                core.warning(`Failed to check org membership: ${error.message}`);
+                core.setOutput('is_member', 'false');
+              }
+            }
+
       # Generate GitHub App token first so the check run is created under the app's identity
       # (prevents GitHub from nesting it under unrelated pull_request-triggered workflows)
       - name: Generate GitHub App token
-        if: env.HAS_APP_SECRETS == 'true'
+        if: steps.membership.outputs.is_member == 'true' && env.HAS_APP_SECRETS == 'true'
         id: app-token
         continue-on-error: true # Don't fail workflow if token generation fails
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
@@ -219,6 +260,7 @@ jobs:
           private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Create check run
+        if: steps.membership.outputs.is_member == 'true'
         id: create-check
         continue-on-error: true # Don't fail if caller didn't grant checks: write
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
@@ -245,15 +287,15 @@ jobs:
             });
             core.setOutput('check-id', check.id);
 
-      # Checkout PR head (not default branch)
-      # Note: Authorization is handled by the composite action's built-in check
       - name: Checkout PR head
+        if: steps.membership.outputs.is_member == 'true'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
           ref: refs/pull/${{ github.event.issue.number }}/head
 
       - name: Run PR Review
+        if: steps.membership.outputs.is_member == 'true'
         id: run-review
         continue-on-error: true # Don't fail the calling workflow if the review errors
         uses: docker/cagent-action/review-pr@latest
@@ -272,6 +314,7 @@ jobs:
           xai-api-key: ${{ secrets.XAI_API_KEY }}
           nebius-api-key: ${{ secrets.NEBIUS_API_KEY }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
+          skip-auth: "true" # Org membership already verified above
 
       - name: Update check run
         if: always() && steps.create-check.outputs.check-id != ''
@@ -420,22 +463,10 @@ jobs:
           GH_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
           ORG: ${{ inputs.auto-review-org }}
           USERNAME: ${{ github.event.comment.user.login }}
-          # Use the event context expression — $GITHUB_EVENT_PATH is empty/minimal
-          # in workflow_call context, so jq parsing it fails silently.
-          AUTHOR_ASSOCIATION: ${{ github.event.comment.author_association }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::CAGENT_ORG_MEMBERSHIP_TOKEN not configured — falling back to author_association"
-            case "$AUTHOR_ASSOCIATION" in
-              OWNER|MEMBER|COLLABORATOR)
-                echo "authorized=true" >> $GITHUB_OUTPUT
-                echo "✅ Authorized via author_association (fallback)"
-                ;;
-              *)
-                echo "authorized=false" >> $GITHUB_OUTPUT
-                echo "⏭️ Not authorized via author_association (fallback)"
-                ;;
-            esac
+            echo "::error::CAGENT_ORG_MEMBERSHIP_TOKEN not configured — cannot authorize reply"
+            echo "authorized=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           # Check org membership with explicit error handling
@@ -618,6 +649,7 @@ jobs:
           nebius-api-key: ${{ secrets.NEBIUS_API_KEY }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
+          skip-auth: "true" # Org membership already verified above
 
       - name: React on thread-build failure
         if: >-

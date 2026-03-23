@@ -90,6 +90,18 @@ inputs:
     description: "Skip writing agent output to the job summary (useful when callers write their own summary)"
     required: false
     default: "false"
+  org-membership-token:
+    description: "PAT with read:org scope for org membership authorization checks (preferred over author_association)"
+    required: false
+    default: ""
+  auth-org:
+    description: "GitHub organization to check membership against (used with org-membership-token)"
+    required: false
+    default: ""
+  skip-auth:
+    description: "Skip the built-in authorization check (use when the calling workflow already performed its own auth)"
+    required: false
+    default: "false"
 
 outputs:
   exit-code:
@@ -192,6 +204,11 @@ runs:
     # SECURITY: Authorization Check
     # Only enforced for comment-triggered events (the main abuse vector)
     # PR-triggered workflows are controlled by the workflow author
+    #
+    # Auth strategies (in priority order):
+    #   1. skip-auth=true        — caller already verified authorization
+    #   2. org-membership-token  — check org membership via API (preferred)
+    #   3. author_association    — legacy fallback from event payload
     # ========================================
     - name: Check authorization
       id: check-auth
@@ -200,13 +217,27 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
         TRUSTED_BOT_APP_ID: ${{ inputs.trusted-bot-app-id }}
         DEBUG: ${{ inputs.debug }}
+        SKIP_AUTH: ${{ inputs.skip-auth }}
+        ORG_MEMBERSHIP_TOKEN: ${{ inputs.org-membership-token }}
+        AUTH_ORG: ${{ inputs.auth-org }}
       run: |
+        # Mask the org membership token to prevent accidental exposure in logs
+        [ -n "$ORG_MEMBERSHIP_TOKEN" ] && echo "::add-mask::$ORG_MEMBERSHIP_TOKEN"
+
+        # Strategy 0: Skip auth if caller already verified
+        if [ "$SKIP_AUTH" = "true" ]; then
+          echo "ℹ️ Skipping auth check (caller already verified authorization)"
+          echo "authorized=skipped-by-caller" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
         # Read comment fields directly from the event payload (cannot be overridden by workflow env vars)
         COMMENT_ASSOCIATION=$(jq -r '.comment.author_association // empty' "$GITHUB_EVENT_PATH")
+        COMMENT_USER_LOGIN=$(jq -r '.comment.user.login // empty' "$GITHUB_EVENT_PATH")
 
         # Only enforce auth for comment-triggered events
         # This prevents abuse via /commands while allowing PR-triggered workflows to run
-        if [ -z "$COMMENT_ASSOCIATION" ]; then
+        if [ -z "$COMMENT_ASSOCIATION" ] && [ -z "$COMMENT_USER_LOGIN" ]; then
           echo "ℹ️ Skipping auth check (not a comment-triggered event)"
           echo "authorized=skipped" >> $GITHUB_OUTPUT
           exit 0
@@ -219,20 +250,42 @@ runs:
           COMMENT_APP_ID=$(jq -r '.comment.performed_via_github_app.id // empty' "$GITHUB_EVENT_PATH")
 
           if [ "$COMMENT_USER_TYPE" = "Bot" ] && [ -n "$COMMENT_APP_ID" ] && [ "$COMMENT_APP_ID" = "$TRUSTED_BOT_APP_ID" ]; then
-            COMMENT_USER_LOGIN=$(jq -r '.comment.user.login // empty' "$GITHUB_EVENT_PATH")
             echo "ℹ️ Skipping auth check (trusted bot: $COMMENT_USER_LOGIN, app_id: $COMMENT_APP_ID)"
             echo "authorized=true" >> $GITHUB_OUTPUT
             exit 0
           fi
         fi
 
-        echo "Using comment author_association: $COMMENT_ASSOCIATION"
+        # Strategy 1: Org membership check (preferred — reliable for all event types)
+        if [ -n "$ORG_MEMBERSHIP_TOKEN" ] && [ -n "$AUTH_ORG" ] && [ -n "$COMMENT_USER_LOGIN" ]; then
+          echo "Checking org membership for @$COMMENT_USER_LOGIN in $AUTH_ORG..."
+          if ! RESPONSE=$(GH_TOKEN="$ORG_MEMBERSHIP_TOKEN" gh api "orgs/$AUTH_ORG/members/$COMMENT_USER_LOGIN" --silent -i 2>/dev/null); then
+            echo "::error::❌ Authorization failed: @$COMMENT_USER_LOGIN is not a $AUTH_ORG org member"
+            echo "authorized=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          STATUS=$(echo "$RESPONSE" | head -1 | grep -oE '[0-9]{3}' || echo "000")
+          if [ "$STATUS" = "204" ]; then
+            echo "✅ Authorization successful: @$COMMENT_USER_LOGIN is a $AUTH_ORG org member"
+            echo "authorized=true" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            echo "::error::❌ Authorization failed: @$COMMENT_USER_LOGIN is not a $AUTH_ORG org member (HTTP $STATUS)"
+            echo "authorized=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        fi
 
-        # Allowed roles (hardcoded for security - cannot be overridden)
-        ALLOWED_ROLES='["OWNER", "MEMBER", "COLLABORATOR"]'
-
-        # Run the authorization check
-        $ACTION_PATH/security/check-auth.sh "$COMMENT_ASSOCIATION" "$ALLOWED_ROLES"
+        # Strategy 2: author_association fallback (legacy — unreliable for pull_request_review_comment events)
+        if [ -n "$COMMENT_ASSOCIATION" ]; then
+          echo "::warning::Using author_association fallback ($COMMENT_ASSOCIATION). Configure org-membership-token and auth-org for more reliable authorization."
+          ALLOWED_ROLES='["OWNER", "MEMBER", "COLLABORATOR"]'
+          $ACTION_PATH/security/check-auth.sh "$COMMENT_ASSOCIATION" "$ALLOWED_ROLES"
+        else
+          echo "::error::No authorization method available (no org token, no author_association)"
+          echo "authorized=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
 
     # ========================================
     # GitHub App Token (Optional)

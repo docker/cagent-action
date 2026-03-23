@@ -57,6 +57,18 @@ inputs:
     description: "GitHub App ID of a trusted bot that can bypass comment-based auth checks"
     required: false
     default: ""
+  org-membership-token:
+    description: "PAT with read:org scope for org membership authorization checks"
+    required: false
+    default: ""
+  auth-org:
+    description: "GitHub organization to check membership against"
+    required: false
+    default: ""
+  skip-auth:
+    description: "Skip the built-in authorization check (caller already verified auth)"
+    required: false
+    default: "false"
 
 outputs:
   exit-code:
@@ -689,6 +701,9 @@ runs:
         trusted-bot-app-id: ${{ inputs.trusted-bot-app-id }}
         extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
         skip-summary: "true"
+        org-membership-token: ${{ inputs.org-membership-token }}
+        auth-org: ${{ inputs.auth-org }}
+        skip-auth: ${{ inputs.skip-auth }}
 
     # ========================================
     # BUILD REVIEW CONTEXT
@@ -782,6 +797,9 @@ runs:
         add-prompt-files: ${{ inputs.add-prompt-files }}
         max-retries: "1"  # One retry handles transient API failures (e.g. Anthropic 400s) without risking duplicate reviews from full pipeline restarts
         skip-summary: "true"
+        org-membership-token: ${{ inputs.org-membership-token }}
+        auth-org: ${{ inputs.auth-org }}
+        skip-auth: ${{ inputs.skip-auth }}
 
     - name: Release review lock
       if: always() && steps.lock-check.outputs.skip != 'true'

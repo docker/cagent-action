@@ -325,6 +325,7 @@ jobs:
           nebius-api-key: ${{ secrets.NEBIUS_API_KEY }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
+          skip-auth: "true" # Org membership already verified above
 
       # ----------------------------------------------------------------
       # Failure handling
