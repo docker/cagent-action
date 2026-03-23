@@ -1,4 +1,4 @@
-name: "PR Review with cagent"
+name: "PR Review with docker-agent"
 description: "AI-powered pull request review with automatic learning from feedback"
 author: "Docker"
 

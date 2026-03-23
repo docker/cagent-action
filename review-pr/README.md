@@ -65,7 +65,7 @@ Requires [Docker Agent](https://github.com/docker/docker-agent) installed locall
 
 ```bash
 cd ~/code/my-project
-cagent run agentcatalog/review-pr "Review my changes"
+docker agent run agentcatalog/review-pr "Review my changes"
 ```
 
 The agent automatically:
@@ -74,7 +74,7 @@ The agent automatically:
 - Diffs your current branch against the base branch
 - Outputs the review as formatted markdown
 
-> **Tip:** cagent has a TUI, so you can interact with the agent during the review — ask follow-up questions, request clarification on findings, or drill into specific files.
+> **Tip:** Docker Agent has a TUI, so you can interact with the agent during the review — ask follow-up questions, request clarification on findings, or drill into specific files.
 
 ### Project Context via `AGENTS.md`
 
@@ -87,7 +87,7 @@ No workflow configuration is needed — just commit an `AGENTS.md` to your repo 
 You can also pass additional files explicitly with `--prompt-file`:
 
 ```bash
-cagent run agentcatalog/review-pr --prompt-file CONTRIBUTING.md "Review my changes"
+docker agent run agentcatalog/review-pr --prompt-file CONTRIBUTING.md "Review my changes"
 ```
 
 ---
@@ -388,7 +388,7 @@ Evals verify that the reviewer produces consistent, correct results across multi
 
 ```bash
 cd cagent-action
-cagent eval review-pr/agents/pr-review.yaml review-pr/agents/evals/ \
+docker agent eval review-pr/agents/pr-review.yaml review-pr/agents/evals/ \
   -e GITHUB_TOKEN -e GH_TOKEN
 ```
 

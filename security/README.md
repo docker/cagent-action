@@ -28,40 +28,40 @@ This action includes **built-in security features for all agent executions**:
 The action implements a defense-in-depth approach:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ 1. Authorization Check (check-auth.sh)                      │
-│    ✓ Verify user's author_association role                  │
-│    ✓ Block external contributors by default                 │
-│    ✓ Only OWNER, MEMBER, COLLABORATOR allowed               │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ 1. Authorization Check (check-auth.sh)                         │
+│    ✓ Verify user's author_association role                     │
+│    ✓ Block external contributors by default                    │
+│    ✓ Only OWNER, MEMBER, COLLABORATOR allowed                  │
+└────────────────────────────────────────────────────────────────┘
                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│ 2. Prompt Sanitization                                      │
-│    ✓ Detect prompt injection attempts                       │
-│    ✓ Warn about suspicious patterns                         │
-│    ✓ Check for encoded malicious content                    │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ 2. Prompt Sanitization                                         │
+│    ✓ Detect prompt injection attempts                          │
+│    ✓ Warn about suspicious patterns                            │
+│    ✓ Check for encoded malicious content                       │
+└────────────────────────────────────────────────────────────────┘
                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│ 3. Agent Execution                                          │
-│    ✓ User-provided agent runs in isolated cagent runtime    │
-│    ✓ No direct access to secrets or environment vars        │
-│    ✓ Controlled execution environment                       │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ 3. Agent Execution                                             │
+│    ✓ User-provided agent runs in isolated Docker Agent runtime │
+│    ✓ No direct access to secrets or environment vars           │
+│    ✓ Controlled execution environment                          │
+└────────────────────────────────────────────────────────────────┘
                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│ 4. Output Scanning                                          │
-│    ✓ Scan for leaked API keys (Anthropic, OpenAI, etc.)     │
-│    ✓ Scan for leaked tokens (GitHub PAT, OAuth, etc.)       │
-│    ✓ Block execution if secrets found                       │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ 4. Output Scanning                                             │
+│    ✓ Scan for leaked API keys (Anthropic, OpenAI, etc.)        │
+│    ✓ Scan for leaked tokens (GitHub PAT, OAuth, etc.)          │
+│    ✓ Block execution if secrets found                          │
+└────────────────────────────────────────────────────────────────┘
                           ↓
-┌─────────────────────────────────────────────────────────────┐
-│ 5. Incident Response                                        │
-│    ✓ Create security issue with details                     │
-│    ✓ Fail workflow with clear error                         │
-│    ✓ Prevent secret exposure in logs                        │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ 5. Incident Response                                           │
+│    ✓ Create security issue with details                        │
+│    ✓ Fail workflow with clear error                            │
+│    ✓ Prevent secret exposure in logs                           │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ## Security Scripts

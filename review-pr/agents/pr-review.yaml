@@ -20,7 +20,7 @@ agents:
 
       Run me from your project directory and I'll diff your current branch against the base branch:
       ```
-      cagent run agentcatalog/review-pr "Review my changes"
+      docker agent run agentcatalog/review-pr "Review my changes"
       ```
 
       I'll automatically detect what changed on your branch compared to the base branch and review those changes locally.

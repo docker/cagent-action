@@ -1,5 +1,5 @@
 #!/bin/bash
-# Local testing script for cagent-action changes
+# Local testing script for Docker Agent action changes
 # Tests the sanitize-input.sh script with multi-line prompts
 
 set -e

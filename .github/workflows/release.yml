@@ -122,8 +122,8 @@ jobs:
 
           # Create a detached commit (not on main) with the pinned refs
           # Note: write-tree captures the full index (all files from HEAD),
-          # but we explicitly add CAGENT_VERSION for clarity.
-          git add "${PINNED_FILES[@]}" CAGENT_VERSION
+          # but we explicitly add DOCKER_AGENT_VERSION for clarity.
+          git add "${PINNED_FILES[@]}" DOCKER_AGENT_VERSION
           TREE=$(git write-tree)
           RELEASE_SHA=$(git commit-tree "$TREE" -p HEAD -m "release: ${VERSION}")
 
@@ -276,19 +276,19 @@ jobs:
         with:
           ref: ${{ needs.release.outputs.version }}
 
-      - name: Install cagent
+      - name: Install Docker Agent
         run: |
           set -e
-          CAGENT_VERSION=$(tr -d '[:space:]' < CAGENT_VERSION)
-          if [ -z "$CAGENT_VERSION" ]; then
-            echo "::error::Could not extract cagent version from CAGENT_VERSION"
+          DOCKER_AGENT_VERSION=$(tr -d '[:space:]' < DOCKER_AGENT_VERSION)
+          if [ -z "$DOCKER_AGENT_VERSION" ]; then
+            echo "::error::Could not extract Docker Agent version from DOCKER_AGENT_VERSION"
             exit 1
           fi
-          echo "Using cagent version from CAGENT_VERSION: ${CAGENT_VERSION}"
-          curl -fL -o cagent \
-            "https://github.com/docker/docker-agent/releases/download/${CAGENT_VERSION}/cagent-linux-amd64"
-          chmod +x cagent
-          sudo mv cagent /usr/local/bin/
+          echo "Using Docker Agent version from DOCKER_AGENT_VERSION: ${DOCKER_AGENT_VERSION}"
+          curl -fL -o docker-agent \
+            "https://github.com/docker/docker-agent/releases/download/${DOCKER_AGENT_VERSION}/docker-agent-linux-amd64"
+          chmod +x docker-agent
+          sudo mv docker-agent /usr/local/bin/
 
       - name: Docker Hub login
         env:
@@ -307,7 +307,7 @@ jobs:
           set -e
           if [ -z "${HUB_ORG}" ]; then echo "::error::HUB_ORG secret is not set"; exit 1; fi
           cd review-pr/agents
-          TELEMETRY_ENABLED=false cagent share push pr-review.yaml "${HUB_ORG}/review-pr"
+          TELEMETRY_ENABLED=false docker agent share push pr-review.yaml "${HUB_ORG}/review-pr"
 
       - name: Upload README to Docker Hub
         env:

@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   security-scan:
-    name: Security Scan with cagent
+    name: Security Scan with Docker Agent
     runs-on: ubuntu-latest
     env:
       HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}

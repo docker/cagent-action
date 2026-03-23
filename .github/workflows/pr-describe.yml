@@ -195,11 +195,11 @@ jobs:
             const descriptionFile = '${{ steps.generate.outputs.output-file }}';
 
             try {
-              // Read generated description and extract cagent-output block if present.
+              // Read generated description and extract docker-agent-output block if present.
               // The composite action should already clean this, but the agent may
               // emit conversational text before the code fence that slips through.
               const raw = fs.readFileSync(descriptionFile, 'utf8');
-              const fenceMatch = raw.match(/```cagent-output[\s\S]*?\n([\s\S]*?)```/);
+              const fenceMatch = raw.match(/```docker-agent-output[\s\S]*?\n([\s\S]*?)```/);
               let description;
               if (fenceMatch) {
                 description = fenceMatch[1].trim();

@@ -1,6 +1,6 @@
 # cagent GitHub Action
 
-A GitHub Action for running [Docker Agent](https://github.com/docker/docker-agent) AI agents in your workflows. This action simplifies the setup and execution of cagent, handling binary downloads and environment configuration automatically.
+A GitHub Action for running [Docker Agent](https://github.com/docker/docker-agent) AI agents in your workflows. This action simplifies the setup and execution of Docker Agent, handling binary downloads and environment configuration automatically.
 
 ## Quick Start
 
@@ -19,7 +19,7 @@ A GitHub Action for running [Docker Agent](https://github.com/docker/docker-agen
    - Add `ANTHROPIC_API_KEY` (or another provider's key) from [Anthropic Console](https://console.anthropic.com/)
 
 3. **That's it!** The action will automatically:
-   - Download the cagent binary
+   - Download the Docker Agent binary
    - Run your specified agent
    - Scan outputs for leaked secrets
    - Provide results in workflow logs
@@ -92,7 +92,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 ### Advanced Configuration
 
 ```yaml
-- name: Run cagent with Custom Settings
+- name: Run Docker Agent with Custom Settings
   uses: docker/cagent-action@latest
   with:
     agent: docker/code-analyzer
@@ -111,7 +111,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 ### Using Outputs
 
 ```yaml
-- name: Run cagent
+- name: Run Docker Agent
   id: agent
   uses: docker/cagent-action@latest
   with:
@@ -158,16 +158,16 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 | `yolo`                     | Auto-approve all prompts (`true`/`false`)                                            | No       | `true`         |
 | `max-retries`              | Maximum number of retries on failure (0 = no retries)                                | No       | `2`            |
 | `retry-delay`              | Base delay in seconds between retries (doubles each attempt)                         | No       | `5`            |
-| `extra-args`               | Additional arguments to pass to `cagent run`                                         | No       | -              |
+| `extra-args`               | Additional arguments to pass to `docker agent run`                                   | No       | -              |
 | `add-prompt-files`         | Comma-separated list of files to append to the prompt (e.g., `AGENTS.md,CLAUDE.md`)  | No       | -              |
 
 ### Prompt Files (`add-prompt-files`)
 
-The `add-prompt-files` input allows you to include additional context files as system messages. This uses cagent's `--prompt-file` flag under the hood.
+The `add-prompt-files` input allows you to include additional context files as system messages. This uses Docker Agent's `--prompt-file` flag under the hood.
 
 > **Note:** The `review-pr` action automatically reads `AGENTS.md` and `CLAUDE.md` from the repository root — you don't need to specify them via `add-prompt-files`. Use this input for additional files beyond those defaults.
 
-**File Resolution (handled by cagent):**
+**File Resolution (handled by Docker Agent):**
 
 - Searches up the directory hierarchy (like `.gitignore`)
 - Also checks the home folder (`~/`)
@@ -188,7 +188,7 @@ add-prompt-files: "STYLE_GUIDE.md"  # Found via hierarchy search
 
 | Output                  | Description                                              |
 | ----------------------- | -------------------------------------------------------- |
-| `exit-code`             | Exit code from cagent run                                |
+| `exit-code`             | Exit code from docker agent run                          |
 | `output-file`           | Path to the output log file                              |
 | `mcp-gateway-installed` | Whether mcp-gateway was installed (`true`/`false`)       |
 | `execution-time`        | Agent execution time in seconds                          |

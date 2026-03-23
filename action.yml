@@ -75,7 +75,7 @@ inputs:
     required: false
     default: "5"
   extra-args:
-    description: "Additional arguments to pass to cagent run"
+    description: "Additional arguments to pass to docker agent run"
     required: false
     default: ""
   trusted-bot-app-id:
@@ -93,13 +93,13 @@ inputs:
 
 outputs:
   exit-code:
-    description: "Exit code from cagent run"
+    description: "Exit code from docker agent run"
     value: ${{ steps.run-agent.outputs.exit-code }}
   output-file:
     description: "Path to the output log file"
     value: ${{ steps.run-agent.outputs.output-file }}
   cagent-version:
-    description: "Version of cagent that was used"
+    description: "Version of Docker Agent that was used"
     value: ${{ steps.setup-binaries.outputs.cagent-version }}
   mcp-gateway-installed:
     description: "Whether mcp-gateway was installed (true/false)"
@@ -126,18 +126,18 @@ outputs:
 runs:
   using: "composite"
   steps:
-    # Single source of truth: reads cagent binary version from CAGENT_VERSION file.
-    - name: Set cagent version
-      id: cagent-version
+    # Single source of truth: reads docker-agent binary version from DOCKER_AGENT_VERSION file.
+    - name: Set Docker Agent version
+      id: docker-agent-version
       shell: bash
-      run: echo "value=$(cat "${{ github.action_path }}/CAGENT_VERSION" | tr -d '[:space:]')" >> $GITHUB_OUTPUT
+      run: echo "value=$(cat "${{ github.action_path }}/DOCKER_AGENT_VERSION" | tr -d '[:space:]')" >> $GITHUB_OUTPUT
 
     - name: Validate inputs
       id: validate-inputs
       shell: bash
       env:
         AGENT: ${{ inputs.agent }}
-        CAGENT_VERSION: ${{ steps.cagent-version.outputs.value }}
+        DOCKER_AGENT_VERSION: ${{ steps.docker-agent-version.outputs.value }}
         MCP_GATEWAY: ${{ inputs.mcp-gateway }}
         MCP_GATEWAY_VERSION: ${{ inputs.mcp-gateway-version }}
         DEBUG: ${{ inputs.debug }}
@@ -158,9 +158,9 @@ runs:
           exit 1
         fi
 
-        # Validate cagent version format
-        if ! [[ "$CAGENT_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
-          echo "::error::Invalid cagent version format '$CAGENT_VERSION'. Expected format: v1.2.3"
+        # Validate Docker Agent version format
+        if ! [[ "$DOCKER_AGENT_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+          echo "::error::Invalid Docker Agent version format '$DOCKER_AGENT_VERSION'. Expected format: v1.2.3"
           exit 1
         fi
 
@@ -183,7 +183,7 @@ runs:
         if [[ "$DEBUG" == "true" ]]; then
           echo "::debug::Validation passed"
           echo "::debug::agent: $AGENT"
-          echo "::debug::cagent version: $CAGENT_VERSION"
+          echo "::debug::Docker Agent version: $DOCKER_AGENT_VERSION"
           echo "::debug::mcp-gateway version: $MCP_GATEWAY_VERSION"
           echo "::debug::mcp-gateway install: $MCP_GATEWAY"
         fi
@@ -284,12 +284,12 @@ runs:
         # Run sanitization which outputs risk-level and blocked status
         $ACTION_PATH/security/sanitize-input.sh /tmp/prompt-input.txt /tmp/prompt-clean.txt
 
-    - name: Cache cagent binary
-      id: cache-cagent
+    - name: Cache Docker Agent binary
+      id: cache-docker-agent
       uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
       with:
-        path: ${{ github.workspace }}/cagent
-        key: cagent-${{ runner.os }}-${{ steps.cagent-version.outputs.value }}
+        path: ${{ github.workspace }}/docker-agent
+        key: docker-agent-${{ runner.os }}-${{ steps.docker-agent-version.outputs.value }}
 
     - name: Cache mcp-gateway binary
       id: cache-mcp
@@ -303,13 +303,13 @@ runs:
       id: setup-binaries
       shell: bash
       env:
-        CAGENT_VERSION: ${{ steps.cagent-version.outputs.value }}
+        DOCKER_AGENT_VERSION: ${{ steps.docker-agent-version.outputs.value }}
         MCP_GATEWAY: ${{ inputs.mcp-gateway }}
         MCP_GATEWAY_VERSION: ${{ inputs.mcp-gateway-version }}
         DEBUG: ${{ inputs.debug }}
         YOLO: ${{ inputs.yolo }}
         EXTRA_ARGS: ${{ inputs.extra-args }}
-        CAGENT_CACHE_HIT: ${{ steps.cache-cagent.outputs.cache-hit }}
+        DOCKER_AGENT_CACHE_HIT: ${{ steps.cache-docker-agent.outputs.cache-hit }}
         MCP_CACHE_HIT: ${{ steps.cache-mcp.outputs.cache-hit }}
       run: |
         set -e
@@ -374,27 +374,27 @@ runs:
             ;;
         esac
 
-        CAGENT_BINARY="cagent-${PLATFORM}-${ARCH_NAME}"
+        DOCKER_AGENT_BINARY="docker-agent-${PLATFORM}-${ARCH_NAME}"
         if [[ "$PLATFORM" == "windows" ]]; then
-          CAGENT_BINARY="${CAGENT_BINARY}.exe"
+          DOCKER_AGENT_BINARY="${DOCKER_AGENT_BINARY}.exe"
         fi
 
         echo "Detected platform: $PLATFORM-$ARCH_NAME"
 
-        # Download cagent if not cached
-        if [[ "$CAGENT_CACHE_HIT" != "true" ]]; then
-          echo "Downloading cagent $CAGENT_VERSION for $PLATFORM-$ARCH_NAME..."
+        # Download Docker Agent if not cached
+        if [[ "$DOCKER_AGENT_CACHE_HIT" != "true" ]]; then
+          echo "Downloading Docker Agent $DOCKER_AGENT_VERSION for $PLATFORM-$ARCH_NAME..."
           retry_download \
-            "https://github.com/docker/docker-agent/releases/download/$CAGENT_VERSION/$CAGENT_BINARY" \
-            "$GITHUB_WORKSPACE/cagent"
-          chmod +x "$GITHUB_WORKSPACE/cagent"
+            "https://github.com/docker/docker-agent/releases/download/$DOCKER_AGENT_VERSION/$DOCKER_AGENT_BINARY" \
+            "$GITHUB_WORKSPACE/docker-agent"
+          chmod +x "$GITHUB_WORKSPACE/docker-agent"
         else
-          echo "Using cached cagent binary"
+          echo "Using cached Docker Agent binary"
         fi
 
-        # Verify cagent works
-        if ! "$GITHUB_WORKSPACE/cagent" version; then
-          echo "::error::cagent binary verification failed"
+        # Verify Docker Agent works
+        if ! "$GITHUB_WORKSPACE/docker-agent" version; then
+          echo "::error::Docker Agent binary verification failed"
           exit 1
         fi
 
@@ -432,10 +432,10 @@ runs:
         fi
 
         # Set outputs
-        echo "cagent-version=$CAGENT_VERSION" >> $GITHUB_OUTPUT
+        echo "cagent-version=$DOCKER_AGENT_VERSION" >> $GITHUB_OUTPUT
         echo "mcp-installed=$MCP_INSTALLED" >> $GITHUB_OUTPUT
 
-    - name: Run cagent
+    - name: Run Docker Agent
       id: run-agent
       shell: bash
       env:
@@ -455,7 +455,7 @@ runs:
         EXTRA_ARGS: ${{ inputs.extra-args }}
         TIMEOUT: ${{ inputs.timeout }}
         WORKING_DIR: ${{ inputs.working-directory }}
-        CAGENT_VERSION: ${{ steps.cagent-version.outputs.value }}
+        DOCKER_AGENT_VERSION: ${{ steps.docker-agent-version.outputs.value }}
         MCP_INSTALLED: ${{ steps.setup-binaries.outputs.mcp-installed }}
         ADD_PROMPT_FILES: ${{ inputs.add-prompt-files }}
         MAX_RETRIES: ${{ inputs.max-retries }}
@@ -485,7 +485,7 @@ runs:
 
         # Create output file early (before any validation exits)
         # This ensures downstream steps always have a valid output file reference
-        OUTPUT_FILE=$(mktemp /tmp/cagent-output-XXXXXX)
+        OUTPUT_FILE=$(mktemp /tmp/docker-agent-output-XXXXXX)
         if [ -z "$OUTPUT_FILE" ] || [ ! -f "$OUTPUT_FILE" ]; then
           echo "::error::Failed to create output file"
           exit 1
@@ -493,7 +493,7 @@ runs:
         echo "output-file=$OUTPUT_FILE" >> $GITHUB_OUTPUT
         echo "Output file: $OUTPUT_FILE"
 
-        VERBOSE_LOG_FILE=$(mktemp /tmp/cagent-verbose-XXXXXX)
+        VERBOSE_LOG_FILE=$(mktemp /tmp/docker-agent-verbose-XXXXXX)
         if [ -z "$VERBOSE_LOG_FILE" ] || [ ! -f "$VERBOSE_LOG_FILE" ]; then
           echo "::error::Failed to create verbose log file"
           exit 1
@@ -501,7 +501,7 @@ runs:
         echo "verbose-log-file=$VERBOSE_LOG_FILE" >> $GITHUB_OUTPUT
         echo "Verbose log file: $VERBOSE_LOG_FILE"
         VERBOSE_LOG_BASENAME=$(basename "$VERBOSE_LOG_FILE")
-        echo "verbose-log-artifact-name=cagent-verbose-log-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}-${VERBOSE_LOG_BASENAME}" >> $GITHUB_OUTPUT
+        echo "verbose-log-artifact-name=docker-agent-verbose-log-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}-${VERBOSE_LOG_BASENAME}" >> $GITHUB_OUTPUT
 
         # Build command arguments array (SECURE: no eval!)
         ARGS=("run" "--exec")
@@ -523,7 +523,7 @@ runs:
           ARGS+=("${EXTRA_ARGS_ARRAY[@]}")
         fi
 
-        # Add prompt files as --prompt-file flags (cagent handles file resolution)
+        # Add prompt files as --prompt-file flags (Docker Agent handles file resolution)
         if [ -n "$ADD_PROMPT_FILES" ]; then
           echo "Adding prompt files: $ADD_PROMPT_FILES"
           IFS=',' read -ra FILES <<< "$ADD_PROMPT_FILES"
@@ -537,12 +537,12 @@ runs:
         echo "Using agent: $AGENT"
         ARGS+=("$AGENT")
 
-        # Always pass prompt via stdin to satisfy cagent run's required prompt arg
+        # Always pass prompt via stdin to satisfy docker agent run's required prompt arg
         ARGS+=("-")
         if [ -n "$PROMPT_INPUT" ]; then
-          echo "Running cagent with ${#ARGS[@]} arguments (prompt via stdin)"
+          echo "Running Docker Agent with ${#ARGS[@]} arguments (prompt via stdin)"
         else
-          echo "Running cagent with ${#ARGS[@]} arguments (empty prompt via stdin)"
+          echo "Running Docker Agent with ${#ARGS[@]} arguments (empty prompt via stdin)"
         fi
 
         # Track execution time
@@ -571,14 +571,14 @@ runs:
           # Output goes to verbose log file only (keeps console clean)
           # Prefer sanitized prompt file (comments stripped, suspicious lines removed)
           # over raw $PROMPT_INPUT to enforce input sanitization.
-          # PIPESTATUS: [0]=cat/printf  [1]=cagent/timeout
+          # PIPESTATUS: [0]=cat/printf  [1]=Docker Agent/timeout
           PROMPT_FILE="/tmp/prompt-clean.txt"
           set +e  # Don't exit on command failure
           if [ "$TIMEOUT" != "0" ]; then
             if [ -f "$PROMPT_FILE" ]; then
-              cat "$PROMPT_FILE" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
+              cat "$PROMPT_FILE" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/docker-agent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
             else
-              printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
+              printf '%s\n' "$PROMPT_INPUT" | timeout "$TIMEOUT" "$GITHUB_WORKSPACE/docker-agent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
             fi
             EXIT_CODE=${PIPESTATUS[1]}
             if [ $EXIT_CODE -eq 124 ]; then
@@ -586,9 +586,9 @@ runs:
             fi
           else
             if [ -f "$PROMPT_FILE" ]; then
-              cat "$PROMPT_FILE" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
+              cat "$PROMPT_FILE" | "$GITHUB_WORKSPACE/docker-agent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
             else
-              printf '%s\n' "$PROMPT_INPUT" | "$GITHUB_WORKSPACE/cagent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
+              printf '%s\n' "$PROMPT_INPUT" | "$GITHUB_WORKSPACE/docker-agent" "${ARGS[@]}" >> "$VERBOSE_LOG_FILE" 2>&1
             fi
             EXIT_CODE=${PIPESTATUS[1]}
           fi
@@ -651,14 +651,14 @@ runs:
         # Create job summary (skipped when caller handles its own summary)
         if [[ "${{ inputs.skip-summary }}" != "true" ]]; then
         {
-          echo "## cagent Execution Summary"
+          echo "## Docker Agent Execution Summary"
           echo ""
           echo "| Property | Value |"
           echo "|----------|-------|"
           echo "| Agent | \`$AGENT\` |"
           echo "| Exit Code | $EXIT_CODE |"
           echo "| Execution Time | ${EXECUTION_TIME}s |"
-          echo "| cagent Version | $CAGENT_VERSION |"
+          echo "| Docker Agent Version | $DOCKER_AGENT_VERSION |"
           echo "| MCP Gateway | $MCP_INSTALLED |"
           if [ "$TIMEOUT" != "0" ]; then
             echo "| Timeout | ${TIMEOUT}s |"
@@ -706,21 +706,21 @@ runs:
 
         $ACTION_PATH/security/sanitize-output.sh "$OUTPUT_FILE"
 
-        # Extract from cagent-output code block if present (overrides awk-filtered output)
+        # Extract from docker-agent-output code block if present (overrides awk-filtered output)
         # Note: the code fence may not be at the start of a line if the agent
         # emits conversational text before it, so we avoid anchoring with ^.
-        if grep -q '```cagent-output' "$OUTPUT_FILE"; then
-          echo "🧹 Extracting clean output from cagent-output code block..."
+        if grep -q '```docker-agent-output' "$OUTPUT_FILE"; then
+          echo "🧹 Extracting clean output from docker-agent-output code block..."
           awk '
-            /```cagent-output/ { capturing=1; next }
+            /```docker-agent-output/ { capturing=1; next }
             capturing && /```/ { capturing=0; next }
             capturing { print }
           ' "$OUTPUT_FILE" > "${OUTPUT_FILE}.clean"
           if [ -s "${OUTPUT_FILE}.clean" ]; then
             mv "${OUTPUT_FILE}.clean" "$OUTPUT_FILE"
-            echo "✅ Extracted clean output from cagent-output code block"
+            echo "✅ Extracted clean output from docker-agent-output code block"
           else
-            echo "::warning::Extracted cagent-output code block is empty, keeping filtered output"
+            echo "::warning::Extracted docker-agent-output code block is empty, keeping filtered output"
             rm -f "${OUTPUT_FILE}.clean"
           fi
         fi
