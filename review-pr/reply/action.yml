@@ -71,7 +71,7 @@ runs:
     - name: Run reply agent
       id: run-reply
       continue-on-error: true
-      uses: docker/cagent-action@latest
+      uses: docker/cagent-action@v1.3.1
       with:
         agent: ${{ github.action_path }}/../agents/pr-review-reply.yaml
         prompt: ${{ inputs.thread-context }}
