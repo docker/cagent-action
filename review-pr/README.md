@@ -15,11 +15,11 @@ on:
     types: [created]
   pull_request_review_comment: # Captures feedback on review comments for learning
     types: [created]
-  pull_request_target:         # Triggers auto-review on PR open; uses base branch context so secrets work with forks
+  pull_request:                # Triggers auto-review on PR open (same-repo branches only; fork PRs use /review)
     types: [ready_for_review, opened]
 
 permissions:
-  contents: read # This is required to be a top-level permission to give `issue_comment` events (on forked PRs) access to the secrets below.
+  contents: read # Required at top-level to give `issue_comment` events access to the secrets below.
 
 jobs:
   review:
@@ -37,6 +37,8 @@ jobs:
       CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
 ```
 
+> **Note:** Auto-review runs on same-repo branches only — fork PRs are automatically skipped (secrets aren't available). For fork PRs, an org member can comment `/review` to trigger a review.
+
 > **Why explicit secrets instead of `secrets: inherit`?** This follows the principle of least privilege — the called workflow only receives the secrets it actually needs, not every secret in your repository. This is the recommended approach for public repos and security-conscious teams.
 
 ### Customizing for your organization
@@ -53,7 +55,7 @@ The workflow automatically handles:
 
 | Trigger                 | Behavior                                                                                |
 | ----------------------- | --------------------------------------------------------------------------------------- |
-| PR opened/ready         | Auto-reviews PRs from your org members (if `CAGENT_ORG_MEMBERSHIP_TOKEN` is configured) |
+| PR opened/ready         | Auto-reviews PRs from your org members (same-repo branches only; fork PRs use `/review`) |
 | `/review` comment       | Manual review on any PR (shows as a check run on the PR if `checks: write` is granted)  |
 | Reply to review comment | Responds in-thread and learns from feedback to improve future reviews                   |
 
@@ -359,7 +361,7 @@ When you reply to a review comment, two things happen in parallel:
 5. The agent also stores learnings in the memory database for future reviews
 
 **Async artifact capture** (`capture-feedback` job):
-1. Saves the feedback as a GitHub Actions artifact (no secrets required — works for fork PRs)
+1. Saves the feedback as a GitHub Actions artifact (no secrets required)
 2. On the next review run, pending feedback artifacts are downloaded and processed into the memory database
 3. Acts as a resilient fallback if the reply agent fails or isn't configured
 
@@ -471,7 +473,7 @@ Each eval file in `review-pr/agents/evals/` contains:
 **No check run showing on the PR?**
 
 - Add `checks: write` to your workflow permissions (it's optional — the review works without it)
-- Check runs are created for manual (`/review`) triggers. Auto-reviews from `pull_request_target` already appear as workflow runs natively
+- Check runs are created for manual (`/review`) triggers. Auto-reviews from `pull_request` already appear as workflow runs natively
 
 **Learning doesn't seem to work?**
 

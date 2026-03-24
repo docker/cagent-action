@@ -54,11 +54,11 @@ on:
     types: [created]
   pull_request_review_comment: # Captures feedback on review comments for learning
     types: [created]
-  pull_request_target: # Triggers auto-review on PR open; uses base branch context so secrets work with forks
+  pull_request: # Triggers auto-review on PR open (same-repo branches only; fork PRs use /review)
     types: [ready_for_review, opened]
 
 permissions:
-  contents: read # This is required to be a top-level permission to give `issue_comment` events (on forked PRs) access to the secrets below.
+  contents: read # Required at top-level to give `issue_comment` events access to the secrets below.
 
 jobs:
   review:
@@ -75,6 +75,8 @@ jobs:
       CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }} # GitHub App ID; reviews appear as your app instead of github-actions[bot]
       CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
 ```
+
+> **Note:** Auto-review runs on same-repo branches only — fork PRs are automatically skipped (secrets aren't available). For fork PRs, an org member can comment `/review` to trigger a review.
 
 See the [full PR Review documentation](review-pr/README.md) for more details.
 
