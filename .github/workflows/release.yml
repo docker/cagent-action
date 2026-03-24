@@ -307,7 +307,7 @@ jobs:
           set -e
           if [ -z "${HUB_ORG}" ]; then echo "::error::HUB_ORG secret is not set"; exit 1; fi
           cd review-pr/agents
-          TELEMETRY_ENABLED=false docker agent share push pr-review.yaml "${HUB_ORG}/review-pr"
+          TELEMETRY_ENABLED=false docker-agent share push pr-review.yaml "${HUB_ORG}/review-pr"
 
       - name: Upload README to Docker Hub
         env:
