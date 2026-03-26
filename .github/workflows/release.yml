@@ -368,8 +368,6 @@ jobs:
           OLD_PATTERN='docker/cagent-action[^@]*@[a-f0-9]\{40\} # v[^ ]*'
           # YAML sed: anchored on `uses:` to avoid false matches in comments
           YAML_PIN_PATTERN='s|\(uses: *docker/cagent-action\)\([^@]*\)@[a-f0-9]\{40\} # v[^ ]*|\1\2@'"${SHA}"' # '"${VERSION}"'|g'
-          # Markdown sed: anchored on `docker/cagent-action` directly (no `uses:` prefix in code blocks)
-          MD_PIN_PATTERN='s|\(docker/cagent-action\)\([^@]*\)@[a-f0-9]\{40\} # v[^ ]*|\1\2@'"${SHA}"' # '"${VERSION}"'|g'
 
           UPDATED_FILES=()
 
@@ -381,15 +379,6 @@ jobs:
           done < <(grep -rl "$OLD_PATTERN" --include='*.yml' --include='*.yaml' \
             --exclude-dir=.git \
             review-pr/ .github/workflows/review-pr.yml .github/workflows/release.yml)
-
-          # Update Markdown files (broader pattern, no uses: anchor)
-          while IFS= read -r file; do
-            sed -i "$MD_PIN_PATTERN" "$file"
-            UPDATED_FILES+=("$file")
-            echo "  Updated (md): $file"
-          done < <(grep -rl "$OLD_PATTERN" --include='*.md' \
-            --exclude-dir=.git \
-            .)
 
           if [ ${#UPDATED_FILES[@]} -eq 0 ]; then
             echo "No self-refs needed updating, skipping."
