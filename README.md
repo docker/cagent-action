@@ -7,7 +7,7 @@ A GitHub Action for running [Docker Agent](https://github.com/docker/docker-agen
 1. **Add the action to your workflow**:
 
    ```yaml
-   - uses: docker/cagent-action@latest
+   - uses: docker/cagent-action@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
      with:
        agent: path/to/agent.yaml
        prompt: "Analyze this code"
@@ -62,7 +62,7 @@ permissions:
 
 jobs:
   review:
-    uses: docker/cagent-action/.github/workflows/review-pr.yml@latest
+    uses: docker/cagent-action/.github/workflows/review-pr.yml@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
     # Scoped to the job so other jobs in this workflow aren't over-permissioned
     permissions:
       contents: read # Read repository files and PR diffs
@@ -84,7 +84,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 
 ```yaml
 - name: Run Custom Agent
-  uses: docker/cagent-action@latest
+  uses: docker/cagent-action@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     agent: ./agents/my-agent.yaml
     prompt: "Analyze the codebase"
@@ -95,7 +95,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 
 ```yaml
 - name: Run Docker Agent with Custom Settings
-  uses: docker/cagent-action@latest
+  uses: docker/cagent-action@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
@@ -115,7 +115,7 @@ See the [full PR Review documentation](review-pr/README.md) for more details.
 ```yaml
 - name: Run Docker Agent
   id: agent
-  uses: docker/cagent-action@latest
+  uses: docker/cagent-action@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     agent: docker/code-analyzer
     prompt: "Analyze this codebase"
@@ -245,14 +245,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Security Review
-        uses: docker/cagent-action@latest
+        uses: docker/cagent-action@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
         with:
           agent: docker/github-action-security-scanner
           prompt: "Analyze for security issues"
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Code Quality Analysis
-        uses: docker/cagent-action@latest
+        uses: docker/cagent-action@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
         with:
           agent: docker/code-quality-analyzer
           prompt: "Analyze code quality and best practices"
@@ -285,7 +285,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Agent
-        uses: docker/cagent-action@latest
+        uses: docker/cagent-action@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
         with:
           agent: ${{ github.event.inputs.agent }}
           prompt: ${{ github.event.inputs.prompt }}
