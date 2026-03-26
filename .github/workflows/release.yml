@@ -12,6 +12,11 @@ on:
           - patch
           - minor
           - major
+      pre_release:
+        description: "Pre-release (skips updating consumer repos)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release
@@ -29,16 +34,23 @@ jobs:
       sha: ${{ steps.release-commit.outputs.sha }}
 
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure git
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "docker-agent[bot]"
+          git config user.email "docker-agent[bot]@users.noreply.github.com"
 
       - name: Calculate new version
         id: version
@@ -81,38 +93,55 @@ jobs:
 
       # CI cannot push commits to main (branch protection). Instead, we create
       # a detached release commit with pinned refs, reachable only via tags.
-      # main keeps @latest refs for development; tagged commits are self-contained.
+      # main keeps SHA-pinned self-refs; the release commit updates them to the
+      # HEAD SHA so the tagged commit is fully self-contained.
       - name: Create release commit with pinned refs
         id: release-commit
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -e
-          echo "Pinning @latest refs to ${VERSION}..."
 
-          # Pin all docker/cagent-action*@latest refs -> @vX.Y.Z
+          # Capture HEAD SHA before creating the detached commit.
+          # The release commit's self-refs will point to this SHA (the parent on main),
+          # which has an identical root action.yml.
+          HEAD_SHA=$(git rev-parse HEAD)
+          echo "Pinning SHA refs to ${HEAD_SHA} # ${VERSION}..."
+
+          # Replace all docker/cagent-action*@<40-hex-SHA> # v<anything> refs
+          # with the current HEAD SHA and new version.
           # Uses a capture group so any sub-path (e.g., /review-pr, /review-pr/reply) is preserved.
           # Automatically covers new sub-actions without needing to update this workflow.
           # Only targets `uses:` lines to avoid pinning refs in comments or documentation.
-          PIN_PATTERN='s|^\([^#]*uses: *docker/cagent-action\)\([^@]*\)@latest|\1\2@'"${VERSION}"'|g'
+          OLD_PIN_PATTERN='uses: *docker/cagent-action[^@]*@[a-f0-9]\{40\} # v'
+          PIN_PATTERN='s|^\([^#]*uses: *docker/cagent-action\)\([^@]*\)@[a-f0-9]\{40\} # v[^ ]*|\1\2@'"${HEAD_SHA}"' # '"${VERSION}"'|g'
           PINNED_FILES=()
           while IFS= read -r file; do
             sed -i "$PIN_PATTERN" "$file"
             PINNED_FILES+=("$file")
             echo "  Pinned: $file"
-          done < <(grep -rl 'uses: *docker/cagent-action[^@]*@latest' --include='*.yml' --include='*.yaml' \
+          done < <(grep -rl "$OLD_PIN_PATTERN" --include='*.yml' --include='*.yaml' \
             --exclude-dir=.git \
-            review-pr/ .github/workflows/review-pr.yml)
+            review-pr/ .github/workflows/review-pr.yml .github/workflows/release.yml)
 
           if [ ${#PINNED_FILES[@]} -eq 0 ]; then
-            echo "::error::No @latest refs found to pin — expected at least one. Check that review-pr/ actions still reference @latest."
+            echo "::error::No SHA-pinned self-refs found to update — expected at least one. Check that review-pr/ actions still reference docker/cagent-action with a SHA pin."
             exit 1
           fi
 
-          # Verify no @latest uses: refs remain in pinned files
-          REMAINING=$(grep -n '^[^#]*uses: *docker/cagent-action[^@]*@latest' "${PINNED_FILES[@]}" 2>/dev/null || true)
+          # Check for any SHA-pinned refs that lack version comments (won't be auto-updated)
+          UNVERSIONED=$(grep -n 'uses: *docker/cagent-action[^@]*@[a-f0-9]\{40\}' "${PINNED_FILES[@]}" 2>/dev/null | \
+            grep -v '# v' || true)
+          if [ -n "$UNVERSIONED" ]; then
+            echo "::error::Found SHA-pinned refs without version comments (won't be auto-updated):"
+            echo "$UNVERSIONED"
+            exit 1
+          fi
+
+          # Verify no refs with the old SHA remain in pinned files
+          REMAINING=$(grep -n "$OLD_PIN_PATTERN" "${PINNED_FILES[@]}" 2>/dev/null | grep -v "${HEAD_SHA}" || true)
           if [ -n "$REMAINING" ]; then
-            echo "::error::Unpinned @latest refs remain after release:"
+            echo "::error::Old SHA refs remain after pinning:"
             echo "$REMAINING"
             exit 1
           fi
@@ -142,7 +171,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           PREVIOUS: ${{ steps.version.outputs.previous }}
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           ARGS=(--generate-notes --latest)
           if [ -n "$PREVIOUS" ]; then
@@ -150,84 +179,244 @@ jobs:
           fi
           gh release create "$VERSION" "${ARGS[@]}"
 
-      - name: Update latest tag
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          RELEASE_SHA: ${{ steps.release-commit.outputs.sha }}
-        run: |
-          # Delete existing latest tag (local + remote)
-          git tag -d latest 2>/dev/null || true
-          git push origin :refs/tags/latest 2>/dev/null || true
-
-          # Create new latest tag pointing to the release commit
-          git tag latest "$RELEASE_SHA"
-          git push origin latest
-
-          echo "Updated 'latest' tag to point to ${VERSION} ($RELEASE_SHA)"
-
-  update-pinata:
-    name: Update pinata pr-review workflow
+  update-consumers:
+    name: Update consumer repo references
     needs: release
-    if: success()
+    if: success() && !inputs.pre_release
     runs-on: ubuntu-latest
     concurrency:
-      group: update-pinata
+      group: update-consumers
       cancel-in-progress: false
     steps:
-      - name: Checkout pinata
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Generate GitHub App token
+        id: app-token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          repository: docker/pinata
-          token: ${{ secrets.RELEASE_TOKEN }}
+          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
 
-      - name: Update cagent-action reference
-        id: update
+      - name: Discover and update consumer repos
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SHA: ${{ needs.release.outputs.sha }}
           VERSION: ${{ needs.release.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          FILE=".github/workflows/pr-review.yml"
-          if [ ! -f "$FILE" ]; then
-            echo "::error::$FILE not found in pinata"
-            exit 1
-          fi
+          set -e
 
           if [ -z "$SHA" ] || [ -z "$VERSION" ]; then
             echo "::error::SHA or VERSION is empty (SHA='$SHA', VERSION='$VERSION')"
             exit 1
           fi
 
-          PATTERN='cagent-action/\.github/workflows/review-pr\.yml@[[:xdigit:]]\{40\} # v[0-9.]*'
-          if ! grep -q "$PATTERN" "$FILE"; then
-            echo "::error::Expected cagent-action reference pattern not found in $FILE — format may have changed"
+          # Discover repos that use the cagent-action reusable workflow.
+          # Uses GitHub code search API — results may have eventual consistency lag
+          # for very recently created repos, but this is fine for release automation.
+          echo "Searching for consumer repos..."
+          REPOS=$(gh api --paginate '/search/code?per_page=100' \
+            -f q='org:docker "docker/cagent-action/.github/workflows/review-pr.yml@" language:YAML path:/^\.github\/workflows\//' \
+            --jq '[.items[] | {repo: .repository.full_name, path: .path}] | unique_by(.repo) | .[] | "\(.repo) \(.path)"')
+
+          if [ -z "$REPOS" ]; then
+            echo "No consumer repos found, skipping."
+            exit 0
+          fi
+
+          echo "Found consumer repos:"
+          echo "$REPOS"
+          echo ""
+
+          # Pattern to match cagent-action workflow refs with SHA pins
+          OLD_PATTERN='cagent-action/\.github/workflows/review-pr\.yml@[[:xdigit:]]\{40\} # v[0-9.]*'
+          NEW_REF="cagent-action/.github/workflows/review-pr.yml@${SHA} # ${VERSION}"
+
+          BRANCH="auto/update-cagent-action"
+          RELEASE_URL="https://github.com/docker/cagent-action/releases/tag/$VERSION"
+
+          while IFS=' ' read -r REPO FILE_PATH; do
+            echo "=========================================="
+            echo "Processing ${REPO} (${FILE_PATH})..."
+            echo "=========================================="
+
+            # Clone the repo into a temp directory
+            # Set up cleanup trap for this iteration
+            trap 'cd /; rm -rf "$WORK_DIR"' EXIT
+
+            WORK_DIR=$(mktemp -d)
+            if ! gh repo clone "$REPO" "$WORK_DIR" -- --depth=1 2>/dev/null; then
+              echo "::warning::Failed to clone $REPO — skipping (token may lack access)"
+              rm -rf "$WORK_DIR"
+              continue
+            fi
+
+            cd "$WORK_DIR"
+
+            # Check if the app has push access to this repo
+            CAN_PUSH=$(gh api "repos/$REPO" --jq '.permissions.push' 2>/dev/null || echo "false")
+            if [ "$CAN_PUSH" != "true" ]; then
+              echo "::warning::No push access to $REPO — skipping (app may not be installed or lacks write access)"
+              cd /
+              rm -rf "$WORK_DIR"
+              continue
+            fi
+
+            # Check that the file exists and contains the pattern
+            if [ ! -f "$FILE_PATH" ]; then
+              echo "::warning::$FILE_PATH not found in $REPO — skipping"
+              cd /
+              rm -rf "$WORK_DIR"
+              continue
+            fi
+
+            if ! grep -q "$OLD_PATTERN" "$FILE_PATH"; then
+              echo "Pattern not found in $FILE_PATH — may already be up to date, skipping"
+              cd /
+              rm -rf "$WORK_DIR"
+              continue
+            fi
+
+            # Apply the sed replacement
+            sed -i "s|${OLD_PATTERN}|${NEW_REF}|g" "$FILE_PATH"
+
+            if git diff --quiet "$FILE_PATH"; then
+              echo "No changes after sed — already up to date"
+              cd /
+              rm -rf "$WORK_DIR"
+              continue
+            fi
+
+            echo "Updated reference to ${SHA} # ${VERSION}"
+
+            # Commit and push
+            git config user.name "docker-agent[bot]"
+            git config user.email "docker-agent[bot]@users.noreply.github.com"
+
+            git checkout -B "$BRANCH"
+            git add "$FILE_PATH"
+            git commit -m "chore: update cagent-action to $VERSION"
+            git push --force origin "$BRANCH"
+
+            # Create or update PR
+            EXISTING_PR=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number')
+
+            # Build PR body safely using printf to avoid shell expansion of FILE_PATH
+            # FILE_PATH comes from GitHub API and could theoretically contain shell metacharacters
+            printf -v PR_BODY '%s\n%s\n%s\n%s\n%s' \
+              "## Summary" \
+              "Updates \`cagent-action\` reference in \`${FILE_PATH}\` to [${VERSION}](${RELEASE_URL})." \
+              "- **Commit**: \`${SHA}\`" \
+              "- **Version**: \`${VERSION}\`" \
+              "> Auto-generated by the [release](${RUN_URL}) workflow."
+
+            if [ -n "$EXISTING_PR" ]; then
+              echo "Updating existing PR #$EXISTING_PR in $REPO"
+              gh pr edit "$EXISTING_PR" --repo "$REPO" \
+                --title "chore: update cagent-action to $VERSION" \
+                --body "$PR_BODY" \
+                --add-reviewer "derekmisler"
+            else
+              echo "Creating new PR in $REPO"
+              gh pr create --repo "$REPO" \
+                --title "chore: update cagent-action to $VERSION" \
+                --body "$PR_BODY" \
+                --reviewer "derekmisler" || echo "::warning::Failed to create PR in $REPO"
+            fi
+
+            # Clear trap and cleanup
+            trap - EXIT
+
+            cd /
+            rm -rf "$WORK_DIR"
+            echo ""
+          done <<< "$REPOS"
+
+          echo "Done updating consumer repos."
+
+  update-self-refs:
+    name: Update self-refs in cagent-action main
+    needs: release
+    if: success()
+    runs-on: ubuntu-latest
+    concurrency:
+      group: update-self-refs
+      cancel-in-progress: false
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+
+      - name: Checkout cagent-action
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: docker/cagent-action
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Update self-ref pins
+        id: update
+        env:
+          SHA: ${{ needs.release.outputs.sha }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          if [ -z "$SHA" ] || [ -z "$VERSION" ]; then
+            echo "::error::SHA or VERSION is empty (SHA='$SHA', VERSION='$VERSION')"
             exit 1
           fi
 
-          sed -i "s|${PATTERN}|cagent-action/.github/workflows/review-pr.yml@${SHA} # ${VERSION}|" "$FILE"
+          OLD_PATTERN='docker/cagent-action[^@]*@[a-f0-9]\{40\} # v[^ ]*'
+          # YAML sed: anchored on `uses:` to avoid false matches in comments
+          YAML_PIN_PATTERN='s|\(uses: *docker/cagent-action\)\([^@]*\)@[a-f0-9]\{40\} # v[^ ]*|\1\2@'"${SHA}"' # '"${VERSION}"'|g'
+          # Markdown sed: anchored on `docker/cagent-action` directly (no `uses:` prefix in code blocks)
+          MD_PIN_PATTERN='s|\(docker/cagent-action\)\([^@]*\)@[a-f0-9]\{40\} # v[^ ]*|\1\2@'"${SHA}"' # '"${VERSION}"'|g'
 
-          if git diff --quiet "$FILE"; then
-            echo "File already up to date, skipping."
+          UPDATED_FILES=()
+
+          # Update YAML/YAML files (uses: anchored)
+          while IFS= read -r file; do
+            sed -i "$YAML_PIN_PATTERN" "$file"
+            UPDATED_FILES+=("$file")
+            echo "  Updated (yaml): $file"
+          done < <(grep -rl "$OLD_PATTERN" --include='*.yml' --include='*.yaml' \
+            --exclude-dir=.git \
+            review-pr/ .github/workflows/review-pr.yml .github/workflows/release.yml)
+
+          # Update Markdown files (broader pattern, no uses: anchor)
+          while IFS= read -r file; do
+            sed -i "$MD_PIN_PATTERN" "$file"
+            UPDATED_FILES+=("$file")
+            echo "  Updated (md): $file"
+          done < <(grep -rl "$OLD_PATTERN" --include='*.md' \
+            --exclude-dir=.git \
+            .)
+
+          if [ ${#UPDATED_FILES[@]} -eq 0 ]; then
+            echo "No self-refs needed updating, skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet; then
+            echo "Files already up to date, skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Updated reference to ${SHA} # ${VERSION}"
+            echo "Updated self-refs to ${SHA} # ${VERSION}"
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create or update PR
         if: steps.update.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ needs.release.outputs.version }}
           SHA: ${{ needs.release.outputs.sha }}
         run: |
           BRANCH="auto/update-cagent-action"
           RELEASE_URL="https://github.com/docker/cagent-action/releases/tag/$VERSION"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "docker-agent[bot]"
+          git config user.email "docker-agent[bot]@users.noreply.github.com"
 
           git checkout -B "$BRANCH"
-          git add .github/workflows/pr-review.yml
+          git add -A
           git commit -m "chore: update cagent-action to $VERSION"
 
           # Force-push to handle both new and existing branches.
@@ -242,9 +431,6 @@ jobs:
           - **Commit**: \`${SHA}\`
           - **Version**: \`${VERSION}\`
           > Auto-generated by the [release](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) workflow.
-
-          /skip-builds
-          /skip-tests
           EOF
           )"
 
@@ -336,10 +522,17 @@ jobs:
     if: success()
     runs-on: ubuntu-latest
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        with:
+          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+
       - name: Fetch release notes from GitHub
         id: release-notes
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ needs.release.outputs.version }}
         run: |
           if ! NOTES=$(gh release view "$VERSION" --repo docker/cagent-action --json body --jq '.body'); then
@@ -352,10 +545,9 @@ jobs:
 
       - name: Generate Slack summary
         id: slack-summary
-        # @latest resolves to the previous release here, not the one just created.
-        # This is fine — the release-notes agent doesn't change between versions.
+        # Pinned to a SHA — automatically updated by the update-self-refs job after each release.
         # GitHub Actions requires static `uses:` values, so we can't pin dynamically.
-        uses: docker/cagent-action@latest
+        uses: docker/cagent-action@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
         with:
           agent: agentcatalog/github-action-release-notes
           prompt: |

@@ -220,7 +220,7 @@ All tests must pass before deployment.
 ```yaml
 - name: Run Agent
   id: agent
-  uses: docker/cagent-action@latest
+  uses: docker/cagent-action@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     agent: my-agent
     prompt: "Analyze the logs"

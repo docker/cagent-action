@@ -327,28 +327,3 @@ jobs:
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           skip-auth: "true" # Org membership already verified above
 
-      # ----------------------------------------------------------------
-      # Failure handling
-      # ----------------------------------------------------------------
-      - name: React on failure
-        if: >-
-          always() &&
-          steps.meta.outputs.proceed == 'true' &&
-          steps.auth.outputs.authorized == 'true' &&
-          (steps.checkout.outcome == 'failure' || steps.thread.outcome == 'failure' || steps.run-reply.outcome == 'failure')
-        continue-on-error: true
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        env:
-          COMMENT_ID: ${{ steps.meta.outputs.comment_id }}
-          REPO: ${{ steps.meta.outputs.repo }}
-        with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
-          script: |
-            const [owner, repo] = process.env.REPO.split('/');
-            await github.rest.reactions.createForPullRequestReviewComment({
-              owner,
-              repo,
-              comment_id: parseInt(process.env.COMMENT_ID, 10),
-              content: 'confused'
-            });
-            console.log('😕 Reply failed — added confused reaction');

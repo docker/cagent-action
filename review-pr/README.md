@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   review:
-    uses: docker/cagent-action/.github/workflows/review-pr.yml@latest
+    uses: docker/cagent-action/.github/workflows/review-pr.yml@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
     # Scoped to the job so other jobs in this workflow aren't over-permissioned
     permissions:
       contents: read       # Read repository files and PR diffs
@@ -146,7 +146,7 @@ jobs:
           fetch-depth: 0
           ref: refs/pull/${{ github.event.issue.number }}/head
 
-      - uses: docker/cagent-action/review-pr@latest
+      - uses: docker/cagent-action/review-pr@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -163,7 +163,7 @@ The recommended approach is to add an `AGENTS.md` file to your repository root. 
 For workflow-level overrides or guidelines that apply across multiple repos, use the `additional-prompt` input:
 
 ```yaml
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/cagent-action/review-pr@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     additional-prompt: |
@@ -174,7 +174,7 @@ For workflow-level overrides or guidelines that apply across multiple repos, use
 ```
 
 ```yaml
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/cagent-action/review-pr@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     additional-prompt: |
@@ -186,7 +186,7 @@ For workflow-level overrides or guidelines that apply across multiple repos, use
 
 ```yaml
 # Project-specific conventions
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/cagent-action/review-pr@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     additional-prompt: |
@@ -207,7 +207,7 @@ Override for more thorough or cost-effective reviews:
 
 ```yaml
 # Anthropic (default provider)
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/cagent-action/review-pr@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
     model: anthropic/claude-opus-4 # More thorough reviews
@@ -215,7 +215,7 @@ Override for more thorough or cost-effective reviews:
 
 ```yaml
 # OpenAI Codex
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/cagent-action/review-pr@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
     model: openai/codex-mini
@@ -223,7 +223,7 @@ Override for more thorough or cost-effective reviews:
 
 ```yaml
 # Google Gemini
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/cagent-action/review-pr@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     google-api-key: ${{ secrets.GOOGLE_API_KEY }}
     model: gemini/gemini-2.0-flash
@@ -231,7 +231,7 @@ Override for more thorough or cost-effective reviews:
 
 ```yaml
 # xAI Grok
-- uses: docker/cagent-action/review-pr@latest
+- uses: docker/cagent-action/review-pr@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
   with:
     xai-api-key: ${{ secrets.XAI_API_KEY }}
     model: xai/grok-2
