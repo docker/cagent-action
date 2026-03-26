@@ -40,6 +40,7 @@ jobs:
         github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
       ) || (
         github.event_name == 'workflow_run' &&
+        github.event.workflow_run.name == 'PR Review Trigger' &&
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.head_repository.full_name != github.repository
       )
@@ -67,8 +68,12 @@ jobs:
 
           mkdir -p /tmp/trigger-metadata
 
-          if ! gh run download "$WORKFLOW_RUN_ID" -n pr-review-trigger-metadata -D /tmp/trigger-metadata --repo "$REPO" 2>/dev/null; then
-            echo "⏭️ No trigger metadata artifact found — skipping"
+          if ! gh run download "$WORKFLOW_RUN_ID" -n "pr-review-trigger-metadata-$WORKFLOW_RUN_ID" -D /tmp/trigger-metadata --repo "$REPO" 2>/tmp/download_error.log; then
+            if grep -qi "no artifact" /tmp/download_error.log; then
+              echo "⏭️ No trigger metadata artifact found — skipping"
+            else
+              echo "::warning::Failed to download trigger metadata: $(cat /tmp/download_error.log)"
+            fi
             echo "pr-number=" >> $GITHUB_OUTPUT
             exit 0
           fi
