@@ -108,15 +108,21 @@ jobs:
   # ==========================================================================
   # AUTOMATIC REVIEW FOR ORG MEMBERS
   # Triggers when a PR is marked ready for review or opened (non-draft)
-  # Only runs for members of the configured org; same-repo branches only — fork PRs use /review command
-  # Only runs for same-repo PRs (fork PRs don't have access to secrets with pull_request trigger)
-  # Fork PRs use the /review command instead
+  # Supports two trigger paths:
+  #   1. pull_request event (same-repo branches only — fork PRs lack secret access)
+  #   2. workflow_run event with inputs.pr-number set (fork PRs via workflow_run pattern)
+  # Only runs for members of the configured org.
   # ==========================================================================
   auto-review:
     if: |
-      github.event_name == 'pull_request' &&
-      !github.event.pull_request.draft &&
-      github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
+      (
+        github.event_name == 'pull_request' &&
+        !github.event.pull_request.draft &&
+        github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
+      ) || (
+        github.event_name == 'workflow_run' &&
+        inputs.pr-number != ''
+      )
     runs-on: ubuntu-latest
     env:
       HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
@@ -124,14 +130,58 @@ jobs:
       exit-code: ${{ steps.run-review.outputs.exit-code }}
 
     steps:
+      - name: Get PR number
+        id: get-pr
+        shell: bash
+        env:
+          INPUT_PR_NUMBER: ${{ inputs.pr-number }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "pr-number=${INPUT_PR_NUMBER:-$EVENT_PR_NUMBER}" >> $GITHUB_OUTPUT
+
+      # For workflow_run events, github.event.pull_request is unavailable — fetch PR author
+      # and draft status via API using github.token (repo read access).
+      # Skipped for pull_request events where the payload already has this info.
+      - name: Fetch PR info
+        id: pr-info
+        if: github.event_name == 'workflow_run'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          PR_NUMBER: ${{ steps.get-pr.outputs.pr-number }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: parseInt(process.env.PR_NUMBER, 10)
+            });
+            core.setOutput('author', pr.user.login);
+            core.setOutput('draft', pr.draft ? 'true' : 'false');
+
       - name: Check if PR author is org member
         id: membership
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          PR_NUMBER: ${{ steps.get-pr.outputs.pr-number }}
+          PR_DRAFT: ${{ steps.pr-info.outputs.draft }}
+          PR_AUTHOR: ${{ steps.pr-info.outputs.author }}
         with:
           github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
           script: |
             const org = '${{ inputs.auto-review-org }}';
-            const username = context.payload.pull_request.user.login;
+
+            let username;
+            if (context.eventName === 'workflow_run') {
+              if (process.env.PR_DRAFT === 'true') {
+                core.setOutput('is_member', 'false');
+                console.log(`⏭️ PR #${process.env.PR_NUMBER} is a draft — skipping auto-review`);
+                return;
+              }
+              username = process.env.PR_AUTHOR;
+            } else {
+              username = context.payload.pull_request.user.login;
+            }
 
             try {
               await github.rest.orgs.checkMembershipForUser({
@@ -157,13 +207,12 @@ jobs:
               }
             }
 
-      # With pull_request, checking out the PR head is standard behavior
       - name: Checkout PR head
         if: steps.membership.outputs.is_member == 'true'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-          ref: refs/pull/${{ github.event.pull_request.number }}/head
+          ref: refs/pull/${{ steps.get-pr.outputs.pr-number }}/head
 
       # Generate GitHub App token for custom app identity (optional - falls back to github.token)
       - name: Generate GitHub App token
@@ -181,7 +230,7 @@ jobs:
         continue-on-error: true # Don't fail the calling workflow if the review errors
         uses: docker/cagent-action/review-pr@latest
         with:
-          pr-number: ${{ inputs.pr-number || github.event.pull_request.number }}
+          pr-number: ${{ steps.get-pr.outputs.pr-number }}
           additional-prompt: ${{ inputs.additional-prompt }}
           add-prompt-files: ${{ inputs.add-prompt-files }}
           model: ${{ inputs.model }}
