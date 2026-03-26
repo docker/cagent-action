@@ -12,31 +12,81 @@ on:
     types: [created]
   pull_request:
     types: [ready_for_review, opened]
+  workflow_run:
+    workflows: ["PR Review Trigger"]
+    types: [completed]
 
 permissions:
   contents: read
   pull-requests: write
   issues: write
   checks: write
+  actions: read
 
 jobs:
   # ==========================================================================
   # AUTOMATIC REVIEW FOR ORG MEMBERS
   # Triggers when a PR is marked ready for review or opened (non-draft)
-  # Only runs for members of the docker org; auto-reviews same-repo PRs from org members
-  # Only runs for same-repo PRs (fork PRs don't have access to secrets with pull_request trigger)
-  # Fork PRs use the /review command instead
+  # Supports two trigger paths:
+  #   1. pull_request event (same-repo branches only — fork PRs lack secret access)
+  #   2. workflow_run event (fork PRs via pr-review-trigger.yml → workflow_run pattern)
+  # Only runs for members of the docker org.
   # ==========================================================================
   auto-review:
     if: |
-      github.event_name == 'pull_request' &&
-      !github.event.pull_request.draft &&
-      github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
+      (
+        github.event_name == 'pull_request' &&
+        !github.event.pull_request.draft &&
+        github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
+      ) || (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.name == 'PR Review Trigger' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name != github.repository
+      )
     runs-on: ubuntu-latest
     env:
       HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
 
     steps:
+      # For workflow_run events (fork PRs), download the artifact saved by pr-review-trigger.yml
+      # to get the PR number. For pull_request events, read it directly from the event payload.
+      - name: Get PR number
+        id: get-pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "pr-number=$EVENT_PR_NUMBER" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          mkdir -p /tmp/trigger-metadata
+
+          if ! gh run download "$WORKFLOW_RUN_ID" -n "pr-review-trigger-metadata-$WORKFLOW_RUN_ID" -D /tmp/trigger-metadata --repo "$REPO" 2>/tmp/download_error.log; then
+            if grep -qi "no artifact" /tmp/download_error.log; then
+              echo "⏭️ No trigger metadata artifact found — skipping"
+            else
+              echo "::warning::Failed to download trigger metadata: $(cat /tmp/download_error.log)"
+            fi
+            echo "pr-number=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          PR_NUMBER=$(cat /tmp/trigger-metadata/pr-number | tr -d '[:space:]')
+          if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || [ "$PR_NUMBER" -lt 1 ]; then
+            echo "::error::Invalid PR number: $PR_NUMBER"
+            exit 1
+          fi
+
+          echo "pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "✅ Got PR number from trigger metadata: #$PR_NUMBER"
+
       - name: Check if PR author is org member
         id: membership
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
@@ -44,7 +94,31 @@ jobs:
           github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
           script: |
             const org = 'docker';
-            const username = context.payload.pull_request.user.login;
+
+            // For workflow_run events, fetch PR author and draft status via API
+            // since github.event.pull_request is not available in that context
+            let username;
+            if (context.eventName === 'workflow_run') {
+              const prNumber = parseInt('${{ steps.get-pr.outputs.pr-number }}', 10);
+              if (!prNumber) {
+                core.setOutput('is_member', 'false');
+                console.log('⏭️ No PR number — skipping auto-review');
+                return;
+              }
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+              if (pr.draft) {
+                core.setOutput('is_member', 'false');
+                console.log(`⏭️ PR #${prNumber} is a draft — skipping auto-review`);
+                return;
+              }
+              username = pr.user.login;
+            } else {
+              username = context.payload.pull_request.user.login;
+            }
 
             try {
               await github.rest.orgs.checkMembershipForUser({
@@ -70,13 +144,12 @@ jobs:
               }
             }
 
-      # With pull_request, checking out the PR head is standard behavior
       - name: Checkout PR head
         if: steps.membership.outputs.is_member == 'true'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-          ref: refs/pull/${{ github.event.pull_request.number }}/head
+          ref: refs/pull/${{ steps.get-pr.outputs.pr-number }}/head
 
       # Generate GitHub App token for custom app identity (optional - falls back to github.token)
       - name: Generate GitHub App token
@@ -94,7 +167,7 @@ jobs:
         continue-on-error: true # Don't fail the calling workflow if the review errors
         uses: ./review-pr
         with:
-          pr-number: ${{ github.event.pull_request.number }}
+          pr-number: ${{ steps.get-pr.outputs.pr-number }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
