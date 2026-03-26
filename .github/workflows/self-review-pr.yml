@@ -58,12 +58,27 @@ jobs:
         id: app-credentials
         shell: bash
         run: |
+          set -euo pipefail
           SECRET=$(aws secretsmanager get-secret-value \
             --secret-id docker-agent-action/github-app \
             --query SecretString --output text)
           APP_ID=$(echo "$SECRET" | jq -r .app_id)
           ORG_TOKEN=$(echo "$SECRET" | jq -r .org_membership_token)
           PRIVATE_KEY=$(echo "$SECRET" | jq -r .private_key)
+
+          if [ -z "$APP_ID" ] || [ "$APP_ID" = "null" ]; then
+            echo "::error::Failed to extract app_id from secret docker-agent-action/github-app"
+            exit 1
+          fi
+          if [ -z "$ORG_TOKEN" ] || [ "$ORG_TOKEN" = "null" ]; then
+            echo "::error::Failed to extract org_membership_token from secret docker-agent-action/github-app"
+            exit 1
+          fi
+          if [ -z "$PRIVATE_KEY" ] || [ "$PRIVATE_KEY" = "null" ]; then
+            echo "::error::Failed to extract private_key from secret docker-agent-action/github-app"
+            exit 1
+          fi
+
           echo "::add-mask::$APP_ID"
           echo "::add-mask::$ORG_TOKEN"
           echo "::add-mask::$PRIVATE_KEY"
@@ -223,12 +238,27 @@ jobs:
         id: app-credentials
         shell: bash
         run: |
+          set -euo pipefail
           SECRET=$(aws secretsmanager get-secret-value \
             --secret-id docker-agent-action/github-app \
             --query SecretString --output text)
           APP_ID=$(echo "$SECRET" | jq -r .app_id)
           ORG_TOKEN=$(echo "$SECRET" | jq -r .org_membership_token)
           PRIVATE_KEY=$(echo "$SECRET" | jq -r .private_key)
+
+          if [ -z "$APP_ID" ] || [ "$APP_ID" = "null" ]; then
+            echo "::error::Failed to extract app_id from secret docker-agent-action/github-app"
+            exit 1
+          fi
+          if [ -z "$ORG_TOKEN" ] || [ "$ORG_TOKEN" = "null" ]; then
+            echo "::error::Failed to extract org_membership_token from secret docker-agent-action/github-app"
+            exit 1
+          fi
+          if [ -z "$PRIVATE_KEY" ] || [ "$PRIVATE_KEY" = "null" ]; then
+            echo "::error::Failed to extract private_key from secret docker-agent-action/github-app"
+            exit 1
+          fi
+
           echo "::add-mask::$APP_ID"
           echo "::add-mask::$ORG_TOKEN"
           echo "::add-mask::$PRIVATE_KEY"
