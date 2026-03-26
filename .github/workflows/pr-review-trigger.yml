@@ -1,0 +1,34 @@
+# Lightweight trigger workflow for fork PR auto-reviews.
+# Runs in the fork's context (no secrets) on pull_request, saves the PR number
+# as an artifact, then completes so that self-review-pr.yml can fire via
+# workflow_run in the base repo context with full secret access.
+
+name: PR Review Trigger
+
+on:
+  pull_request:
+    types: [ready_for_review, opened]
+
+permissions:
+  contents: read
+
+jobs:
+  save-pr-metadata:
+    # Only fork PRs — same-repo PRs are handled directly by self-review-pr.yml
+    if: github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Save PR number
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p pr-metadata
+          echo "$PR_NUMBER" > pr-metadata/pr-number
+
+      - name: Upload PR metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pr-review-trigger-metadata
+          path: pr-metadata/
+          retention-days: 1
