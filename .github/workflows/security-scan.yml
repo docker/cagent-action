@@ -63,6 +63,21 @@ jobs:
           DELIM="$(openssl rand -hex 8)"
           { echo "private-key<<$DELIM"; echo "$PRIVATE_KEY"; echo "$DELIM"; } >> $GITHUB_OUTPUT
 
+      - name: Fetch AI API keys from Secrets Manager
+        id: ai-api-keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/ai-api-keys \
+            --query SecretString --output text)
+          ANTHROPIC_KEY=$(echo "$SECRET" | jq -r '.anthropic_api_key // ""')
+          OPENAI_KEY=$(echo "$SECRET" | jq -r '.openai_api_key // ""')
+          [ -n "$ANTHROPIC_KEY" ] && echo "::add-mask::$ANTHROPIC_KEY"
+          [ -n "$OPENAI_KEY" ] && echo "::add-mask::$OPENAI_KEY"
+          echo "anthropic-api-key=$ANTHROPIC_KEY" >> $GITHUB_OUTPUT
+          echo "openai-api-key=$OPENAI_KEY" >> $GITHUB_OUTPUT
+
       - name: Check out Git repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -162,7 +177,7 @@ jobs:
         with:
           agent: agentcatalog/github-action-security-scanner
           prompt: ${{ steps.commits.outputs.prompt }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic-api-key: ${{ steps.ai-api-keys.outputs.anthropic-api-key }}
           timeout: 300 # 5 minutes
 
       - name: Validate reported file paths

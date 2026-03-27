@@ -172,6 +172,21 @@ jobs:
           DELIM="$(openssl rand -hex 8)"
           { echo "private-key<<$DELIM"; echo "$PRIVATE_KEY"; echo "$DELIM"; } >> $GITHUB_OUTPUT
 
+      - name: Fetch AI API keys from Secrets Manager
+        id: ai-api-keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/ai-api-keys \
+            --query SecretString --output text)
+          ANTHROPIC_KEY=$(echo "$SECRET" | jq -r '.anthropic_api_key // ""')
+          OPENAI_KEY=$(echo "$SECRET" | jq -r '.openai_api_key // ""')
+          [ -n "$ANTHROPIC_KEY" ] && echo "::add-mask::$ANTHROPIC_KEY"
+          [ -n "$OPENAI_KEY" ] && echo "::add-mask::$OPENAI_KEY"
+          echo "anthropic-api-key=$ANTHROPIC_KEY" >> $GITHUB_OUTPUT
+          echo "openai-api-key=$OPENAI_KEY" >> $GITHUB_OUTPUT
+
       - name: Get PR number
         id: get-pr
         shell: bash
@@ -277,8 +292,8 @@ jobs:
           add-prompt-files: ${{ inputs.add-prompt-files }}
           model: ${{ inputs.model }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ steps.ai-api-keys.outputs.anthropic-api-key }}
+          openai-api-key: ${{ steps.ai-api-keys.outputs.openai-api-key }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
           aws-bearer-token-bedrock: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           xai-api-key: ${{ secrets.XAI_API_KEY }}
@@ -343,6 +358,21 @@ jobs:
           echo "org-membership-token=$ORG_TOKEN" >> $GITHUB_OUTPUT
           DELIM="$(openssl rand -hex 8)"
           { echo "private-key<<$DELIM"; echo "$PRIVATE_KEY"; echo "$DELIM"; } >> $GITHUB_OUTPUT
+
+      - name: Fetch AI API keys from Secrets Manager
+        id: ai-api-keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/ai-api-keys \
+            --query SecretString --output text)
+          ANTHROPIC_KEY=$(echo "$SECRET" | jq -r '.anthropic_api_key // ""')
+          OPENAI_KEY=$(echo "$SECRET" | jq -r '.openai_api_key // ""')
+          [ -n "$ANTHROPIC_KEY" ] && echo "::add-mask::$ANTHROPIC_KEY"
+          [ -n "$OPENAI_KEY" ] && echo "::add-mask::$OPENAI_KEY"
+          echo "anthropic-api-key=$ANTHROPIC_KEY" >> $GITHUB_OUTPUT
+          echo "openai-api-key=$OPENAI_KEY" >> $GITHUB_OUTPUT
 
       - name: Check if commenter is org member
         id: membership
@@ -443,8 +473,8 @@ jobs:
           model: ${{ inputs.model }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           trusted-bot-app-id: ${{ steps.app-credentials.outputs.app-id }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ steps.ai-api-keys.outputs.anthropic-api-key }}
+          openai-api-key: ${{ steps.ai-api-keys.outputs.openai-api-key }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
           aws-bearer-token-bedrock: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           xai-api-key: ${{ secrets.XAI_API_KEY }}
@@ -584,6 +614,21 @@ jobs:
           echo "org-membership-token=$ORG_TOKEN" >> $GITHUB_OUTPUT
           DELIM="$(openssl rand -hex 8)"
           { echo "private-key<<$DELIM"; echo "$PRIVATE_KEY"; echo "$DELIM"; } >> $GITHUB_OUTPUT
+
+      - name: Fetch AI API keys from Secrets Manager
+        id: ai-api-keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/ai-api-keys \
+            --query SecretString --output text)
+          ANTHROPIC_KEY=$(echo "$SECRET" | jq -r '.anthropic_api_key // ""')
+          OPENAI_KEY=$(echo "$SECRET" | jq -r '.openai_api_key // ""')
+          [ -n "$ANTHROPIC_KEY" ] && echo "::add-mask::$ANTHROPIC_KEY"
+          [ -n "$OPENAI_KEY" ] && echo "::add-mask::$OPENAI_KEY"
+          echo "anthropic-api-key=$ANTHROPIC_KEY" >> $GITHUB_OUTPUT
+          echo "openai-api-key=$OPENAI_KEY" >> $GITHUB_OUTPUT
 
       - name: Check if reply is to agent comment
         id: check
@@ -823,8 +868,8 @@ jobs:
         with:
           thread-context: ${{ steps.thread.outputs.prompt }}
           comment-id: ${{ github.event.comment.id }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ steps.ai-api-keys.outputs.anthropic-api-key }}
+          openai-api-key: ${{ steps.ai-api-keys.outputs.openai-api-key }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
           aws-bearer-token-bedrock: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           xai-api-key: ${{ secrets.XAI_API_KEY }}

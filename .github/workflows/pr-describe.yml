@@ -58,6 +58,21 @@ jobs:
           DELIM="$(openssl rand -hex 8)"
           { echo "private-key<<$DELIM"; echo "$PRIVATE_KEY"; echo "$DELIM"; } >> $GITHUB_OUTPUT
 
+      - name: Fetch AI API keys from Secrets Manager
+        id: ai-api-keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/ai-api-keys \
+            --query SecretString --output text)
+          ANTHROPIC_KEY=$(echo "$SECRET" | jq -r '.anthropic_api_key // ""')
+          OPENAI_KEY=$(echo "$SECRET" | jq -r '.openai_api_key // ""')
+          [ -n "$ANTHROPIC_KEY" ] && echo "::add-mask::$ANTHROPIC_KEY"
+          [ -n "$OPENAI_KEY" ] && echo "::add-mask::$OPENAI_KEY"
+          echo "anthropic-api-key=$ANTHROPIC_KEY" >> $GITHUB_OUTPUT
+          echo "openai-api-key=$OPENAI_KEY" >> $GITHUB_OUTPUT
+
       - name: Check out Git repository
         uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
 
@@ -217,7 +232,7 @@ jobs:
 
             **Diff:**
             $(cat pr.diff)
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic-api-key: ${{ steps.ai-api-keys.outputs.anthropic-api-key }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           timeout: 300 # 5 minutes
 
