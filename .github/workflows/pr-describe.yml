@@ -232,7 +232,7 @@ jobs:
 
             **Diff:**
             $(cat pr.diff)
-          anthropic-api-key: ${{ steps.ai-api-keys.outputs.anthropic-api-key }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY || steps.ai-api-keys.outputs.anthropic-api-key }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
           timeout: 300 # 5 minutes
 

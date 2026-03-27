@@ -216,7 +216,7 @@ jobs:
         env:
           USERNAME: ${{ steps.meta.outputs.author }}
         with:
-          github-token: ${{ steps.app-credentials.outputs.org-membership-token }}
+          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN || steps.app-credentials.outputs.org-membership-token }}
           script: |
             const org = 'docker';
             const username = process.env.USERNAME;
@@ -376,8 +376,8 @@ jobs:
         with:
           thread-context: ${{ steps.thread.outputs.prompt }}
           comment-id: ${{ steps.meta.outputs.comment_id }}
-          anthropic-api-key: ${{ steps.ai-api-keys.outputs.anthropic-api-key }}
-          openai-api-key: ${{ steps.ai-api-keys.outputs.openai-api-key }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY || steps.ai-api-keys.outputs.anthropic-api-key }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY || steps.ai-api-keys.outputs.openai-api-key }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
           aws-bearer-token-bedrock: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           xai-api-key: ${{ secrets.XAI_API_KEY }}

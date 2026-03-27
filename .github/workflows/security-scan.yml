@@ -177,7 +177,7 @@ jobs:
         with:
           agent: agentcatalog/github-action-security-scanner
           prompt: ${{ steps.commits.outputs.prompt }}
-          anthropic-api-key: ${{ steps.ai-api-keys.outputs.anthropic-api-key }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY || steps.ai-api-keys.outputs.anthropic-api-key }}
           timeout: 300 # 5 minutes
 
       - name: Validate reported file paths
