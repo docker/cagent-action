@@ -124,12 +124,69 @@ jobs:
         inputs.pr-number != ''
       )
     runs-on: ubuntu-latest
-    env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
     outputs:
       exit-code: ${{ steps.run-review.outputs.exit-code }}
 
     steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: TODO_ROLE_ARN
+          aws-region: us-east-1
+
+      - name: Fetch GitHub App credentials from Secrets Manager
+        id: app-credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/github-app \
+            --query SecretString --output text)
+          APP_ID=$(echo "$SECRET" | jq -r .app_id)
+          ORG_TOKEN=$(echo "$SECRET" | jq -r .org_membership_token)
+          PRIVATE_KEY=$(echo "$SECRET" | jq -r .private_key)
+
+          if [ -z "$APP_ID" ] || [ "$APP_ID" = "null" ]; then
+            echo "::error::Failed to extract app_id from secret docker-agent-action/github-app"
+            exit 1
+          fi
+          if [ -z "$ORG_TOKEN" ] || [ "$ORG_TOKEN" = "null" ]; then
+            echo "::error::Failed to extract org_membership_token from secret docker-agent-action/github-app"
+            exit 1
+          fi
+          if [ -z "$PRIVATE_KEY" ] || [ "$PRIVATE_KEY" = "null" ]; then
+            echo "::error::Failed to extract private_key from secret docker-agent-action/github-app"
+            exit 1
+          fi
+
+          echo "::add-mask::$APP_ID"
+          echo "::add-mask::$ORG_TOKEN"
+          echo "::add-mask::$PRIVATE_KEY"
+          echo "app-id=$APP_ID" >> $GITHUB_OUTPUT
+          echo "org-membership-token=$ORG_TOKEN" >> $GITHUB_OUTPUT
+          DELIM="$(openssl rand -hex 8)"
+          { echo "private-key<<$DELIM"; echo "$PRIVATE_KEY"; echo "$DELIM"; } >> $GITHUB_OUTPUT
+
+      - name: Fetch AI API keys from Secrets Manager
+        id: ai-api-keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/ai-api-keys \
+            --query SecretString --output text)
+          ANTHROPIC_KEY=$(echo "$SECRET" | jq -r '.anthropic_api_key // ""')
+          OPENAI_KEY=$(echo "$SECRET" | jq -r '.openai_api_key // ""')
+          [ -n "$ANTHROPIC_KEY" ] && echo "::add-mask::$ANTHROPIC_KEY"
+          [ -n "$OPENAI_KEY" ] && echo "::add-mask::$OPENAI_KEY"
+          echo "anthropic-api-key=$ANTHROPIC_KEY" >> $GITHUB_OUTPUT
+          echo "openai-api-key=$OPENAI_KEY" >> $GITHUB_OUTPUT
+
       - name: Get PR number
         id: get-pr
         shell: bash
@@ -167,7 +224,7 @@ jobs:
           PR_DRAFT: ${{ steps.pr-info.outputs.draft }}
           PR_AUTHOR: ${{ steps.pr-info.outputs.author }}
         with:
-          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
+          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN || steps.app-credentials.outputs.org-membership-token }}
           script: |
             const org = '${{ inputs.auto-review-org }}';
 
@@ -216,13 +273,13 @@ jobs:
 
       # Generate GitHub App token for custom app identity (optional - falls back to github.token)
       - name: Generate GitHub App token
-        if: steps.membership.outputs.is_member == 'true' && env.HAS_APP_SECRETS == 'true'
+        if: steps.membership.outputs.is_member == 'true'
         id: app-token
         continue-on-error: true # Don't fail workflow if token generation fails
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app_id: ${{ steps.app-credentials.outputs.app-id }}
+          private_key: ${{ steps.app-credentials.outputs.private-key }}
 
       - name: Run PR Review
         if: steps.membership.outputs.is_member == 'true'
@@ -235,8 +292,8 @@ jobs:
           add-prompt-files: ${{ inputs.add-prompt-files }}
           model: ${{ inputs.model }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY || steps.ai-api-keys.outputs.anthropic-api-key }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY || steps.ai-api-keys.outputs.openai-api-key }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
           aws-bearer-token-bedrock: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           xai-api-key: ${{ secrets.XAI_API_KEY }}
@@ -254,17 +311,74 @@ jobs:
       startsWith(github.event.comment.body, '/review') &&
       (github.event.comment.user.type != 'Bot' || github.event.comment.user.login == 'docker-agent[bot]')
     runs-on: ubuntu-latest
-    env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
     outputs:
       exit-code: ${{ steps.run-review.outputs.exit-code }}
 
     steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: TODO_ROLE_ARN
+          aws-region: us-east-1
+
+      - name: Fetch GitHub App credentials from Secrets Manager
+        id: app-credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/github-app \
+            --query SecretString --output text)
+          APP_ID=$(echo "$SECRET" | jq -r .app_id)
+          ORG_TOKEN=$(echo "$SECRET" | jq -r .org_membership_token)
+          PRIVATE_KEY=$(echo "$SECRET" | jq -r .private_key)
+
+          if [ -z "$APP_ID" ] || [ "$APP_ID" = "null" ]; then
+            echo "::error::Failed to extract app_id from secret docker-agent-action/github-app"
+            exit 1
+          fi
+          if [ -z "$ORG_TOKEN" ] || [ "$ORG_TOKEN" = "null" ]; then
+            echo "::error::Failed to extract org_membership_token from secret docker-agent-action/github-app"
+            exit 1
+          fi
+          if [ -z "$PRIVATE_KEY" ] || [ "$PRIVATE_KEY" = "null" ]; then
+            echo "::error::Failed to extract private_key from secret docker-agent-action/github-app"
+            exit 1
+          fi
+
+          echo "::add-mask::$APP_ID"
+          echo "::add-mask::$ORG_TOKEN"
+          echo "::add-mask::$PRIVATE_KEY"
+          echo "app-id=$APP_ID" >> $GITHUB_OUTPUT
+          echo "org-membership-token=$ORG_TOKEN" >> $GITHUB_OUTPUT
+          DELIM="$(openssl rand -hex 8)"
+          { echo "private-key<<$DELIM"; echo "$PRIVATE_KEY"; echo "$DELIM"; } >> $GITHUB_OUTPUT
+
+      - name: Fetch AI API keys from Secrets Manager
+        id: ai-api-keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/ai-api-keys \
+            --query SecretString --output text)
+          ANTHROPIC_KEY=$(echo "$SECRET" | jq -r '.anthropic_api_key // ""')
+          OPENAI_KEY=$(echo "$SECRET" | jq -r '.openai_api_key // ""')
+          [ -n "$ANTHROPIC_KEY" ] && echo "::add-mask::$ANTHROPIC_KEY"
+          [ -n "$OPENAI_KEY" ] && echo "::add-mask::$OPENAI_KEY"
+          echo "anthropic-api-key=$ANTHROPIC_KEY" >> $GITHUB_OUTPUT
+          echo "openai-api-key=$OPENAI_KEY" >> $GITHUB_OUTPUT
+
       - name: Check if commenter is org member
         id: membership
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
-          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
+          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN || steps.app-credentials.outputs.org-membership-token }}
           script: |
             const org = '${{ inputs.auto-review-org }}';
             const username = context.payload.comment.user.login;
@@ -303,13 +417,13 @@ jobs:
       # Generate GitHub App token first so the check run is created under the app's identity
       # (prevents GitHub from nesting it under unrelated pull_request-triggered workflows)
       - name: Generate GitHub App token
-        if: steps.membership.outputs.is_member == 'true' && env.HAS_APP_SECRETS == 'true'
+        if: steps.membership.outputs.is_member == 'true'
         id: app-token
         continue-on-error: true # Don't fail workflow if token generation fails
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app_id: ${{ steps.app-credentials.outputs.app-id }}
+          private_key: ${{ steps.app-credentials.outputs.private-key }}
 
       - name: Create check run
         if: steps.membership.outputs.is_member == 'true'
@@ -358,9 +472,9 @@ jobs:
           add-prompt-files: ${{ inputs.add-prompt-files }}
           model: ${{ inputs.model }}
           github-token: ${{ steps.app-token.outputs.token || github.token }}
-          trusted-bot-app-id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          trusted-bot-app-id: ${{ steps.app-credentials.outputs.app-id }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY || steps.ai-api-keys.outputs.anthropic-api-key }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY || steps.ai-api-keys.outputs.openai-api-key }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
           aws-bearer-token-bedrock: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           xai-api-key: ${{ secrets.XAI_API_KEY }}
@@ -455,10 +569,67 @@ jobs:
       github.event.comment.in_reply_to_id &&
       github.event.comment.user.type != 'Bot'
     runs-on: ubuntu-latest
-    env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
 
     steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: TODO_ROLE_ARN
+          aws-region: us-east-1
+
+      - name: Fetch GitHub App credentials from Secrets Manager
+        id: app-credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/github-app \
+            --query SecretString --output text)
+          APP_ID=$(echo "$SECRET" | jq -r .app_id)
+          ORG_TOKEN=$(echo "$SECRET" | jq -r .org_membership_token)
+          PRIVATE_KEY=$(echo "$SECRET" | jq -r .private_key)
+
+          if [ -z "$APP_ID" ] || [ "$APP_ID" = "null" ]; then
+            echo "::error::Failed to extract app_id from secret docker-agent-action/github-app"
+            exit 1
+          fi
+          if [ -z "$ORG_TOKEN" ] || [ "$ORG_TOKEN" = "null" ]; then
+            echo "::error::Failed to extract org_membership_token from secret docker-agent-action/github-app"
+            exit 1
+          fi
+          if [ -z "$PRIVATE_KEY" ] || [ "$PRIVATE_KEY" = "null" ]; then
+            echo "::error::Failed to extract private_key from secret docker-agent-action/github-app"
+            exit 1
+          fi
+
+          echo "::add-mask::$APP_ID"
+          echo "::add-mask::$ORG_TOKEN"
+          echo "::add-mask::$PRIVATE_KEY"
+          echo "app-id=$APP_ID" >> $GITHUB_OUTPUT
+          echo "org-membership-token=$ORG_TOKEN" >> $GITHUB_OUTPUT
+          DELIM="$(openssl rand -hex 8)"
+          { echo "private-key<<$DELIM"; echo "$PRIVATE_KEY"; echo "$DELIM"; } >> $GITHUB_OUTPUT
+
+      - name: Fetch AI API keys from Secrets Manager
+        id: ai-api-keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id docker-agent-action/ai-api-keys \
+            --query SecretString --output text)
+          ANTHROPIC_KEY=$(echo "$SECRET" | jq -r '.anthropic_api_key // ""')
+          OPENAI_KEY=$(echo "$SECRET" | jq -r '.openai_api_key // ""')
+          [ -n "$ANTHROPIC_KEY" ] && echo "::add-mask::$ANTHROPIC_KEY"
+          [ -n "$OPENAI_KEY" ] && echo "::add-mask::$OPENAI_KEY"
+          echo "anthropic-api-key=$ANTHROPIC_KEY" >> $GITHUB_OUTPUT
+          echo "openai-api-key=$OPENAI_KEY" >> $GITHUB_OUTPUT
+
       - name: Check if reply is to agent comment
         id: check
         shell: bash
@@ -526,7 +697,7 @@ jobs:
         id: auth
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
+          GH_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN || steps.app-credentials.outputs.org-membership-token }}
           ORG: ${{ inputs.auto-review-org }}
           USERNAME: ${{ github.event.comment.user.login }}
         run: |
@@ -682,13 +853,13 @@ jobs:
 
       # Generate GitHub App token for custom app identity (optional - falls back to github.token)
       - name: Generate GitHub App token
-        if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true' && env.HAS_APP_SECRETS == 'true'
+        if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true'
         id: app-token
         continue-on-error: true
         uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app_id: ${{ steps.app-credentials.outputs.app-id }}
+          private_key: ${{ steps.app-credentials.outputs.private-key }}
 
       - name: Run reply
         if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true'
@@ -697,8 +868,8 @@ jobs:
         with:
           thread-context: ${{ steps.thread.outputs.prompt }}
           comment-id: ${{ github.event.comment.id }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY || steps.ai-api-keys.outputs.anthropic-api-key }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY || steps.ai-api-keys.outputs.openai-api-key }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
           aws-bearer-token-bedrock: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           xai-api-key: ${{ secrets.XAI_API_KEY }}
