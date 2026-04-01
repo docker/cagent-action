@@ -219,10 +219,10 @@ jobs:
         if: steps.membership.outputs.is_member == 'true' && env.HAS_APP_SECRETS == 'true'
         id: app-token
         continue-on-error: true # Don't fail workflow if token generation fails
-        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          private-key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Run PR Review
         if: steps.membership.outputs.is_member == 'true'
@@ -306,10 +306,10 @@ jobs:
         if: steps.membership.outputs.is_member == 'true' && env.HAS_APP_SECRETS == 'true'
         id: app-token
         continue-on-error: true # Don't fail workflow if token generation fails
-        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          private-key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Create check run
         if: steps.membership.outputs.is_member == 'true'
@@ -685,10 +685,10 @@ jobs:
         if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true' && env.HAS_APP_SECRETS == 'true'
         id: app-token
         continue-on-error: true
-        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
         with:
-          app_id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private_key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
+          private-key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
 
       - name: Run reply
         if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true'
