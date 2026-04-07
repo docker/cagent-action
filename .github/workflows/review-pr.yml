@@ -228,7 +228,7 @@ jobs:
         if: steps.membership.outputs.is_member == 'true'
         id: run-review
         continue-on-error: true # Don't fail the calling workflow if the review errors
-        uses: docker/cagent-action/review-pr@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
+        uses: docker/cagent-action/review-pr@2a100d8c1a586cebe53721904692d6c1249c46e5 # v1.3.3
         with:
           pr-number: ${{ steps.get-pr.outputs.pr-number }}
           additional-prompt: ${{ inputs.additional-prompt }}
@@ -350,7 +350,7 @@ jobs:
         if: steps.membership.outputs.is_member == 'true'
         id: run-review
         continue-on-error: true # Don't fail the calling workflow if the review errors
-        uses: docker/cagent-action/review-pr@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
+        uses: docker/cagent-action/review-pr@2a100d8c1a586cebe53721904692d6c1249c46e5 # v1.3.3
         with:
           pr-number: ${{ inputs.pr-number || github.event.issue.number }}
           comment-id: ${{ inputs.comment-id || github.event.comment.id }}
@@ -693,7 +693,7 @@ jobs:
       - name: Run reply
         if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true'
         continue-on-error: true
-        uses: docker/cagent-action/review-pr/reply@dba0ca51938c78afb363625363c50582243218d6 # v1.3.1
+        uses: docker/cagent-action/review-pr/reply@2a100d8c1a586cebe53721904692d6c1249c46e5 # v1.3.3
         with:
           thread-context: ${{ steps.thread.outputs.prompt }}
           comment-id: ${{ github.event.comment.id }}
