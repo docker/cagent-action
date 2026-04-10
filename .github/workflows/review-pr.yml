@@ -145,7 +145,7 @@ jobs:
       - name: Fetch PR info
         id: pr-info
         if: github.event_name == 'workflow_run'
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBER: ${{ steps.get-pr.outputs.pr-number }}
         with:
@@ -161,7 +161,7 @@ jobs:
 
       - name: Check if PR author is org member
         id: membership
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBER: ${{ steps.get-pr.outputs.pr-number }}
           PR_DRAFT: ${{ steps.pr-info.outputs.draft }}
@@ -209,7 +209,7 @@ jobs:
 
       - name: Checkout PR head
         if: steps.membership.outputs.is_member == 'true'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           ref: refs/pull/${{ steps.get-pr.outputs.pr-number }}/head
@@ -262,7 +262,7 @@ jobs:
     steps:
       - name: Check if commenter is org member
         id: membership
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
           script: |
@@ -315,7 +315,7 @@ jobs:
         if: steps.membership.outputs.is_member == 'true'
         id: create-check
         continue-on-error: true # Don't fail if caller didn't grant checks: write
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PR_NUMBER: ${{ inputs.pr-number || github.event.issue.number }}
         with:
@@ -341,7 +341,7 @@ jobs:
 
       - name: Checkout PR head
         if: steps.membership.outputs.is_member == 'true'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           ref: refs/pull/${{ github.event.issue.number }}/head
@@ -370,7 +370,7 @@ jobs:
 
       - name: Update check run
         if: always() && steps.create-check.outputs.check-id != ''
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           CHECK_ID: ${{ steps.create-check.outputs.check-id }}
           JOB_STATUS: ${{ job.status }}
@@ -436,7 +436,7 @@ jobs:
 
       - name: Upload feedback artifact
         if: steps.check.outputs.is_agent == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: pr-review-feedback
           path: feedback/
@@ -675,7 +675,7 @@ jobs:
       # Safe to checkout PR head because the reply agent only READS files (no code execution)
       - name: Checkout PR head
         if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           ref: refs/pull/${{ github.event.pull_request.number }}/head
