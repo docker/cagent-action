@@ -65,15 +65,11 @@ jobs:
     uses: docker/cagent-action/.github/workflows/review-pr.yml@VERSION
     # Scoped to the job so other jobs in this workflow aren't over-permissioned
     permissions:
-      contents: read # Read repository files and PR diffs
+      contents: read       # Read repository files and PR diffs
       pull-requests: write # Post review comments and approve/request changes
-      issues: write # Create security incident issues if secrets are detected in output
-      checks: write # (Optional) Show review progress as a check run on the PR
-    secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }} # PAT with read:org scope; gates auto-reviews to org members only
-      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }} # GitHub App ID; reviews appear as your app instead of github-actions[bot]
-      CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
+      issues: write        # Create security incident issues if secrets are detected in output
+      checks: write        # (Optional) Show review progress as a check run on the PR
+      id-token: write      # Required for OIDC authentication to AWS Secrets Manager
 ```
 
 > **Note:** Auto-review runs on same-repo branches only — fork PRs are automatically skipped (secrets aren't available). For fork PRs, an org member can comment `/review` to trigger a review.

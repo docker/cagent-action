@@ -1,0 +1,104 @@
+name: 'Setup Credentials'
+description: 'Fetch all credentials from AWS Secrets Manager, configure AWS OIDC, and generate GitHub App token'
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials
+      continue-on-error: true
+      uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+      with:
+        role-to-assume: arn:aws:iam::710015040892:role/docker-agent-action-20260409141318957000000001
+        aws-region: us-east-1
+        role-session-name: gha-${{ github.repository }}-${{ github.run_id }}
+
+    - name: Fetch GitHub App credentials
+      continue-on-error: true
+      shell: bash
+      run: |
+        set -euo pipefail
+        SECRET=$(aws secretsmanager get-secret-value \
+          --secret-id docker-agent-action/github-app \
+          --query SecretString --output text)
+        
+        # Mask the entire secret JSON first
+        echo "::add-mask::$SECRET"
+        
+        # Extract and mask each field immediately
+        APP_ID=$(echo "$SECRET" | jq -r .app_id)
+        echo "::add-mask::$APP_ID"
+        
+        ORG_TOKEN=$(echo "$SECRET" | jq -r .org_membership_token)
+        echo "::add-mask::$ORG_TOKEN"
+        
+        PRIVATE_KEY=$(echo "$SECRET" | jq -r .private_key)
+        echo "::add-mask::$PRIVATE_KEY"
+        
+        # Validate after masking
+        if [ -z "$APP_ID" ] || [ "$APP_ID" = "null" ]; then
+          echo "::error::Failed to extract app_id from secret docker-agent-action/github-app"
+          exit 1
+        fi
+        if [ -z "$PRIVATE_KEY" ] || [ "$PRIVATE_KEY" = "null" ]; then
+          echo "::error::Failed to extract private_key from secret docker-agent-action/github-app"
+          exit 1
+        fi
+        if [ -z "$ORG_TOKEN" ] || [ "$ORG_TOKEN" = "null" ]; then
+          echo "::error::Failed to extract org_membership_token from secret docker-agent-action/github-app"
+          exit 1
+        fi
+        
+        # Set environment variables
+        echo "GITHUB_APP_ID=$APP_ID" >> $GITHUB_ENV
+        echo "ORG_MEMBERSHIP_TOKEN=$ORG_TOKEN" >> $GITHUB_ENV
+        
+        # Handle multi-line private key (random delimiter guards against key containing a bare "EOF" line)
+        DELIM=$(openssl rand -hex 8)
+        {
+          echo "GITHUB_APP_PRIVATE_KEY<<${DELIM}"
+          echo "$PRIVATE_KEY"
+          echo "${DELIM}"
+        } >> "$GITHUB_ENV"
+
+    - name: Fetch AI API keys
+      continue-on-error: true
+      shell: bash
+      run: |
+        set -euo pipefail
+        SECRET=$(aws secretsmanager get-secret-value \
+          --secret-id docker-agent-action/ai-api-keys \
+          --query SecretString --output text)
+        
+        # Mask the entire secret JSON first
+        echo "::add-mask::$SECRET"
+        
+        # Validate JSON before attempting extraction
+        if ! echo "$SECRET" | jq -e . > /dev/null 2>&1; then
+          echo "::warning::docker-agent-action/ai-api-keys did not return valid JSON; AI API keys will be empty"
+          exit 0
+        fi
+        
+        # Extract and mask each field immediately
+        ANTHROPIC_KEY=$(echo "$SECRET" | jq -r '.anthropic_api_key // ""')
+        [ -n "$ANTHROPIC_KEY" ] && echo "::add-mask::$ANTHROPIC_KEY"
+        
+        OPENAI_KEY=$(echo "$SECRET" | jq -r '.openai_api_key // ""')
+        [ -n "$OPENAI_KEY" ] && echo "::add-mask::$OPENAI_KEY"
+        
+        # Set environment variables
+        echo "ANTHROPIC_API_KEY_FROM_SSM=$ANTHROPIC_KEY" >> $GITHUB_ENV
+        echo "OPENAI_API_KEY_FROM_SSM=$OPENAI_KEY" >> $GITHUB_ENV
+
+    - name: Generate GitHub App token
+      continue-on-error: true
+      id: app-token
+      uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+      with:
+        app-id: ${{ env.GITHUB_APP_ID }}
+        private-key: ${{ env.GITHUB_APP_PRIVATE_KEY }}
+
+    - name: Export GitHub App token
+      if: steps.app-token.outcome == 'success'
+      shell: bash
+      run: |
+        echo "::add-mask::${{ steps.app-token.outputs.token }}"
+        echo "GITHUB_APP_TOKEN=${{ steps.app-token.outputs.token }}" >> $GITHUB_ENV

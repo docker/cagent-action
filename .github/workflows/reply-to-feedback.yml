@@ -19,16 +19,27 @@ permissions:
   pull-requests: write
   issues: write
   actions: read # Required to download artifacts from the triggering run
+  id-token: write
 
 jobs:
   reply:
     # Only run if the triggering workflow succeeded (artifact was uploaded)
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: read
+      id-token: write
 
     steps:
+      - name: Checkout for composite actions
+        uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+      - name: Setup credentials
+        uses: ./.github/actions/setup-credentials
+
       # ----------------------------------------------------------------
       # Download artifact from the triggering workflow run
       # ----------------------------------------------------------------
@@ -157,7 +168,7 @@ jobs:
         env:
           USERNAME: ${{ steps.meta.outputs.author }}
         with:
-          github-token: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}
+          github-token: ${{ env.ORG_MEMBERSHIP_TOKEN }}
           script: |
             const org = 'docker';
             const username = process.env.USERNAME;
@@ -171,7 +182,7 @@ jobs:
                 core.setOutput('authorized', 'false');
                 console.log(`⏭️ ${username} is not a ${org} org member — not authorized`);
               } else if (error.status === 401) {
-                core.warning('CAGENT_ORG_MEMBERSHIP_TOKEN secret is missing or invalid');
+                core.warning('ORG_MEMBERSHIP_TOKEN is not set — org membership token unavailable (ensure id-token: write permission is configured)');
                 core.setOutput('authorized', 'false');
               } else {
                 core.warning(`Failed to check org membership: ${error.message}`);
@@ -300,15 +311,6 @@ jobs:
           fetch-depth: 0
           ref: refs/pull/${{ steps.meta.outputs.pr_number }}/head
 
-      - name: Generate GitHub App token
-        if: steps.meta.outputs.proceed == 'true' && steps.auth.outputs.authorized == 'true' && env.HAS_APP_SECRETS == 'true'
-        id: app-token
-        continue-on-error: true
-        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
-        with:
-          app-id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private-key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
-
       - name: Run reply
         if: steps.meta.outputs.proceed == 'true' && steps.auth.outputs.authorized == 'true' && steps.checkout.outcome == 'success' && steps.thread.outcome == 'success'
         id: run-reply
@@ -317,13 +319,13 @@ jobs:
         with:
           thread-context: ${{ steps.thread.outputs.prompt }}
           comment-id: ${{ steps.meta.outputs.comment_id }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY_FROM_SSM }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY || env.OPENAI_API_KEY_FROM_SSM }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
           aws-bearer-token-bedrock: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
           xai-api-key: ${{ secrets.XAI_API_KEY }}
           nebius-api-key: ${{ secrets.NEBIUS_API_KEY }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           skip-auth: "true" # Org membership already verified above
 

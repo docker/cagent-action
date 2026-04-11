@@ -30,11 +30,7 @@ jobs:
       pull-requests: write # Post review comments and approve/request changes
       issues: write        # Create security incident issues if secrets are detected in output
       checks: write        # (Optional) Show review progress as a check run on the PR
-    secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      CAGENT_ORG_MEMBERSHIP_TOKEN: ${{ secrets.CAGENT_ORG_MEMBERSHIP_TOKEN }}         # PAT with read:org scope; gates auto-reviews to org members only
-      CAGENT_REVIEWER_APP_ID: ${{ secrets.CAGENT_REVIEWER_APP_ID }}                   # GitHub App ID; reviews appear as your app instead of github-actions[bot]
-      CAGENT_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }} # GitHub App private key; paired with App ID above
+      id-token: write      # Required for OIDC authentication to AWS Secrets Manager
 ```
 
 > **Note:** Auto-review runs on same-repo branches only — fork PRs are automatically skipped (secrets aren't available). For fork PRs, an org member can comment `/review` to trigger a review.
@@ -45,7 +41,6 @@ jobs:
 
 ```yaml
 with:
-  auto-review-org: my-org # Only auto-review PRs from this org's members
   model: anthropic/claude-haiku-4-5 # Use a faster/cheaper model
 ```
 
@@ -96,27 +91,17 @@ docker agent run agentcatalog/review-pr --prompt-file CONTRIBUTING.md "Review my
 
 ## Required Secrets
 
-### Minimal Setup (Just API Key)
+### Secrets
+
+Provide at least one AI API key as a repository secret:
 
 | Secret              | Description                           |
 | ------------------- | ------------------------------------- |
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude models\* |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude models   |
+| `OPENAI_API_KEY`    | OpenAI API key                        |
+| `GOOGLE_API_KEY`    | Google API key (Gemini)               |
 
-\*Or another supported provider's API key (OpenAI, Google, etc.)
 
-With just an API key, you can use `/review` comments to trigger reviews manually.
-
-### Full Setup (Auto-Review + Custom Identity)
-
-| Secret                            | Description                   | Purpose                                              |
-| --------------------------------- | ----------------------------- | ---------------------------------------------------- |
-| `ANTHROPIC_API_KEY`               | API key for your LLM provider | Required                                             |
-| `CAGENT_ORG_MEMBERSHIP_TOKEN`     | PAT with `read:org` scope     | Auto-review PRs from org members                     |
-| `CAGENT_REVIEWER_APP_ID`          | GitHub App ID                 | Reviews appear as your app (not github-actions[bot]) |
-| `CAGENT_REVIEWER_APP_PRIVATE_KEY` | GitHub App private key        | Required with App ID                                 |
-
-**Note:** Without `CAGENT_ORG_MEMBERSHIP_TOKEN`, only `/review` comments work (no auto-review on PR open).
-Without GitHub App secrets, reviews appear as "github-actions[bot]" which is fine for most teams.
 
 ---
 
@@ -252,7 +237,6 @@ When using `docker/cagent-action/.github/workflows/review-pr.yml`:
 | `additional-prompt` | Additional review guidelines                        | -         |
 | `model`             | Model override (e.g., `anthropic/claude-haiku-4-5`) | -         |
 | `add-prompt-files`  | Comma-separated files to append to the prompt       | -         |
-| `auto-review-org`   | Organization for auto-review membership check       | `docker`  |
 
 ### `review-pr` (Composite Action)
 
