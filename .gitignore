@@ -1,8 +1,10 @@
 # Dependencies
 node_modules/
 
-# Build outputs
+# Build output (rebuilt automatically by the build workflow)
 dist/
+*.js.map
+licenses.txt
 
 # Testing
 .env
