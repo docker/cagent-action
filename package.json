@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit && actionlint -shellcheck="
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
