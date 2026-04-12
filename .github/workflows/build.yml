@@ -5,7 +5,7 @@ on:
     paths:
       - 'src/**'
       - 'package.json'
-      - 'package-lock.json'
+      - 'pnpm-lock.yaml'
       - 'tsconfig.json'
 
 jobs:
@@ -19,14 +19,18 @@ jobs:
         with:
           ref: ${{ github.head_ref || github.ref_name }}
 
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          run_install: false
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
-      - run: npm run build
+      - run: pnpm build
 
       - name: Commit dist
         run: |
