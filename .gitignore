@@ -1,8 +1,10 @@
 # Dependencies
 node_modules/
 
-# Build outputs
-dist/
+# Build artifacts (dist/ is intentionally committed for the action to work)
+# Note: dist/ itself is NOT gitignored — it must be committed for the action to work
+*.js.map
+licenses.txt
 
 # Testing
 .env
