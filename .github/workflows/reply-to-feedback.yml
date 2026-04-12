@@ -34,11 +34,17 @@ jobs:
       id-token: write
 
     steps:
+      - name: Get cagent-action ref
+        id: cagent-ref
+        run: echo "ref=${GITHUB_WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+
       - name: Checkout for composite actions
         uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
         with:
           repository: docker/cagent-action
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ steps.cagent-ref.outputs.ref }}
 
       - name: Setup credentials
         uses: ./.github/actions/setup-credentials
