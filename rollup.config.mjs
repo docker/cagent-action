@@ -8,7 +8,7 @@ import json from '@rollup/plugin-json'
 export default {
   input: 'src/index.ts',
   output: {
-    file: 'dist/index.js',
+    file: '.github/actions/setup-credentials/dist/index.js',
     format: 'esm',
     sourcemap: true,
     inlineDynamicImports: true,
@@ -19,6 +19,6 @@ export default {
     resolve({ preferBuiltins: true }),
     commonjs(),
     json(),
-    typescript(),
+    typescript({ tsconfig: './tsconfig.json', declaration: false, outDir: undefined }),
   ],
 }

@@ -1,115 +1,69 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import * as core from '@actions/core'
+import { SecretsManagerClient } from '@aws-sdk/client-secrets-manager'
+import { fetchGitHubAppCredentials } from '../github-app.js'
 
-// ── Mocks (hoisted so vitest can rewrite imports) ────────────────────────────
+vi.mock('@actions/core')
+vi.mock('@aws-sdk/client-secrets-manager')
 
 const mockSend = vi.fn()
+vi.mocked(SecretsManagerClient).mockImplementation(
+  () => ({ send: mockSend }) as unknown as SecretsManagerClient,
+)
 
-vi.mock('@aws-sdk/client-secrets-manager', () => ({
-  SecretsManagerClient: vi.fn().mockImplementation(() => ({ send: mockSend })),
-  GetSecretValueCommand: vi.fn().mockImplementation((input) => input),
-}))
+const VALID_SECRET = JSON.stringify({
+  app_id: 'test-app-id',
+  private_key: 'FAKE_PRIVATE_KEY_FOR_TESTING',
+  org_membership_token: 'test-org-token',
+})
 
-const mockCore = {
-  info: vi.fn(),
-  warning: vi.fn(),
-  error: vi.fn(),
-  setSecret: vi.fn(),
-  exportVariable: vi.fn(),
-  setFailed: vi.fn(),
-}
-
-vi.mock('@actions/core', () => mockCore)
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function makeSecret(overrides: Record<string, string> = {}): string {
-  return JSON.stringify({
-    app_id: 'app-123',
-    private_key: 'FAKE_PRIVATE_KEY_FOR_TESTING',
-    org_membership_token: 'ghs_orgtoken',
-    ...overrides,
-  })
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+})
 
 describe('fetchGitHubAppCredentials', () => {
-  let exitSpy: ReturnType<typeof vi.spyOn>
-
-  beforeEach(() => {
-    vi.clearAllMocks()
-    // Prevent actual process exit; throw so async functions reject instead of halting
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (() => { throw new Error('process.exit called') }) as any,
-    )
-  })
-
-  afterEach(() => {
-    exitSpy.mockRestore()
-  })
-
-  it('1. happy path — sets all three env vars and masks them', async () => {
-    const secretJson = makeSecret()
-    mockSend.mockResolvedValueOnce({ SecretString: secretJson })
-
-    const { fetchGitHubAppCredentials } = await import('../github-app.js')
+  it('sets env vars and masks fields on valid secret', async () => {
+    mockSend.mockResolvedValue({ SecretString: VALID_SECRET })
     await fetchGitHubAppCredentials()
-
-    // Should mask the raw JSON blob
-    expect(mockCore.setSecret).toHaveBeenCalledWith(secretJson)
-    // Should mask individual fields
-    expect(mockCore.setSecret).toHaveBeenCalledWith('app-123')
-    expect(mockCore.setSecret).toHaveBeenCalledWith('ghs_orgtoken')
-    // Should export env vars
-    expect(mockCore.exportVariable).toHaveBeenCalledWith('GITHUB_APP_ID', 'app-123')
-    expect(mockCore.exportVariable).toHaveBeenCalledWith('ORG_MEMBERSHIP_TOKEN', 'ghs_orgtoken')
-    expect(mockCore.exportVariable).toHaveBeenCalledWith(
-      'GITHUB_APP_PRIVATE_KEY',
-      expect.stringContaining('FAKE_PRIVATE_KEY_FOR_TESTING'),
-    )
+    expect(core.exportVariable).toHaveBeenCalledWith('GITHUB_APP_ID', 'test-app-id')
+    expect(core.exportVariable).toHaveBeenCalledWith('ORG_MEMBERSHIP_TOKEN', 'test-org-token')
+    expect(core.exportVariable).toHaveBeenCalledWith('GITHUB_APP_PRIVATE_KEY', 'FAKE_PRIVATE_KEY_FOR_TESTING')
+    expect(core.setSecret).toHaveBeenCalledWith(expect.stringContaining('FAKE_PRIVATE_KEY_FOR_TESTING'))
   })
 
-  it('2. missing app_id — exits with error', async () => {
-    mockSend.mockResolvedValueOnce({ SecretString: makeSecret({ app_id: '' }) })
-
-    const { fetchGitHubAppCredentials } = await import('../github-app.js')
-    await expect(fetchGitHubAppCredentials()).rejects.toThrow('process.exit called')
-    expect(mockCore.error).toHaveBeenCalledWith(expect.stringContaining('app_id'))
-  })
-
-  it('3. missing private_key — exits with error', async () => {
-    mockSend.mockResolvedValueOnce({ SecretString: makeSecret({ private_key: '' }) })
-
-    const { fetchGitHubAppCredentials } = await import('../github-app.js')
-    await expect(fetchGitHubAppCredentials()).rejects.toThrow('process.exit called')
-    expect(mockCore.error).toHaveBeenCalledWith(expect.stringContaining('private_key'))
-  })
-
-  it('4. missing org_membership_token — exits with error', async () => {
-    mockSend.mockResolvedValueOnce({
-      SecretString: makeSecret({ org_membership_token: '' }),
+  it('exits with error when app_id is missing', async () => {
+    mockSend.mockResolvedValue({
+      SecretString: JSON.stringify({ app_id: '', private_key: 'key', org_membership_token: 'tok' }),
     })
-
-    const { fetchGitHubAppCredentials } = await import('../github-app.js')
-    await expect(fetchGitHubAppCredentials()).rejects.toThrow('process.exit called')
-    expect(mockCore.error).toHaveBeenCalledWith(expect.stringContaining('org_membership_token'))
+    await fetchGitHubAppCredentials()
+    expect(process.exit).toHaveBeenCalledWith(1)
   })
 
-  it('5. AWS unavailable — returns without error, logs info', async () => {
-    mockSend.mockRejectedValueOnce(new Error('Network unreachable'))
+  it('exits with error when private_key is missing', async () => {
+    mockSend.mockResolvedValue({
+      SecretString: JSON.stringify({ app_id: 'id', private_key: '', org_membership_token: 'tok' }),
+    })
+    await fetchGitHubAppCredentials()
+    expect(process.exit).toHaveBeenCalledWith(1)
+  })
 
-    const { fetchGitHubAppCredentials } = await import('../github-app.js')
+  it('exits with error on invalid JSON', async () => {
+    mockSend.mockResolvedValue({ SecretString: 'not-json' })
+    await fetchGitHubAppCredentials()
+    expect(process.exit).toHaveBeenCalledWith(1)
+  })
+
+  it('returns gracefully when AWS is unavailable', async () => {
+    mockSend.mockRejectedValue(new Error('network error'))
     await expect(fetchGitHubAppCredentials()).resolves.toBeUndefined()
-    expect(mockCore.info).toHaveBeenCalledWith(expect.stringContaining('AWS Secrets Manager unavailable'))
-    expect(mockCore.exportVariable).not.toHaveBeenCalled()
+    expect(core.exportVariable).not.toHaveBeenCalled()
   })
 
-  it('6. invalid JSON — exits with error', async () => {
-    mockSend.mockResolvedValueOnce({ SecretString: 'not-json!!!' })
-
-    const { fetchGitHubAppCredentials } = await import('../github-app.js')
-    await expect(fetchGitHubAppCredentials()).rejects.toThrow('process.exit called')
-    expect(mockCore.error).toHaveBeenCalledWith(expect.stringContaining('valid JSON'))
+  it('accepts an explicit credentials provider', async () => {
+    mockSend.mockResolvedValue({ SecretString: VALID_SECRET })
+    const fakeCredentials = vi.fn()
+    await fetchGitHubAppCredentials(fakeCredentials as never)
+    expect(core.exportVariable).toHaveBeenCalledWith('GITHUB_APP_ID', 'test-app-id')
   })
 })

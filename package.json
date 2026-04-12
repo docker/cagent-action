@@ -12,7 +12,11 @@
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
-    "@aws-sdk/client-secrets-manager": "^3.787.0"
+    "@aws-sdk/client-secrets-manager": "^3.787.0",
+    "@aws-sdk/credential-provider-web-identity": "^3.972.29",
+    "@octokit/auth-app": "^8.2.0",
+    "@octokit/rest": "^22.0.1",
+    "@smithy/types": "^4.14.0"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^29.0.2",

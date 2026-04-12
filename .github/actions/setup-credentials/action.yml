@@ -1,30 +1,5 @@
 name: 'Setup Credentials'
-description: 'Fetch all credentials from AWS Secrets Manager, configure AWS OIDC, and generate GitHub App token'
+description: 'Fetch credentials from AWS Secrets Manager via OIDC and generate GitHub App token'
 runs:
-  using: composite
-  steps:
-    - name: Configure AWS credentials
-      continue-on-error: true
-      uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
-      with:
-        role-to-assume: arn:aws:iam::710015040892:role/docker-agent-action-20260409141318957000000001
-        aws-region: us-east-1
-        role-session-name: gha-${{ github.repository }}-${{ github.run_id }}
-
-    - name: Fetch secrets
-      uses: ./.github/actions/fetch-secrets
-
-    - name: Generate GitHub App token
-      continue-on-error: true
-      id: app-token
-      uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
-      with:
-        app-id: ${{ env.GITHUB_APP_ID }}
-        private-key: ${{ env.GITHUB_APP_PRIVATE_KEY }}
-
-    - name: Export GitHub App token
-      if: steps.app-token.outcome == 'success'
-      shell: bash
-      run: |
-        echo "::add-mask::${{ steps.app-token.outputs.token }}"
-        echo "GITHUB_APP_TOKEN=${{ steps.app-token.outputs.token }}" >> $GITHUB_ENV
+  using: node22
+  main: dist/index.js

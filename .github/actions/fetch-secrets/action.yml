@@ -1,5 +1,0 @@
-name: 'Fetch Secrets'
-description: 'Fetch GitHub App credentials and AI API keys from AWS Secrets Manager'
-runs:
-  using: node22
-  main: '../../../dist/index.js'

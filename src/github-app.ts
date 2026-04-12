@@ -3,8 +3,10 @@ import {
   SecretsManagerClient,
   GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager'
+import type { AwsCredentialIdentityProvider } from '@smithy/types'
 
 const SECRET_ID = 'docker-agent-action/github-app'
+const REGION = 'us-east-1'
 
 interface GitHubAppSecret {
   app_id: string
@@ -12,8 +14,10 @@ interface GitHubAppSecret {
   org_membership_token: string
 }
 
-export async function fetchGitHubAppCredentials(): Promise<void> {
-  const client = new SecretsManagerClient({ region: 'us-east-1' })
+export async function fetchGitHubAppCredentials(
+  credentials?: AwsCredentialIdentityProvider,
+): Promise<void> {
+  const client = new SecretsManagerClient({ region: REGION, credentials })
 
   let secretJson: string
   try {
@@ -22,14 +26,13 @@ export async function fetchGitHubAppCredentials(): Promise<void> {
     )
     secretJson = res.SecretString ?? ''
   } catch (err) {
-    // AWS not configured — non-docker repo, graceful no-op
     core.info(`AWS Secrets Manager unavailable, skipping ${SECRET_ID}: ${err}`)
     return
   }
 
   core.setSecret(secretJson)
 
-  let secret: GitHubAppSecret
+  let secret: GitHubAppSecret | undefined
   try {
     secret = JSON.parse(secretJson) as GitHubAppSecret
   } catch {
@@ -37,22 +40,26 @@ export async function fetchGitHubAppCredentials(): Promise<void> {
     process.exit(1)
   }
 
+  if (!secret) return
+
   const { app_id, private_key, org_membership_token } = secret
 
-  // Mask immediately after extraction
   core.setSecret(app_id)
   core.setSecret(private_key)
   core.setSecret(org_membership_token)
 
-  // Validate
-  for (const [field, value] of Object.entries({ app_id, private_key, org_membership_token })) {
+  for (const [field, value] of Object.entries({
+    app_id,
+    private_key,
+    org_membership_token,
+  })) {
     if (!value || value === 'null') {
       core.error(`Failed to extract ${field} from secret ${SECRET_ID}`)
       process.exit(1)
+      return
     }
   }
 
-  // Export — core.exportVariable handles multi-line values automatically
   core.exportVariable('GITHUB_APP_ID', app_id)
   core.exportVariable('ORG_MEMBERSHIP_TOKEN', org_membership_token)
   core.exportVariable('GITHUB_APP_PRIVATE_KEY', private_key)

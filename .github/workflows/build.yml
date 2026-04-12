@@ -36,7 +36,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f dist/
+          git add -f .github/actions/setup-credentials/dist/
           git diff --staged --quiet && echo "dist unchanged, nothing to commit" && exit 0
           git commit -m "chore: rebuild dist [skip ci]"
           git push

@@ -3,16 +3,20 @@ import {
   SecretsManagerClient,
   GetSecretValueCommand,
 } from '@aws-sdk/client-secrets-manager'
+import type { AwsCredentialIdentityProvider } from '@smithy/types'
 
 const SECRET_ID = 'docker-agent-action/ai-api-keys'
+const REGION = 'us-east-1'
 
 interface AIApiKeysSecret {
   anthropic_api_key?: string
   openai_api_key?: string
 }
 
-export async function fetchAIApiKeys(): Promise<void> {
-  const client = new SecretsManagerClient({ region: 'us-east-1' })
+export async function fetchAIApiKeys(
+  credentials?: AwsCredentialIdentityProvider,
+): Promise<void> {
+  const client = new SecretsManagerClient({ region: REGION, credentials })
 
   let secretJson: string
   try {
@@ -31,7 +35,9 @@ export async function fetchAIApiKeys(): Promise<void> {
   try {
     secret = JSON.parse(secretJson) as AIApiKeysSecret
   } catch {
-    core.warning(`${SECRET_ID} did not return valid JSON; AI API keys will be empty`)
+    core.warning(
+      `${SECRET_ID} did not return valid JSON; AI API keys will be empty`,
+    )
     return
   }
 
