@@ -41,6 +41,20 @@ jobs:
           repository: docker/cagent-action
           ref: ${{ github.workflow_sha }}
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Build action
+        run: pnpm install --frozen-lockfile && pnpm build
+
       - name: Setup credentials
         uses: ./.github/actions/setup-credentials
 
@@ -150,6 +164,7 @@ jobs:
           # Create a detached commit (not on main) with the pinned refs
           # Note: write-tree captures the full index (all files from HEAD),
           # but we explicitly add DOCKER_AGENT_VERSION for clarity.
+          git add -f .github/actions/setup-credentials/dist/
           git add "${PINNED_FILES[@]}" DOCKER_AGENT_VERSION
           TREE=$(git write-tree)
           RELEASE_SHA=$(git commit-tree "$TREE" -p HEAD -m "release: ${VERSION}")
@@ -191,7 +206,7 @@ jobs:
         uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
         with:
           repository: docker/cagent-action
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ needs.release.outputs.sha }}
 
       - name: Setup credentials
         uses: ./.github/actions/setup-credentials
@@ -347,7 +362,7 @@ jobs:
         uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
         with:
           repository: docker/cagent-action
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ needs.release.outputs.sha }}
 
       - name: Setup credentials
         uses: ./.github/actions/setup-credentials
@@ -514,7 +529,7 @@ jobs:
         uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
         with:
           repository: docker/cagent-action
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ needs.release.outputs.sha }}
 
       - name: Setup credentials
         uses: ./.github/actions/setup-credentials
