@@ -12,16 +12,28 @@ jobs:
     # Only run if comment contains /describe and is on a PR
     if: ${{ (github.event.issue.pull_request && contains(github.event.comment.body, '/describe')) }}
     runs-on: ubuntu-latest
-    env:
-      HAS_APP_SECRETS: ${{ secrets.CAGENT_REVIEWER_APP_ID != '' }}
     permissions:
       contents: read
       pull-requests: write
       issues: write
       checks: write
+      id-token: write
     steps:
-      - name: Check out Git repository
+      - name: Get cagent-action ref
+        id: cagent-ref
+        run: echo "ref=${GITHUB_WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+
+      - name: Checkout for composite actions
         uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+        with:
+          repository: docker/cagent-action
+          ref: ${{ steps.cagent-ref.outputs.ref }}
+
+      - name: Setup credentials
+        uses: ./.github/actions/setup-credentials
+
 
       - name: Create check run
         id: create-check
@@ -45,21 +57,11 @@ jobs:
             });
             core.setOutput('check-id', check.id);
 
-      # Generate GitHub App token so actions appear as the custom app (optional - falls back to github.token)
-      - name: Get GitHub App token
-        id: app-token
-        if: env.HAS_APP_SECRETS == 'true'
-        continue-on-error: true  # Don't fail workflow if token generation fails
-        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
-        with:
-          app-id: ${{ secrets.CAGENT_REVIEWER_APP_ID }}
-          private-key: ${{ secrets.CAGENT_REVIEWER_APP_PRIVATE_KEY }}
-
       - name: Validate PR and add reaction
         id: validate_pr
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           script: |
             const prNumber = context.issue.number;
             const commentId = context.payload.comment.id;
@@ -90,7 +92,7 @@ jobs:
         id: pr_details
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           script: |
             const fs = require('fs');
             const prNumber = ${{ steps.validate_pr.outputs.pr_number }};
@@ -180,15 +182,15 @@ jobs:
 
             **Diff:**
             $(cat pr.diff)
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY_FROM_SSM }}
+          github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           timeout: 300 # 5 minutes
 
       - name: Update PR description
         if: ${{ steps.generate.conclusion == 'success' }}
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           script: |
             const fs = require('fs');
             const prNumber = ${{ steps.validate_pr.outputs.pr_number }};
@@ -246,7 +248,7 @@ jobs:
         if: ${{ steps.generate.conclusion == 'success' }}
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           script: |
             const prNumber = ${{ steps.validate_pr.outputs.pr_number }};
 
@@ -261,7 +263,7 @@ jobs:
         if: ${{ failure() && steps.generate.conclusion != 'success' }}
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           script: |
             const prNumber = ${{ steps.validate_pr.outputs.pr_number }};
 
@@ -281,7 +283,7 @@ jobs:
           PR_BASE: ${{ steps.pr_details.outputs.base }}
           PR_CONCLUSION: ${{ steps.generate.conclusion }}
         with:
-          github-token: ${{ steps.app-token.outputs.token || github.token }}
+          github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           script: |
             const prNumber = context.issue.number;
             const title = process.env.PR_TITLE || 'Unknown';
