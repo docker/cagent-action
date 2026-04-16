@@ -415,7 +415,7 @@ jobs:
           # for very recently created repos, but this is fine for release automation.
           echo "Searching for consumer repos..."
           REPOS=$(gh api --method GET --paginate '/search/code?per_page=100' \
-            -f q='org:docker "docker/cagent-action/.github/workflows/review-pr.yml@" language:YAML path:/^\.github\/workflows\//' \
+            -f q='org:docker "docker/cagent-action/.github/workflows/review-pr.yml@" language:YAML path:.github/workflows' \
             --jq '[.items[] | {repo: .repository.full_name, path: .path}] | unique_by(.repo) | .[] | "\(.repo) \(.path)"')
 
           if [ -z "$REPOS" ]; then
