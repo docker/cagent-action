@@ -122,8 +122,7 @@ echo -e "${BLUE}${BOLD}🔍 Searching for consumer repos...${NC}"
 REPOS_RAW="$(
   gh api --method GET --paginate '/search/code?per_page=100' \
     -f q="${SEARCH_QUERY}" \
-    --jq '[.items[] | {repo: .repository.full_name, path: .path}] | unique_by(.repo) | .[] | "\(.repo) \(.path)"' \
-    2>/dev/null || true
+    --jq '[.items[] | {repo: .repository.full_name, path: .path}] | unique_by(.repo) | .[] | "\(.repo) \(.path)"'
 )"
 
 if [[ -z "${REPOS_RAW}" ]]; then
@@ -270,9 +269,9 @@ while IFS=' ' read -r REPO FILE_PATH; do
     #   @<sha> # v1.x.x   — normal pinned SHA + version comment
     #   @latest            — bare branch/tag reference
     #   @<sha> # latest    — pinned SHA with non-version comment
-    sed -i '' \
+    sed -i.bak \
       "s|docker/cagent-action/\.github/workflows/review-pr\.yml@.*|docker/cagent-action/.github/workflows/review-pr.yml@${SHA} # ${VERSION}|g" \
-      "${FILE_PATH}"
+      "${FILE_PATH}" && rm -f "${FILE_PATH}.bak"
 
     git add "${FILE_PATH}"
 
@@ -319,22 +318,29 @@ while IFS=' ' read -r REPO FILE_PATH; do
 
   if [[ -n "${EXISTING_PR}" && "${EXISTING_PR}" != "null" ]]; then
     echo "  🔄 Updating existing PR #${EXISTING_PR}..."
-    gh pr edit "${EXISTING_PR}" \
+    if gh pr edit "${EXISTING_PR}" \
       --repo "${REPO}" \
       --title "chore: update cagent-action to ${VERSION}" \
-      --body-file "${PR_BODY_FILE}" \
-      2>/dev/null || true
+      --body-file "${PR_BODY_FILE}"; then
+      echo -e "  ${GREEN}✅ Done${NC}"
+      COUNT_UPDATED=$((COUNT_UPDATED + 1))
+    else
+      echo -e "  ${RED}❌ Failed to update PR #${EXISTING_PR}${NC}"
+      COUNT_FAILED=$((COUNT_FAILED + 1))
+    fi
   else
-    gh pr create \
+    if PR_URL=$(gh pr create \
       --repo "${REPO}" \
       --head "${PR_HEAD}" \
       --title "chore: update cagent-action to ${VERSION}" \
-      --body-file "${PR_BODY_FILE}" \
-      2>/dev/null || true
+      --body-file "${PR_BODY_FILE}"); then
+      echo -e "  ${GREEN}✅ ${PR_URL}${NC}"
+      COUNT_UPDATED=$((COUNT_UPDATED + 1))
+    else
+      echo -e "  ${RED}❌ Failed to create PR${NC}"
+      COUNT_FAILED=$((COUNT_FAILED + 1))
+    fi
   fi
-
-  echo -e "  ${GREEN}✅ Done${NC}"
-  COUNT_UPDATED=$((COUNT_UPDATED + 1))
 
 done <<< "${REPOS}"
 
