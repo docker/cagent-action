@@ -97,11 +97,14 @@ agents:
            Do NOT chain candidates with `||` / `&&` / `2>/dev/null` — those are
            bash-only and break local Windows runs. Issue each candidate as a separate
            `shell` tool call and decide between them in your reasoning.
+           If a `git merge-base` call returns a non-zero exit code or empty output,
+           that ref does not exist in this clone — that is expected; continue to the
+           next candidate. Only the seventh candidate failing should be treated as an error.
 
            Once a candidate succeeds (exit 0, non-empty output), note its SHA as `BASE`,
            then run these two commands, each as its own `shell` call:
            ```
-           git diff <BASE> HEAD > ./pr-review.diff
+           git diff <BASE> HEAD --output=./pr-review.diff
            ```
            ```
            git diff --stat <BASE> HEAD
@@ -115,14 +118,13 @@ agents:
            explaining the diff would be empty (the user may be on the default branch),
            then stop calling tools.
            In both abort cases do NOT use `[ ... ]` tests or `exit 1`.
-      2. **Read project conventions**: Look for an `AGENTS.md` (or `CLAUDE.md`) file in the
-         repository root. Use `read_file` to read it if found. This file contains project-specific
-         context such as language versions, build tools, coding conventions, and other guidelines
-         that MUST inform the review. Pass its contents to both the drafter and verifier as
-         `project_context` in their delegation messages.
-         ```bash
-         ls AGENTS.md CLAUDE.md 2>/dev/null
-         ```
+      2. **Read project conventions**: Try to read `AGENTS.md` from the repo root with
+         `read_file`. If it does not exist, try `CLAUDE.md`. If neither exists, skip this
+         step and proceed without project context. Do not use `ls ... 2>/dev/null` — that
+         is bash-only. This file contains project-specific context such as language versions,
+         build tools, coding conventions, and other guidelines that MUST inform the review.
+         Pass its contents to both the drafter and verifier as `project_context` in their
+         delegation messages.
       3. Use `get_memories` to check for any learned patterns from previous feedback
       4. **Delegate to drafter(s)**:
          **GitHub posting mode** (GITHUB_ACTIONS=true):
@@ -134,7 +136,7 @@ agents:
          **Console output mode** (GITHUB_ACTIONS empty/unset):
          a. Do NOT run `ls /tmp/drafter_chunk_*.diff` — there are no pre-staged files
             and `/tmp/` is irrelevant in this mode.
-         b. The diff was already captured to `./pr-review.diff` in step 1 via `>`.
+         b. The diff was already captured via `git diff --output` to `./pr-review.diff` in step 1.
             Do NOT re-run `git diff` here — each shell invocation is a fresh shell, so
             `$BASE` is no longer set, and a second `git diff` would either fail or
             produce the wrong output. Just delegate using the existing file.
