@@ -136,8 +136,8 @@ jobs:
     if: |
       always() && (
         (github.event_name == 'issue_comment' && github.event.issue.pull_request) ||
-        (github.event_name == 'pull_request' && github.event.action != 'review_requested') ||
-        (github.event_name == 'pull_request' && github.event.action == 'review_requested' && github.event.requested_reviewer.login == 'docker-agent') ||
+        (github.event_name == 'pull_request' && github.event.action != 'review_requested' && github.event.sender.type != 'Bot') ||
+        (github.event_name == 'pull_request' && github.event.action == 'review_requested' && github.event.requested_reviewer.login == 'docker-agent' && github.event.sender.type != 'Bot') ||
         inputs.pr-number != '' ||
         (needs.resolve-context.result == 'success' && needs.resolve-context.outputs.trigger-event == 'pull_request')
       )
