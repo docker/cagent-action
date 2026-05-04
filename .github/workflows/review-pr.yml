@@ -400,6 +400,16 @@ jobs:
         if: inputs.trigger-run-id != ''
         uses: docker/cagent-action/.github/actions/setup-credentials@ec4865576952df6285652f2cf8ffb4ad45ff5f80 # v1.4.3
 
+      - name: Verify token for cross-run artifact download
+        if: inputs.trigger-run-id != ''
+        shell: bash
+        run: |
+          if [ -z "$GITHUB_APP_TOKEN" ]; then
+            echo "::error::GITHUB_APP_TOKEN is not set. setup-credentials may have failed (check OIDC and AWS Secrets Manager configuration)."
+            echo "::error::Cross-run artifact download requires a token with actions:read scope."
+            exit 1
+          fi
+
       - name: Download trigger context
         # Bypass secret-masking: instead of consuming comment-json from
         # resolve-context job outputs (which GitHub Actions silently drops when
@@ -425,13 +435,8 @@ jobs:
           if [ -f /tmp/context/comment.json ]; then
             # Trigger path: downloaded artifact (bypasses secret-masking on job outputs)
             cp /tmp/context/comment.json /tmp/reply_comment.json
-            echo "pr-number=$(cat /tmp/context/pr_number.txt)" >> $GITHUB_OUTPUT
+            echo "pr-number=$(cat /tmp/context/pr_number.txt || { echo '::error::pr_number.txt missing from artifact'; exit 1; })" >> $GITHUB_OUTPUT
             echo "pr-head-sha=$(cat /tmp/context/pr_head_sha.txt 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          elif [ -n "$COMMENT_JSON" ]; then
-            # Legacy fallback: comment data from resolve-context job output
-            printf '%s' "$COMMENT_JSON" > /tmp/reply_comment.json
-            echo "pr-number=$CTX_PR_NUMBER" >> $GITHUB_OUTPUT
-            echo "pr-head-sha=$CTX_PR_HEAD_SHA" >> $GITHUB_OUTPUT
           elif [ "$EVENT_NAME" = "pull_request_review_comment" ]; then
             # Direct path: comment data from event payload
             printf '%s' "$EVENT_COMMENT_JSON" > /tmp/reply_comment.json
