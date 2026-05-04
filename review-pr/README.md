@@ -14,7 +14,7 @@ If your repo only accepts PRs from branches within the same repo (no forks), you
 name: PR Review
 on:
   pull_request:
-    types: [ready_for_review, opened]
+    types: [ready_for_review, opened, review_requested]
   issue_comment:
     types: [created]
   pull_request_review_comment:
@@ -46,7 +46,7 @@ Fork PRs are subject to GitHub's security restrictions: `pull_request` and `pull
 name: PR Review - Trigger
 on:
   pull_request:
-    types: [ready_for_review, opened]
+    types: [ready_for_review, opened, review_requested]
   pull_request_review_comment:
     types: [created]
 
@@ -136,13 +136,15 @@ with:
 | Trigger                 | Behavior                                                           |
 | ----------------------- | ------------------------------------------------------------------ |
 | PR opened/ready         | Auto-reviews the PR                                                |
+| Reviewer requested      | Auto-reviews when `svc-docker-agent` is added as reviewer          |
 | `/review` comment       | Manual review (shows as a check run if `checks: write` is granted) |
 | Reply to review comment | Responds in-thread and captures feedback to improve future reviews |
+| `@svc-docker-agent` mention | Answers questions and clarifies review findings in PR comments  |
 
 > **Built-in defense-in-depth:**
 >
 > 1. **Verifies org membership** before every review (auto-review checks the PR author; `/review` checks the commenter)
-> 2. **Prevents bot cascades** — replies from bots (except `docker-agent[bot]`) are ignored
+> 2. **Prevents bot cascades** — replies from bots (except `svc-docker-agent`) are ignored
 > 3. **Fork PRs work automatically** with the two-workflow setup — the trigger → `workflow_run` pattern provides OIDC/secret access regardless of fork status
 
 ---
