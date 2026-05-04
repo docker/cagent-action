@@ -137,7 +137,7 @@ jobs:
       always() && (
         (github.event_name == 'issue_comment' && github.event.issue.pull_request) ||
         (github.event_name == 'pull_request' && github.event.action != 'review_requested') ||
-        (github.event_name == 'pull_request' && github.event.action == 'review_requested' && github.event.requested_reviewer.login == 'svc-docker-agent') ||
+        (github.event_name == 'pull_request' && github.event.action == 'review_requested' && github.event.requested_reviewer.login == 'docker-agent') ||
         inputs.pr-number != '' ||
         (needs.resolve-context.result == 'success' && needs.resolve-context.outputs.trigger-event == 'pull_request')
       )
@@ -200,7 +200,7 @@ jobs:
             exit 0
           fi
 
-          if [ "$COMMENT_TYPE" = "Bot" ] && [ "$COMMENT_AUTHOR" != "svc-docker-agent" ]; then
+          if [ "$COMMENT_TYPE" = "Bot" ] && [ "$COMMENT_AUTHOR" != "docker-agent" ]; then
             echo "is_review=false" >> $GITHUB_OUTPUT
             echo "⏭️ Bot user ($COMMENT_AUTHOR) is not trusted, skipping"
             exit 0
@@ -740,9 +740,9 @@ jobs:
       always() && needs.resolve-context.result != 'failure' && (
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request &&
-        contains(github.event.comment.body, '@svc-docker-agent') &&
+        contains(github.event.comment.body, '@docker-agent') &&
         !startsWith(github.event.comment.body, '/review') &&
-        github.event.comment.user.login != 'svc-docker-agent' &&
+        github.event.comment.user.login != 'docker-agent' &&
         github.event.comment.user.type != 'Bot'
       )
     runs-on: ubuntu-latest

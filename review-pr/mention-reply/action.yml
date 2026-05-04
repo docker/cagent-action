@@ -1,5 +1,5 @@
 name: "PR Review — Mention Reply"
-description: "Replies to @svc-docker-agent mentions in PR issue comments"
+description: "Replies to @docker-agent mentions in PR issue comments"
 author: "Docker"
 
 inputs:
