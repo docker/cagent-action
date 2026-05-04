@@ -25,10 +25,14 @@ function isFalsePositive(line: string): boolean {
   ) {
     return true;
   }
-  // Skip purely quoted lines — regex pattern definitions in code.
-  // Matches lines that start with +, whitespace, or - and are entirely
-  // a quoted string: e.g. '+"echo.*\\$.*KEY"' or "  'ignore.*previous'"
-  if (/^[+\s-]\s*['"].*['"]\s*$/.test(line)) {
+  // Skip purely quoted lines — but ONLY if the quoted content contains regex
+  // metacharacters, indicating it is a pattern definition in code rather than
+  // a real injection payload. A line like +"echo $ANTHROPIC_API_KEY" is NOT
+  // a false positive: it has no bracket/brace/quantifier metacharacters. A
+  // line like +'ghs_[a-zA-Z0-9]{36}' IS a false positive (contains [ ] { }).
+  // Note: $ is intentionally excluded — shell variable references ($KEY)
+  // must not suppress detection of exfiltration commands.
+  if (/^[+\s-]\s*['"].*[[\]{}()*+?^\\].*['"]\s*$/.test(line)) {
     return true;
   }
   return false;
@@ -102,9 +106,6 @@ export function sanitizeInput(inputPath: string, outputPath: string): SanitizeIn
     }
   }
 
-  // Write sanitized output
-  writeFileSync(outputPath, outputLines.join('\n'), 'utf-8');
-
   // ── Determine outcome ───────────────────────────────────────────────────
   if (foundCritical) {
     core.error(
@@ -117,6 +118,10 @@ export function sanitizeInput(inputPath: string, outputPath: string): SanitizeIn
     );
     return { blocked: true, stripped: false, riskLevel: 'high' };
   }
+
+  // Write sanitized output — only reached when not blocked.
+  // Tainted content must never be flushed to disk before exit.
+  writeFileSync(outputPath, outputLines.join('\n'), 'utf-8');
 
   if (foundSuspicious) {
     core.info('⚠️  Input sanitization completed - suspicious content stripped from prompt');

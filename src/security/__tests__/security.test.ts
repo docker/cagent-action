@@ -6,7 +6,7 @@
  * bash test name verbatim so results are easy to correlate.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -265,6 +265,34 @@ describe('test-security.sh: sanitize-input', () => {
     // Clean lines preserved
     expect(outputContent).toMatch(/review this pull request/i);
     expect(outputContent).toMatch(/memory leaks/i);
+  });
+
+  it('Fix A: output file not written to disk when CRITICAL pattern blocks', async () => {
+    // Regression test for the bug where writeFileSync ran before the blocked
+    // check, flushing tainted content to the output path even on block.
+    const input = await writeInput('critical-no-write.txt', 'echo $ANTHROPIC_API_KEY\n');
+    const out = outputPath('critical-no-write-out.txt');
+
+    const result = sanitizeInput(input, out);
+
+    expect(result.blocked).toBe(true);
+    // The output file must NOT exist — tainted content must not land on disk.
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it('Fix B: quoted CRITICAL-pattern line still detected (no metacharacters inside quotes)', async () => {
+    // Before Fix B, isFalsePositive() matched the broad quoted-line regex for
+    // +"echo $ANTHROPIC_API_KEY" (starts with +, content wrapped in "),
+    // silently passing the exfiltration command through undetected.
+    // After Fix B the quoted-line suppression requires regex metacharacters
+    // inside the quotes; a plain shell command has none, so it IS detected.
+    const input = await writeInput('quoted-critical.diff', '+"echo $ANTHROPIC_API_KEY"\n');
+    const out = outputPath('quoted-critical-out.diff');
+
+    const result = sanitizeInput(input, out);
+
+    expect(result.blocked).toBe(true);
+    expect(result.riskLevel).toBe('high');
   });
 });
 
