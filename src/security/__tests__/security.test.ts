@@ -77,7 +77,7 @@ describe('test-security.sh: sanitize-input', () => {
     expect(readOutput(output)).not.toMatch(/show.*me.*the.*api/i);
   });
 
-  it('Test 8 (duplicate): Clean prompt (should pass)', async () => {
+  it('Test 8: Clean prompt (should pass)', async () => {
     const input = await writeInput('clean-prompt.txt', 'Please review this code for bugs\n');
     const output = outputPath('clean-prompt-out.txt');
 
@@ -329,6 +329,33 @@ describe('test-security.sh: sanitize-output', () => {
       'real-token.txt',
       'Token: ghs_abcdefghijklmnopqrstuvwxyz1234567890\n',
     );
+
+    const result = sanitizeOutput(file);
+
+    expect(result.leaked).toBe(true);
+  });
+
+  it('Heuristic 2: single-quoted token is suppressed (not flagged as leak)', async () => {
+    // Token contains no metacharacters so Heuristic 1 does NOT fire.
+    // The sole occurrence is individually wrapped in single quotes, so
+    // Heuristic 2 should suppress it — no leak reported.
+    const token = `ghp_${'A'.repeat(36)}`; // ghp_ + exactly 36 alphanumeric chars
+    const file = await writeInput(
+      'quoted-only-token.txt',
+      `// The token pattern matches '${token}' exactly.\n`,
+    );
+
+    const result = sanitizeOutput(file);
+
+    expect(result.leaked).toBe(false);
+  });
+
+  it('Heuristic 2: bare token flagged even when quoted copy also present (bypass prevention)', async () => {
+    // File contains BOTH a raw (bare) token AND a single-quoted copy.
+    // Heuristic 2 must only suppress the individually-quoted occurrence;
+    // the bare one must still be flagged — so leaked should be true.
+    const token = `ghp_${'A'.repeat(36)}`; // ghp_ + exactly 36 alphanumeric chars
+    const file = await writeInput('bare-and-quoted-token.txt', `${token}\n'${token}'\n`);
 
     const result = sanitizeOutput(file);
 

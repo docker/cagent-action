@@ -46,10 +46,15 @@ export function sanitizeOutput(filePath: string): SanitizeOutputResult {
         continue;
       }
 
-      // Heuristic 2: Skip if the match appears wrapped in single quotes.
-      // Quoted patterns in code or documentation are not real secrets.
-      if (content.includes(`'${matchedText}'`)) {
-        core.debug(`Skipping false positive (quoted pattern): ${matchedText}`);
+      // Heuristic 2: Skip only if THIS specific occurrence is wrapped in single quotes.
+      // Checking the characters immediately before and after match.index ensures that
+      // a file containing BOTH a bare token and a single-quoted copy is still flagged
+      // (the bare occurrence is not individually quoted and therefore must be reported).
+      const idx = match.index ?? 0;
+      const isQuoted =
+        idx > 0 && content[idx - 1] === "'" && content[idx + matchedText.length] === "'";
+      if (isQuoted) {
+        core.debug(`Skipping false positive (quoted occurrence): ${matchedText}`);
         continue;
       }
 
