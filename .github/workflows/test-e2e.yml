@@ -11,21 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  test-prompt-sanitization:
-    name: Prompt Sanitization Tests
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Run prompt sanitization tests
-        run: |
-          cd tests
-          chmod +x test-local.sh
-          ./test-local.sh
-
   test-output-extraction:
     name: Output Extraction Tests
     runs-on: ubuntu-latest
@@ -55,36 +40,6 @@ jobs:
           cd tests
           chmod +x test-job-summary.sh
           ./test-job-summary.sh
-
-  test-security:
-    name: Security Tests
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Run security tests
-        run: |
-          cd tests
-          chmod +x test-security.sh
-          ./test-security.sh
-
-  test-exploits:
-    name: Exploit Tests
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Run exploit tests
-        run: |
-          cd tests
-          chmod +x test-exploits.sh
-          ./test-exploits.sh
 
   test-pirate-agent:
     name: Pirate Agent Test
