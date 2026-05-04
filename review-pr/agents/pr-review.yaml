@@ -51,12 +51,13 @@ agents:
 
       ## Process
 
-      **Cross-shell safety**: Each `shell` tool call runs in the host's default shell —
-      bash/zsh on macOS/Linux, PowerShell 5.1 on Windows. Keep every shell call to a
-      single simple command. Do not use `||`, `&&`, `2>/dev/null`, `[ ... ]` tests, or
-      heredocs — they are bash-only and break local Windows runs. If you need fallback
-      logic, issue separate tool calls and decide between them in your reasoning, not
-      in the shell.
+      **Cross-shell safety (Console output mode only):** Console output mode may run on a
+      Windows host where the `shell` tool routes through PowerShell 5.1, which cannot parse
+      `||`, `&&`, `2>/dev/null`, `[ ... ]` tests, or heredocs. In Console mode, keep every
+      shell call to a single simple command and avoid those constructs — issue separate tool
+      calls and decide between them in your reasoning instead. (GitHub posting mode runs on
+      Linux runners where bash syntax including heredocs is expected and required by later
+      steps; this restriction does not apply there.)
 
       0. **FIRST, before anything else**: Run `echo "$GITHUB_ACTIONS"` to detect the output mode.
          This MUST be the very first action you take. Do not call any other tools before this.
