@@ -340,10 +340,9 @@ describe('createSignedCommit', () => {
   it('re-throws 422 errors that are not Reference does not exist or Reference already exists', async () => {
     // Any other 422 (e.g. invalid ref name) should propagate unchanged, not trigger
     // a silent delete+recreate.
-    const unexpectedError = Object.assign(
-      new Error('Invalid ref name: refs/heads/bad..name'),
-      { status: 422 },
-    );
+    const unexpectedError = Object.assign(new Error('Invalid ref name: refs/heads/bad..name'), {
+      status: 422,
+    });
     mockUpdateRef.mockRejectedValueOnce(unexpectedError);
 
     await expect(
@@ -408,7 +407,9 @@ describe('createSignedCommit', () => {
         force: true,
         additions: [{ path: 'dist/credentials.js', contents: 'dGVzdA==' }],
       }),
-    ).rejects.toThrow(/Failed to delete stale branch.*deleteRef status 403.*Must have admin rights.*Original force-update error.*Reference already exists/);
+    ).rejects.toThrow(
+      /Failed to delete stale branch.*deleteRef status 403.*Must have admin rights.*Original force-update error.*Reference already exists/,
+    );
 
     expect(mockCreateRef).not.toHaveBeenCalled();
   });
