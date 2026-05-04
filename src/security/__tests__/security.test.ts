@@ -294,6 +294,31 @@ describe('test-security.sh: sanitize-input', () => {
     expect(result.blocked).toBe(true);
     expect(result.riskLevel).toBe('high');
   });
+
+  it('Fix B bypass: decorated payload with [] still blocked', async () => {
+    // Attacker appends [] to trigger the quoted-line metachar filter.
+    // isFalsePositive must NOT be applied to CRITICAL patterns.
+    const input = await writeInput('bypass-brackets.diff', '+"echo $ANTHROPIC_API_KEY[]"\n');
+    const out = outputPath('bypass-brackets-out.diff');
+    const result = sanitizeInput(input, out);
+    expect(result.blocked).toBe(true);
+  });
+
+  it('Fix B bypass: decorated payload with () still blocked', async () => {
+    // Attacker uses () to trigger the metachar filter (parens are common in code).
+    const input = await writeInput('bypass-parens.diff', '+"console.log(process.env)"\n');
+    const out = outputPath('bypass-parens-out.diff');
+    const result = sanitizeInput(input, out);
+    expect(result.blocked).toBe(true);
+  });
+
+  it('Fix B bypass: decorated payload with {} still blocked', async () => {
+    // Attacker uses {} to trigger the metachar filter.
+    const input = await writeInput('bypass-braces.diff', '+"cat .env{}"\n');
+    const out = outputPath('bypass-braces-out.diff');
+    const result = sanitizeInput(input, out);
+    expect(result.blocked).toBe(true);
+  });
 });
 
 describe('test-security.sh: sanitize-output', () => {

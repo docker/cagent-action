@@ -70,10 +70,15 @@ export function sanitizeInput(inputPath: string, outputPath: string): SanitizeIn
   let foundMedium = false;
 
   // ── Step 2: Check CRITICAL patterns (block execution) ──────────────────
+  // NOTE: isFalsePositive() is intentionally NOT applied here. CRITICAL patterns
+  // represent direct secret exfiltration commands that are never legitimate in a
+  // real prompt. Applying the false-positive filter creates exploitable bypass
+  // vectors: an attacker can decorate a payload with metacharacters (e.g.
+  // +"echo $ANTHROPIC_API_KEY[]") to trigger the quoted-line suppression and
+  // evade detection. Any line matching a CRITICAL pattern is unconditionally blocked.
   for (const pattern of CRITICAL_PATTERNS) {
-    const matchingLines = inputLines.filter((line) => pattern.test(line));
-    const realMatches = matchingLines.filter((line) => !isFalsePositive(line));
-    if (realMatches.length > 0) {
+    const matches = inputLines.filter((line) => pattern.test(line));
+    if (matches.length > 0) {
       core.error(`🚨 CRITICAL pattern detected: ${pattern.source}`);
       core.error('This is a direct secret exfiltration command');
       foundCritical = true;
