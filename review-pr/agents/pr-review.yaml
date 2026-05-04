@@ -101,8 +101,13 @@ agents:
            that ref does not exist in this clone — that is expected; continue to the
            next candidate. Only the seventh candidate failing should be treated as an error.
 
-           Once a candidate succeeds (exit 0, non-empty output), note its SHA as `BASE`,
-           then run these two commands, each as its own `shell` call:
+           Once a candidate succeeds (exit 0, non-empty output), note its SHA as `BASE`.
+           Then run `git rev-parse HEAD` as a separate `shell` call to surface HEAD's SHA.
+           Compare it to BASE in your reasoning (not in shell). If they are equal, the diff
+           would be empty — issue a plain `echo` explaining this (e.g., "you're on the
+           default branch; check out a feature branch first") and stop calling tools.
+           Otherwise, proceed to the diff capture by running these two commands, each as
+           its own `shell` call:
            ```
            git diff <BASE> HEAD --output=./pr-review.diff
            ```
