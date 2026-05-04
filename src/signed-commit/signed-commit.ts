@@ -15,7 +15,13 @@ export interface SignedCommitOptions {
   message: string; // commit headline
   body?: string; // commit body
   baseRef?: string; // create/reset branch from this ref
-  force?: boolean; // force-update branch if it exists
+  /**
+   * When `true` (requires `baseRef`), the target branch is **hard-reset** to the
+   * tip of `baseRef` before the commit is created, discarding any pre-existing
+   * history on that branch.  This is intentional for scratch branches such as
+   * `release-staging/*`, but is a footgun for long-lived branches — use with care.
+   */
+  force?: boolean;
   additions: FileAddition[];
   deletions?: FileDeletion[];
 }
@@ -130,6 +136,7 @@ export async function createSignedCommit(
                 `Failed to delete stale branch "${branch}" before recreating it ` +
                   `(deleteRef status ${deleteStatus}: ${deleteMessage}). ` +
                   `Original force-update error: ${errMessage}`,
+                { cause: deleteErr },
               );
             }
           }
