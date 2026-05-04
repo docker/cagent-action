@@ -98,18 +98,40 @@ export async function createSignedCommit(
             ref: `refs/heads/${branch}`,
             sha: headSha,
           });
-        } else if (status === 422) {
-          // Branch exists but force-update failed (e.g. a stale branch left over from a
-          // previous run that committed files GitHub can no longer reconcile against the
-          // new base).  Destroy it and start fresh.
+        } else if (status === 422 && errMessage.includes('Reference already exists')) {
+          // The branch exists but the force-update was rejected.  Delete it and start
+          // fresh so the subsequent createRef can create it clean at headSha.
+          //
+          // We only enter this path when GitHub explicitly says the reference
+          // already exists — other 422s (invalid ref name, permissions, etc.) are
+          // re-thrown unchanged below.
           try {
             await octokit.rest.git.deleteRef({
               owner,
               repo: repoName,
               ref: `heads/${branch}`,
             });
-          } catch {
-            // Ignore — the branch may have been concurrently deleted.
+          } catch (deleteErr: unknown) {
+            // 404 means the branch was concurrently deleted (race condition) — that's
+            // fine; proceed to createRef.  Any other error means we cannot safely
+            // recreate the branch, so wrap it with context and re-throw.
+            const deleteStatus =
+              deleteErr !== null && typeof deleteErr === 'object' && 'status' in deleteErr
+                ? (deleteErr as { status: number }).status
+                : undefined;
+            if (deleteStatus !== 404) {
+              const deleteMessage =
+                deleteErr !== null &&
+                typeof deleteErr === 'object' &&
+                typeof (deleteErr as Record<string, unknown>).message === 'string'
+                  ? (deleteErr as { message: string }).message
+                  : String(deleteErr);
+              throw new Error(
+                `Failed to delete stale branch "${branch}" before recreating it ` +
+                  `(deleteRef status ${deleteStatus}: ${deleteMessage}). ` +
+                  `Original force-update error: ${errMessage}`,
+              );
+            }
           }
           await octokit.rest.git.createRef({
             owner,

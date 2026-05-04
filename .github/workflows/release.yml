@@ -105,6 +105,7 @@ jobs:
       # HEAD SHA so the tagged commit is fully self-contained.
       - name: Create release commit with pinned refs
         id: release-commit
+        working-directory: ${{ github.workspace }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ env.GITHUB_APP_TOKEN }}
