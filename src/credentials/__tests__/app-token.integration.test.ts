@@ -11,9 +11,8 @@ interface Credentials {
 }
 
 const OP_REFS = {
-  appId: 'op://dev/Docker Agent GitHub Action/App ID',
-  privateKey:
-    'op://dev/cagent-reviewer.2026-02-03.private-key/cagent-reviewer.2026-02-03.private-key.pem',
+  appId: 'op://Team AI Agent/Docker Agent GitHub Action/App ID',
+  privateKey: 'op://Team AI Agent/Docker Agent GitHub Action/private-key.pem',
 };
 
 function getCredentials(): Credentials | undefined {

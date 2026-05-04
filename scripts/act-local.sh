@@ -48,8 +48,8 @@ fi
 # ---------------------------------------------------------------------------
 echo "🔑 Fetching credentials from 1Password..."
 
-GITHUB_APP_ID="$(op read 'op://dev/Docker Agent GitHub Action/App ID')"
-GITHUB_APP_PRIVATE_KEY="$(op read 'op://dev/cagent-reviewer.2026-02-03.private-key/cagent-reviewer.2026-02-03.private-key.pem')"
+GITHUB_APP_ID="$(op read 'op://Team AI Agent/Docker Agent GitHub Action/App ID')"
+GITHUB_APP_PRIVATE_KEY="$(op read 'op://Team AI Agent/Docker Agent GitHub Action/private-key.pem')"
 
 export GITHUB_APP_ID
 export GITHUB_APP_PRIVATE_KEY
