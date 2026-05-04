@@ -392,25 +392,43 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      actions: read   # download cross-run artifacts
 
     steps:
+
+      - name: Setup credentials
+        if: inputs.trigger-run-id != ''
+        uses: docker/cagent-action/.github/actions/setup-credentials@ec4865576952df6285652f2cf8ffb4ad45ff5f80 # v1.4.3
+
+      - name: Download trigger context
+        # Bypass secret-masking: instead of consuming comment-json from
+        # resolve-context job outputs (which GitHub Actions silently drops when
+        # the value looks like a secret), download the artifact directly.
+        if: inputs.trigger-run-id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pr-review-context
+          path: /tmp/context
+          run-id: ${{ inputs.trigger-run-id }}
+          github-token: ${{ env.GITHUB_APP_TOKEN }}
 
       - name: Parse comment context
         id: feedback
         shell: bash
         env:
-          # Trigger path (workflow_run → resolve-context)
-          COMMENT_JSON: ${{ needs.resolve-context.outputs.comment-json }}
-          CTX_PR_NUMBER: ${{ needs.resolve-context.outputs.pr-number }}
-          CTX_PR_HEAD_SHA: ${{ needs.resolve-context.outputs.pr-head-sha }}
           # Direct path (same-repo pull_request_review_comment)
           EVENT_COMMENT_JSON: ${{ toJSON(github.event.comment) }}
           EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
           EVENT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ -n "$COMMENT_JSON" ]; then
-            # Trigger path: comment data from resolve-context artifact
+          if [ -f /tmp/context/comment.json ]; then
+            # Trigger path: downloaded artifact (bypasses secret-masking on job outputs)
+            cp /tmp/context/comment.json /tmp/reply_comment.json
+            echo "pr-number=$(cat /tmp/context/pr_number.txt)" >> $GITHUB_OUTPUT
+            echo "pr-head-sha=$(cat /tmp/context/pr_head_sha.txt 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          elif [ -n "$COMMENT_JSON" ]; then
+            # Legacy fallback: comment data from resolve-context job output
             printf '%s' "$COMMENT_JSON" > /tmp/reply_comment.json
             echo "pr-number=$CTX_PR_NUMBER" >> $GITHUB_OUTPUT
             echo "pr-head-sha=$CTX_PR_HEAD_SHA" >> $GITHUB_OUTPUT
