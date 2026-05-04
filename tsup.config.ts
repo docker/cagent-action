@@ -34,4 +34,13 @@ export default defineConfig({
   // runtime, so every npm dependency (AWS SDK, @actions/core, @octokit/…) must
   // be bundled in. Node.js built-ins stay external automatically (platform:'node').
   noExternal: [/.*/],
+  // CJS packages bundled into ESM (e.g. tunnel@0.0.6 via @actions/http-client)
+  // call require('net') / require('tls') at runtime. esbuild's __require shim
+  // checks `typeof require !== "undefined"` — which is false in pure ESM — and
+  // throws "Dynamic require of 'net' is not supported". Injecting createRequire
+  // as a top-level banner supplies a real require() before the shim runs,
+  // so those CJS modules can load Node.js built-ins normally.
+  banner: {
+    js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+  },
 });
