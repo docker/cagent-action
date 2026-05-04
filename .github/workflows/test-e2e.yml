@@ -63,6 +63,10 @@ jobs:
         if: steps.fork-check.outputs.is_fork != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Build action
+        if: steps.fork-check.outputs.is_fork != 'true'
+        run: pnpm install --frozen-lockfile && pnpm build
+
       - name: Run test
         if: steps.fork-check.outputs.is_fork != 'true'
         id: pirate
@@ -127,6 +131,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Build action
+        run: pnpm install --frozen-lockfile && pnpm build
 
       - name: Test should fail on invalid agent
         id: invalid-agent
