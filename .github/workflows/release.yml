@@ -105,6 +105,7 @@ jobs:
       # HEAD SHA so the tagged commit is fully self-contained.
       - name: Create release commit with pinned refs
         id: release-commit
+        working-directory: ${{ github.workspace }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ env.GITHUB_APP_TOKEN }}
@@ -130,7 +131,11 @@ jobs:
           # Create temp branch and first commit (staging dist/)
           STAGING_BRANCH="release-staging/${VERSION}"
           trap 'gh api -X DELETE "repos/docker/cagent-action/git/refs/heads/${STAGING_BRANCH}" >/dev/null 2>&1 || true' EXIT
-          TEMP_SHA=$(find "$GITHUB_WORKSPACE/dist/" -type f 2>/dev/null | \
+          # NOTE: use `find dist/ -type f` (relative path) NOT `find "$GITHUB_WORKSPACE/dist/" -type f`.
+          # signed-commit uses the paths verbatim as git file paths in the GitHub API, which
+          # requires repo-root-relative paths.  Absolute paths cause a cryptic
+          # "A path was requested for deletion which does not exist" GraphQL error.
+          TEMP_SHA=$(find dist/ -type f 2>/dev/null | \
             GITHUB_TOKEN="${GH_TOKEN}" node "$GITHUB_WORKSPACE/dist/signed-commit.js" \
               --repo docker/cagent-action \
               --branch "$STAGING_BRANCH" \
@@ -436,7 +441,7 @@ jobs:
         id: slack-summary
         # Pinned to a SHA — automatically updated by the update-self-refs job after each release.
         # GitHub Actions requires static `uses:` values, so we can't pin dynamically.
-        uses: docker/cagent-action@ec4865576952df6285652f2cf8ffb4ad45ff5f80 # v1.4.3
+        uses: docker/cagent-action@2369328cd25777eb0a4ff959a399b6d1a5204fc7 # v1.4.4
         with:
           agent: agentcatalog/github-action-release-notes
           prompt: |

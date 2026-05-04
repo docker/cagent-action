@@ -5,6 +5,7 @@ import { createSignedCommit } from '../signed-commit.js';
 const mockGetRef = vi.fn();
 const mockCreateRef = vi.fn();
 const mockUpdateRef = vi.fn();
+const mockDeleteRef = vi.fn();
 const mockGraphql = vi.fn();
 
 const mockOctokit = {
@@ -14,6 +15,7 @@ const mockOctokit = {
       getRef: mockGetRef,
       createRef: mockCreateRef,
       updateRef: mockUpdateRef,
+      deleteRef: mockDeleteRef,
     },
   },
 } as unknown as Octokit;
@@ -26,6 +28,7 @@ beforeEach(() => {
   mockGetRef.mockResolvedValue({ data: { object: { sha: HEAD_SHA } } });
   mockCreateRef.mockResolvedValue({});
   mockUpdateRef.mockResolvedValue({});
+  mockDeleteRef.mockResolvedValue({});
   mockGraphql.mockResolvedValue({
     createCommitOnBranch: {
       commit: { oid: COMMIT_OID, url: `https://github.com/owner/repo/commit/${COMMIT_OID}` },
@@ -296,6 +299,119 @@ describe('createSignedCommit', () => {
         additions: [{ path: 'file.txt', contents: 'dGVzdA==' }],
       }),
     ).rejects.toThrow('GraphQL mutation returned null OID');
+  });
+
+  it('deletes stale branch and recreates when updateRef returns 422 Reference already exists', async () => {
+    // This covers the narrow case: GitHub says the reference already exists and
+    // cannot be force-updated. We delete it and recreate at the new base SHA.
+    const staleError = Object.assign(new Error('Reference already exists'), { status: 422 });
+    mockUpdateRef.mockRejectedValueOnce(staleError);
+
+    await createSignedCommit(mockOctokit, {
+      repo: 'owner/repo',
+      branch: 'release-staging/v1.4.4',
+      message: 'Force create after stale branch',
+      baseRef: 'main',
+      force: true,
+      additions: [{ path: 'dist/credentials.js', contents: 'dGVzdA==' }],
+    });
+
+    expect(mockUpdateRef).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      ref: 'heads/release-staging/v1.4.4',
+      sha: HEAD_SHA,
+      force: true,
+    });
+    expect(mockDeleteRef).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      ref: 'heads/release-staging/v1.4.4',
+    });
+    expect(mockCreateRef).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      ref: 'refs/heads/release-staging/v1.4.4',
+      sha: HEAD_SHA,
+    });
+    expect(mockGraphql).toHaveBeenCalled();
+  });
+
+  it('re-throws 422 errors that are not Reference does not exist or Reference already exists', async () => {
+    // Any other 422 (e.g. invalid ref name) should propagate unchanged, not trigger
+    // a silent delete+recreate.
+    const unexpectedError = Object.assign(new Error('Invalid ref name: refs/heads/bad..name'), {
+      status: 422,
+    });
+    mockUpdateRef.mockRejectedValueOnce(unexpectedError);
+
+    await expect(
+      createSignedCommit(mockOctokit, {
+        repo: 'owner/repo',
+        branch: 'bad..name',
+        message: 'Should fail',
+        baseRef: 'main',
+        force: true,
+        additions: [{ path: 'file.txt', contents: 'dGVzdA==' }],
+      }),
+    ).rejects.toThrow('Invalid ref name');
+
+    expect(mockDeleteRef).not.toHaveBeenCalled();
+    expect(mockCreateRef).not.toHaveBeenCalled();
+  });
+
+  it('proceeds to createRef when deleteRef fails with 404 (concurrent deletion race)', async () => {
+    // The branch may be concurrently deleted between our deleteRef call and createRef;
+    // a 404 from deleteRef is treated as success (the branch is already gone).
+    const staleError = Object.assign(new Error('Reference already exists'), { status: 422 });
+    mockUpdateRef.mockRejectedValueOnce(staleError);
+    const notFoundOnDelete = Object.assign(new Error('Not Found'), { status: 404 });
+    mockDeleteRef.mockRejectedValueOnce(notFoundOnDelete);
+
+    await createSignedCommit(mockOctokit, {
+      repo: 'owner/repo',
+      branch: 'release-staging/v1.5.0',
+      message: 'Force create after concurrent delete',
+      baseRef: 'main',
+      force: true,
+      additions: [{ path: 'dist/credentials.js', contents: 'dGVzdA==' }],
+    });
+
+    expect(mockDeleteRef).toHaveBeenCalled();
+    expect(mockCreateRef).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      ref: 'refs/heads/release-staging/v1.5.0',
+      sha: HEAD_SHA,
+    });
+    expect(mockGraphql).toHaveBeenCalled();
+  });
+
+  it('wraps and re-throws when deleteRef fails with a non-race error', async () => {
+    // If deleteRef fails for any reason other than 404, we cannot safely recreate
+    // the branch.  The error should be wrapped with context from the original
+    // updateRef failure and re-thrown.
+    const staleError = Object.assign(new Error('Reference already exists'), { status: 422 });
+    mockUpdateRef.mockRejectedValueOnce(staleError);
+    const permissionError = Object.assign(new Error('Must have admin rights to Repository'), {
+      status: 403,
+    });
+    mockDeleteRef.mockRejectedValueOnce(permissionError);
+
+    await expect(
+      createSignedCommit(mockOctokit, {
+        repo: 'owner/repo',
+        branch: 'release-staging/v1.5.0',
+        message: 'Should fail',
+        baseRef: 'main',
+        force: true,
+        additions: [{ path: 'dist/credentials.js', contents: 'dGVzdA==' }],
+      }),
+    ).rejects.toThrow(
+      /Failed to delete stale branch.*deleteRef status 403.*Must have admin rights.*Original force-update error.*Reference already exists/,
+    );
+
+    expect(mockCreateRef).not.toHaveBeenCalled();
   });
 
   it('propagates API error on getRef', async () => {
