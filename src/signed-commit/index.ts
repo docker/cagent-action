@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { Octokit } from '@octokit/rest';
 import { createSignedCommit } from './signed-commit.js';
 
@@ -66,12 +67,36 @@ async function main(): Promise<void> {
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error('GITHUB_TOKEN environment variable is required');
 
-  const additions = args.adds.map((filePath) => ({
-    path: filePath,
-    contents: readFileSync(filePath).toString('base64'),
-  }));
+  /**
+   * Guard against absolute paths being used as git file paths.
+   * The GitHub createCommitOnBranch GraphQL API requires paths relative to the
+   * repository root (e.g. `dist/credentials.js`, not `/home/runner/.../dist/credentials.js`).
+   * Absolute paths cause a cryptic GitHub API error:
+   *   "A path was requested for deletion which does not exist as of commit oid …"
+   * Catch this early so callers get a useful message instead.
+   */
+  function assertRelativePath(filePath: string, flag: string): void {
+    if (isAbsolute(filePath)) {
+      throw new Error(
+        `${flag} received an absolute path: "${filePath}". ` +
+          'Git file paths must be relative to the repository root. ' +
+          'Hint: use `find dist/ -type f` instead of `find "$GITHUB_WORKSPACE/dist/" -type f`.',
+      );
+    }
+  }
 
-  const deletions = args.deletes.map((filePath) => ({ path: filePath }));
+  const additions = args.adds.map((filePath) => {
+    assertRelativePath(filePath, '--add');
+    return {
+      path: filePath,
+      contents: readFileSync(filePath).toString('base64'),
+    };
+  });
+
+  const deletions = args.deletes.map((filePath) => {
+    assertRelativePath(filePath, '--delete');
+    return { path: filePath };
+  });
 
   if (args.addFromStdin && args.deleteFromStdin) {
     throw new Error(
@@ -89,6 +114,7 @@ async function main(): Promise<void> {
       .map((p) => p.trim())
       .filter(Boolean);
     for (const p of paths) {
+      assertRelativePath(p, '--add-stdin');
       additions.push({
         path: p,
         contents: readFileSync(p).toString('base64'),
@@ -106,6 +132,7 @@ async function main(): Promise<void> {
       .map((p) => p.trim())
       .filter(Boolean);
     for (const p of paths) {
+      assertRelativePath(p, '--delete-stdin');
       deletions.push({ path: p });
     }
   }

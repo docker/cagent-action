@@ -98,6 +98,25 @@ export async function createSignedCommit(
             ref: `refs/heads/${branch}`,
             sha: headSha,
           });
+        } else if (status === 422) {
+          // Branch exists but force-update failed (e.g. a stale branch left over from a
+          // previous run that committed files GitHub can no longer reconcile against the
+          // new base).  Destroy it and start fresh.
+          try {
+            await octokit.rest.git.deleteRef({
+              owner,
+              repo: repoName,
+              ref: `heads/${branch}`,
+            });
+          } catch {
+            // Ignore — the branch may have been concurrently deleted.
+          }
+          await octokit.rest.git.createRef({
+            owner,
+            repo: repoName,
+            ref: `refs/heads/${branch}`,
+            sha: headSha,
+          });
         } else {
           throw err;
         }

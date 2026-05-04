@@ -126,7 +126,11 @@ jobs:
           # Create temp branch and first commit (staging dist/)
           STAGING_BRANCH="release-staging/${VERSION}"
           trap 'gh api -X DELETE "repos/docker/cagent-action/git/refs/heads/${STAGING_BRANCH}" >/dev/null 2>&1 || true' EXIT
-          TEMP_SHA=$(find "$GITHUB_WORKSPACE/dist/" -type f 2>/dev/null | \
+          # NOTE: use `find dist/ -type f` (relative path) NOT `find "$GITHUB_WORKSPACE/dist/" -type f`.
+          # signed-commit uses the paths verbatim as git file paths in the GitHub API, which
+          # requires repo-root-relative paths.  Absolute paths cause a cryptic
+          # "A path was requested for deletion which does not exist" GraphQL error.
+          TEMP_SHA=$(find dist/ -type f 2>/dev/null | \
             GITHUB_TOKEN="${GH_TOKEN}" node "$GITHUB_WORKSPACE/dist/signed-commit.js" \
               --repo docker/cagent-action \
               --branch "$STAGING_BRANCH" \
