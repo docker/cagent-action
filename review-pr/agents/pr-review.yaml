@@ -51,6 +51,13 @@ agents:
 
       ## Process
 
+      **Cross-shell safety**: Each `shell` tool call runs in the host's default shell —
+      bash/zsh on macOS/Linux, PowerShell 5.1 on Windows. Keep every shell call to a
+      single simple command. Do not use `||`, `&&`, `2>/dev/null`, `[ ... ]` tests, or
+      heredocs — they are bash-only and break local Windows runs. If you need fallback
+      logic, issue separate tool calls and decide between them in your reasoning, not
+      in the shell.
+
       0. **FIRST, before anything else**: Run `echo "$GITHUB_ACTIONS"` to detect the output mode.
          This MUST be the very first action you take. Do not call any other tools before this.
          Based on the result, set this path variable for the rest of the run:
@@ -80,34 +87,34 @@ agents:
               In console output mode, use `gh pr view` if you need additional metadata.
          - **Console output mode** (GITHUB_ACTIONS is empty/unset): ALWAYS review local
            branch changes by detecting the base branch, regardless of what the user's
-           prompt says. Run the merge-base detection AND the diff capture in a SINGLE
-           shell invocation — each shell call is a fresh shell, so `$BASE` does not
-           survive between invocations:
-           ```bash
-           BASE=$(git merge-base upstream/main HEAD 2>/dev/null \
-             || git merge-base upstream/master HEAD 2>/dev/null \
-             || git merge-base origin/HEAD HEAD 2>/dev/null \
-             || git merge-base origin/main HEAD 2>/dev/null \
-             || git merge-base origin/master HEAD 2>/dev/null \
-             || git merge-base main HEAD 2>/dev/null \
-             || git merge-base master HEAD 2>/dev/null)
-           if [ -z "$BASE" ]; then
-             echo "ERROR: Could not determine merge base. No known remote or local branch found." >&2
-             echo "Ensure at least one remote (upstream or origin) is configured." >&2
-             exit 1
-           fi
-           if [ "$BASE" = "$(git rev-parse HEAD)" ]; then
-             echo "ERROR: Merge base resolved to HEAD — diff would be empty." >&2
-             echo "Are you on the default branch? Check out a feature branch first." >&2
-             exit 1
-           fi
-           git diff "$BASE" HEAD | tee ./pr-review.diff
-           ```
-           `tee` writes the diff to `./pr-review.diff` (for the drafter delegation in
-           step 4) AND echoes it so you can see what was captured. The fallback order
-           prefers `upstream` (forks) over `origin`:
+           prompt says. Try each candidate ref in its own `shell` tool call, stopping at
+           the first that returns exit 0 with non-empty output. Candidates in order:
            `upstream/main`, `upstream/master`, `origin/HEAD`, `origin/main`,
-           `origin/master`, `main`, `master`.
+           `origin/master`, `main`, `master`. Each call is simply:
+           ```
+           git merge-base <ref> HEAD
+           ```
+           Do NOT chain candidates with `||` / `&&` / `2>/dev/null` — those are
+           bash-only and break local Windows runs. Issue each candidate as a separate
+           `shell` tool call and decide between them in your reasoning.
+
+           Once a candidate succeeds (exit 0, non-empty output), note its SHA as `BASE`,
+           then run these two commands, each as its own `shell` call:
+           ```
+           git diff <BASE> HEAD > ./pr-review.diff
+           ```
+           ```
+           git diff --stat <BASE> HEAD
+           ```
+           The stat call prints a visible summary of what was captured. The diff is
+           written to `./pr-review.diff` for the drafter delegation in step 4.
+
+           If all seven candidates fail, issue a plain `echo` explaining that no known
+           remote or local branch was found, then stop calling tools.
+           If `BASE` equals the output of `git rev-parse HEAD`, issue a plain `echo`
+           explaining the diff would be empty (the user may be on the default branch),
+           then stop calling tools.
+           In both abort cases do NOT use `[ ... ]` tests or `exit 1`.
       2. **Read project conventions**: Look for an `AGENTS.md` (or `CLAUDE.md`) file in the
          repository root. Use `read_file` to read it if found. This file contains project-specific
          context such as language versions, build tools, coding conventions, and other guidelines
@@ -127,7 +134,7 @@ agents:
          **Console output mode** (GITHUB_ACTIONS empty/unset):
          a. Do NOT run `ls /tmp/drafter_chunk_*.diff` — there are no pre-staged files
             and `/tmp/` is irrelevant in this mode.
-         b. The diff was already captured to `./pr-review.diff` in step 1 via `tee`.
+         b. The diff was already captured to `./pr-review.diff` in step 1 via `>`.
             Do NOT re-run `git diff` here — each shell invocation is a fresh shell, so
             `$BASE` is no longer set, and a second `git diff` would either fail or
             produce the wrong output. Just delegate using the existing file.
