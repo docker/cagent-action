@@ -6,8 +6,8 @@ import { fetchGitHubAppCredentials } from '../github-app.js';
 // the existing 'App ID' and 'private-key.pem' fields. Update the paths below
 // if the PAT and org-membership-token were stored under different field names.
 const OP_REFS = {
-  pat: 'op://Team AI Agent/Docker Agent GitHub Action/pat',
-  orgMembershipToken: 'op://Team AI Agent/Docker Agent GitHub Action/org-membership-token',
+  pat: 'op://Team AI Agent/Docker Agent GHA Machine user/PAT',
+  orgMembershipToken: 'op://Team AI Agent/Docker Agent GHA Machine user/org-membership-token',
 };
 
 interface Credentials {
