@@ -84,7 +84,7 @@ jobs:
         shell: bash
         run: |
           if [ -z "$GITHUB_APP_TOKEN" ]; then
-                                echo "::error::GITHUB_APP_TOKEN is not set. setup-credentials may have failed (check OIDC and AWS Secrets Manager configuration)."
+            echo "::error::GITHUB_APP_TOKEN is not set. setup-credentials may have failed (check OIDC and AWS Secrets Manager configuration)."
             echo "::error::Cross-run artifact download requires a token with actions:read scope."
             exit 1
           fi
