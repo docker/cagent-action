@@ -127,6 +127,10 @@ jobs:
             echo "::error::dist/security.js is missing — build may have failed"
             exit 1
           fi
+          if [ ! -f "$GITHUB_WORKSPACE/dist/mention-reply.js" ]; then
+            echo "::error::dist/mention-reply.js is missing — build may have failed"
+            exit 1
+          fi
 
           # Create temp branch and first commit (staging dist/)
           STAGING_BRANCH="release-staging/${VERSION}"
