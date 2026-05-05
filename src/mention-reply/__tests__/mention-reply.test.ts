@@ -7,46 +7,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@actions/core');
 
 // ---------------------------------------------------------------------------
-// Hoist Octokit mocks so they can be referenced inside vi.mock() factories
+// Hoist mocks for the four extracted helper modules
 // ---------------------------------------------------------------------------
-const {
-  mockCreateForIssueComment,
-  mockCheckMembershipForUser,
-  mockCreateComment,
-  mockGetPull,
-  MockOctokit,
-} = vi.hoisted(() => {
-  const mockCreateForIssueComment = vi.fn().mockResolvedValue({});
-  const mockCheckMembershipForUser = vi.fn().mockResolvedValue({}); // 204 = member
-  const mockCreateComment = vi.fn().mockResolvedValue({});
-  const mockGetPull = vi.fn().mockResolvedValue({
-    data: {
+const { mockAddReaction, mockCheckOrgMembership, mockPostComment, mockGetPrMeta } = vi.hoisted(
+  () => ({
+    mockAddReaction: vi.fn().mockResolvedValue(undefined),
+    mockCheckOrgMembership: vi.fn().mockResolvedValue(true),
+    mockPostComment: vi.fn().mockResolvedValue(undefined),
+    mockGetPrMeta: vi.fn().mockResolvedValue({
       title: 'Test PR',
       body: 'A PR body.',
-      user: { login: 'pr-author' },
-      base: { ref: 'main' },
-    },
-  });
+      authorLogin: 'pr-author',
+      baseRefName: 'main',
+    }),
+  }),
+);
 
-  class MockOctokit {
-    rest = {
-      reactions: { createForIssueComment: mockCreateForIssueComment },
-      orgs: { checkMembershipForUser: mockCheckMembershipForUser },
-      issues: { createComment: mockCreateComment },
-      pulls: { get: mockGetPull },
-    };
-  }
-
-  return {
-    mockCreateForIssueComment,
-    mockCheckMembershipForUser,
-    mockCreateComment,
-    mockGetPull,
-    MockOctokit,
-  };
-});
-
-vi.mock('@octokit/rest', () => ({ Octokit: MockOctokit }));
+vi.mock('../../add-reaction/index.js', () => ({ addReaction: mockAddReaction }));
+vi.mock('../../check-org-membership/index.js', () => ({
+  checkOrgMembership: mockCheckOrgMembership,
+}));
+vi.mock('../../post-comment/index.js', () => ({ postComment: mockPostComment }));
+vi.mock('../../get-pr-meta/index.js', () => ({ getPrMeta: mockGetPrMeta }));
 
 // Imports of code-under-test come AFTER all vi.mock() calls
 import { buildContextPrompt, type EventContext, type PrMeta, run, runGuards } from '../index.js';
@@ -100,7 +82,6 @@ beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'mention-reply-test-'));
   eventFilePath = join(tmpDir, 'event.json');
 
-  // Write default happy-path event to disk (real fs — no mocking)
   writeFileSync(eventFilePath, JSON.stringify(makeEvent()));
 
   process.env.GITHUB_EVENT_PATH = eventFilePath;
@@ -109,17 +90,15 @@ beforeEach(() => {
 
   vi.clearAllMocks();
 
-  // Re-apply default mock implementations after clearAllMocks resets them
-  mockCreateForIssueComment.mockResolvedValue({});
-  mockCheckMembershipForUser.mockResolvedValue({});
-  mockCreateComment.mockResolvedValue({});
-  mockGetPull.mockResolvedValue({
-    data: {
-      title: 'Test PR',
-      body: 'A PR body.',
-      user: { login: 'pr-author' },
-      base: { ref: 'main' },
-    },
+  // Re-apply defaults after clearAllMocks
+  mockAddReaction.mockResolvedValue(undefined);
+  mockCheckOrgMembership.mockResolvedValue(true);
+  mockPostComment.mockResolvedValue(undefined);
+  mockGetPrMeta.mockResolvedValue({
+    title: 'Test PR',
+    body: 'A PR body.',
+    authorLogin: 'pr-author',
+    baseRefName: 'main',
   });
 });
 
@@ -131,7 +110,7 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// runGuards — pure unit tests, no Octokit/fs needed
+// runGuards — pure unit tests, no network needed
 // ---------------------------------------------------------------------------
 
 describe('runGuards', () => {
@@ -215,11 +194,11 @@ describe('buildContextPrompt', () => {
 });
 
 // ---------------------------------------------------------------------------
-// run() — guard paths (non-PR comment → sets should-reply false)
+// run() — guard paths
 // ---------------------------------------------------------------------------
 
 describe('run() — non-PR issue comment', () => {
-  it('sets should-reply=false without calling any API', async () => {
+  it('sets should-reply=false without calling any helper', async () => {
     writeFileSync(
       eventFilePath,
       JSON.stringify(makeEvent({ issue: { number: 42 /* no pull_request field */ } })),
@@ -228,12 +207,12 @@ describe('run() — non-PR issue comment', () => {
     await run();
 
     expect(core.setOutput).toHaveBeenCalledWith('should-reply', 'false');
-    expect(mockCreateForIssueComment).not.toHaveBeenCalled();
+    expect(mockAddReaction).not.toHaveBeenCalled();
   });
 });
 
 describe('run() — bot author', () => {
-  it('sets should-reply=false without calling any API', async () => {
+  it('sets should-reply=false without calling any helper', async () => {
     writeFileSync(
       eventFilePath,
       JSON.stringify(
@@ -250,7 +229,7 @@ describe('run() — bot author', () => {
     await run();
 
     expect(core.setOutput).toHaveBeenCalledWith('should-reply', 'false');
-    expect(mockCreateForIssueComment).not.toHaveBeenCalled();
+    expect(mockAddReaction).not.toHaveBeenCalled();
   });
 });
 
@@ -272,7 +251,7 @@ describe('run() — self-reply guard', () => {
     await run();
 
     expect(core.setOutput).toHaveBeenCalledWith('should-reply', 'false');
-    expect(mockCreateForIssueComment).not.toHaveBeenCalled();
+    expect(mockAddReaction).not.toHaveBeenCalled();
   });
 });
 
@@ -294,7 +273,7 @@ describe('run() — /review prefix', () => {
     await run();
 
     expect(core.setOutput).toHaveBeenCalledWith('should-reply', 'false');
-    expect(mockCreateForIssueComment).not.toHaveBeenCalled();
+    expect(mockAddReaction).not.toHaveBeenCalled();
   });
 });
 
@@ -304,27 +283,19 @@ describe('run() — /review prefix', () => {
 
 describe('run() — non-member', () => {
   it('posts 👀 reaction, posts rejection reply, sets should-reply=false', async () => {
-    mockCheckMembershipForUser.mockRejectedValueOnce(
-      Object.assign(new Error('Not Found'), { status: 404 }),
-    );
+    mockCheckOrgMembership.mockResolvedValueOnce(false);
 
     await run();
 
-    // 👀 reaction should fire before the membership check
-    expect(mockCreateForIssueComment).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'eyes' }),
+    expect(mockAddReaction).toHaveBeenCalledWith('fake-app-token', 'docker', 'myrepo', 99, 'eyes');
+    expect(mockCheckOrgMembership).toHaveBeenCalledWith('fake-org-token', 'docker', 'alice');
+    expect(mockPostComment).toHaveBeenCalledWith(
+      'fake-app-token',
+      'docker',
+      'myrepo',
+      42,
+      expect.stringContaining('<!-- cagent-review-reply -->'),
     );
-
-    // Rejection reply posted to the PR
-    expect(mockCreateComment).toHaveBeenCalledWith(
-      expect.objectContaining({
-        owner: 'docker',
-        repo: 'myrepo',
-        issue_number: 42,
-        body: expect.stringContaining('<!-- cagent-review-reply -->'),
-      }),
-    );
-
     expect(core.setOutput).toHaveBeenCalledWith('should-reply', 'false');
     expect(core.setFailed).not.toHaveBeenCalled();
   });
@@ -338,30 +309,11 @@ describe('run() — happy path', () => {
   it('posts 👀 reaction, checks membership, fetches PR meta, sets should-reply=true', async () => {
     await run();
 
-    // 👀 reaction on the triggering comment
-    expect(mockCreateForIssueComment).toHaveBeenCalledWith(
-      expect.objectContaining({
-        owner: 'docker',
-        repo: 'myrepo',
-        comment_id: 99,
-        content: 'eyes',
-      }),
-    );
+    expect(mockAddReaction).toHaveBeenCalledWith('fake-app-token', 'docker', 'myrepo', 99, 'eyes');
+    expect(mockCheckOrgMembership).toHaveBeenCalledWith('fake-org-token', 'docker', 'alice');
+    expect(mockGetPrMeta).toHaveBeenCalledWith('fake-app-token', 'docker', 'myrepo', 42);
+    expect(mockPostComment).not.toHaveBeenCalled();
 
-    // Org membership checked with docker org
-    expect(mockCheckMembershipForUser).toHaveBeenCalledWith(
-      expect.objectContaining({ org: 'docker', username: 'alice' }),
-    );
-
-    // PR metadata fetched
-    expect(mockGetPull).toHaveBeenCalledWith(
-      expect.objectContaining({ owner: 'docker', repo: 'myrepo', pull_number: 42 }),
-    );
-
-    // No rejection reply posted
-    expect(mockCreateComment).not.toHaveBeenCalled();
-
-    // should-reply=true
     expect(core.setOutput).toHaveBeenCalledWith('should-reply', 'true');
     expect(core.setFailed).not.toHaveBeenCalled();
   });

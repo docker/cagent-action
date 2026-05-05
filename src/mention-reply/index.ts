@@ -16,10 +16,14 @@
  *
  * Outputs (via @actions/core.setOutput):
  *   should-reply  – 'true' | 'false'
+ *   prompt        – formatted context string for the mention-reply agent
  */
 import { readFileSync } from 'node:fs';
 import * as core from '@actions/core';
-import { Octokit } from '@octokit/rest';
+import { addReaction } from '../add-reaction/index.js';
+import { checkOrgMembership } from '../check-org-membership/index.js';
+import { getPrMeta, type PrMeta } from '../get-pr-meta/index.js';
+import { postComment } from '../post-comment/index.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,12 +40,7 @@ export interface EventContext {
   isPrComment: boolean;
 }
 
-export interface PrMeta {
-  title: string;
-  body: string;
-  authorLogin: string;
-  baseRefName: string;
-}
+export type { PrMeta };
 
 // ---------------------------------------------------------------------------
 // Event parsing
@@ -97,75 +96,6 @@ export function runGuards(ctx: EventContext): { pass: boolean; reason?: string }
 }
 
 // ---------------------------------------------------------------------------
-// GitHub API helpers
-// ---------------------------------------------------------------------------
-
-export async function addEyesReaction(octokit: Octokit, ctx: EventContext): Promise<void> {
-  try {
-    await octokit.rest.reactions.createForIssueComment({
-      owner: ctx.owner,
-      repo: ctx.repo,
-      comment_id: ctx.commentId,
-      content: 'eyes',
-    });
-  } catch (err) {
-    core.warning(`Failed to add 👀 reaction: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-export async function checkOrgMembership(
-  orgToken: string,
-  org: string,
-  username: string,
-): Promise<boolean> {
-  const memberOctokit = new Octokit({ auth: orgToken });
-  try {
-    await memberOctokit.rest.orgs.checkMembershipForUser({ org, username });
-    return true;
-  } catch (err: unknown) {
-    const status = (err as { status?: number }).status;
-    if (status === 404 || status === 302) return false;
-    if (status === 401) {
-      throw new Error(
-        'Org membership token is missing or invalid (HTTP 401). ' +
-          "Ensure the job has 'id-token: write' permission and OIDC is configured.",
-      );
-    }
-    throw err;
-  }
-}
-
-export async function postRejectionReply(octokit: Octokit, ctx: EventContext): Promise<void> {
-  const body = `Sorry @${ctx.commentAuthor}, I can only respond to Docker org members.\n\n<!-- cagent-review-reply -->`;
-  try {
-    await octokit.rest.issues.createComment({
-      owner: ctx.owner,
-      repo: ctx.repo,
-      issue_number: ctx.prNumber,
-      body,
-    });
-  } catch (err) {
-    core.warning(
-      `Failed to post non-member rejection: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-}
-
-export async function fetchPrMeta(octokit: Octokit, ctx: EventContext): Promise<PrMeta> {
-  const { data } = await octokit.rest.pulls.get({
-    owner: ctx.owner,
-    repo: ctx.repo,
-    pull_number: ctx.prNumber,
-  });
-  return {
-    title: data.title,
-    body: data.body ?? 'No description provided.',
-    authorLogin: data.user?.login ?? 'unknown',
-    baseRefName: data.base.ref,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Context prompt builder (pure function — no side effects)
 // ---------------------------------------------------------------------------
 
@@ -206,13 +136,12 @@ export async function run(): Promise<void> {
     return;
   }
 
-  // 3. Set up authed Octokit
+  // 3. Resolve token
   const token = process.env.GITHUB_APP_TOKEN ?? process.env.GITHUB_TOKEN;
   if (!token) throw new Error('GITHUB_APP_TOKEN or GITHUB_TOKEN is required');
-  const octokit = new Octokit({ auth: token });
 
   // 4. 👀 reaction (best-effort, before potentially slow org check)
-  await addEyesReaction(octokit, ctx);
+  await addReaction(token, ctx.owner, ctx.repo, ctx.commentId, 'eyes');
 
   // 5. Org membership check
   const orgToken = process.env.ORG_MEMBERSHIP_TOKEN;
@@ -221,16 +150,17 @@ export async function run(): Promise<void> {
   const isMember = await checkOrgMembership(orgToken, 'docker', ctx.commentAuthor);
   if (!isMember) {
     core.info(`⏭️  ${ctx.commentAuthor} is not a docker org member — posting rejection`);
-    await postRejectionReply(octokit, ctx);
+    const rejectionBody = `Sorry @${ctx.commentAuthor}, I can only respond to Docker org members.\n\n<!-- cagent-review-reply -->`;
+    await postComment(token, ctx.owner, ctx.repo, ctx.prNumber, rejectionBody);
     core.setOutput('should-reply', 'false');
     return;
   }
   core.info(`✅ ${ctx.commentAuthor} is a docker org member`);
 
   // 6. Fetch PR metadata
-  const pr = await fetchPrMeta(octokit, ctx);
+  const pr = await getPrMeta(token, ctx.owner, ctx.repo, ctx.prNumber);
 
-  // 7. Build and write context prompt
+  // 7. Build context prompt
   const prompt = buildContextPrompt(ctx, pr);
   core.info('✅ Built mention context prompt');
 

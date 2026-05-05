@@ -1,0 +1,44 @@
+name: 'Get PR Metadata'
+description: 'Fetch title, description, author, and base branch for a pull request'
+inputs:
+  github-token:
+    description: 'GitHub token with contents:read permission'
+    required: true
+  owner:
+    description: 'Repository owner'
+    required: true
+  repo:
+    description: 'Repository name'
+    required: true
+  pr-number:
+    description: 'Pull request number'
+    required: true
+outputs:
+  title:
+    description: 'PR title'
+    value: ${{ steps.get.outputs.title }}
+  body:
+    description: 'PR description body'
+    value: ${{ steps.get.outputs.body }}
+  author-login:
+    description: 'Login of the PR author'
+    value: ${{ steps.get.outputs.author-login }}
+  base-ref-name:
+    description: 'Target base branch name'
+    value: ${{ steps.get.outputs.base-ref-name }}
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      with:
+        node-version: '24'
+    - name: Get PR metadata
+      id: get
+      shell: bash
+      env:
+        GITHUB_APP_TOKEN: ${{ inputs.github-token }}
+        INPUT_OWNER: ${{ inputs.owner }}
+        INPUT_REPO: ${{ inputs.repo }}
+        INPUT_PR-NUMBER: ${{ inputs.pr-number }}
+      run: node "$GITHUB_ACTION_PATH/../../../dist/get-pr-meta.js"
