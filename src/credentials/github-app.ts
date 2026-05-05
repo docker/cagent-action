@@ -37,9 +37,6 @@ export async function fetchGitHubAppCredentials(
 
   const { pat, org_membership_token } = secret;
 
-  core.setSecret(pat);
-  core.setSecret(org_membership_token);
-
   for (const [field, value] of Object.entries({ pat, org_membership_token })) {
     if (!value || value === 'null') {
       core.error(`Failed to extract ${field} from secret ${SECRET_ID}`);
@@ -47,6 +44,9 @@ export async function fetchGitHubAppCredentials(
       return;
     }
   }
+
+  core.setSecret(pat);
+  core.setSecret(org_membership_token);
 
   core.exportVariable('GITHUB_APP_TOKEN', pat);
   core.exportVariable('ORG_MEMBERSHIP_TOKEN', org_membership_token);
