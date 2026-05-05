@@ -174,7 +174,7 @@ runs:
           LOCK_TIME=$(cat .cache/review-lock/timestamp 2>/dev/null || echo "0")
           NOW=$(date +%s)
           AGE=$(( NOW - LOCK_TIME ))
-          if [ "$AGE" -lt 600 ]; then  # 10 min TTL (slightly longer than the 8-min review timeout)
+          if [ "$AGE" -lt 600 ]; then  # 600 s lock TTL — intentionally decoupled from the review timeout (now 1800 s)
             echo "⏭️ Review already in progress (started ${AGE}s ago) — skipping"
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "skip-reason=concurrent" >> $GITHUB_OUTPUT
@@ -804,7 +804,7 @@ runs:
       with:
         agent: ${{ env.ACTION_PATH }}/agents/pr-review.yaml
         prompt: ${{ steps.context.outputs.review_prompt }}
-        timeout: "480"  # 8 min — typical reviews finish in <5 min; cap kills hung runs fast
+        timeout: "1800"  # 30 min — allows complex reviews to complete; lock TTL (600 s) is intentionally shorter
         anthropic-api-key: ${{ inputs.anthropic-api-key }}
         openai-api-key: ${{ inputs.openai-api-key }}
         google-api-key: ${{ inputs.google-api-key }}
