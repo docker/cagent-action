@@ -7,7 +7,7 @@ import { fetchGitHubAppCredentials } from '../github-app.js';
 // if the PAT and org-membership-token were stored under different field names.
 const OP_REFS = {
   pat: 'op://Team AI Agent/Docker Agent GHA Machine user/PAT',
-  orgMembershipToken: 'op://Team AI Agent/Docker Agent GHA Machine user/org-membership-token',
+  orgMembershipToken: 'op://Team AI Agent/Docker Agent GitHub Action/GH org membership token',
 };
 
 interface Credentials {
