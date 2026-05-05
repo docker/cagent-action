@@ -108,9 +108,6 @@ See [security/README.md](security/README.md) for complete security documentation
 | `nebius-api-key`           | Nebius API key (at least one API key required)                                       | No\*     | -              |
 | `mistral-api-key`          | Mistral API key (at least one API key required)                                      | No\*     | -              |
 | `github-token`             | GitHub token for API access                                                          | No       | `github.token` |
-| `github-app-id`            | GitHub App ID for custom identity (comments/reviews appear as the app)               | No       | -              |
-| `github-app-private-key`   | GitHub App private key (required if `github-app-id` is provided)                     | No       | -              |
-| `trusted-bot-token`        | PAT for a trusted bot account that can bypass comment-based auth checks               | No       | -              |
 | `timeout`                  | Timeout in seconds for agent execution (0 for no timeout)                            | No       | `0`            |
 | `debug`                    | Enable debug mode with verbose logging (`true`/`false`)                              | No       | `false`        |
 | `working-directory`        | Working directory to run the agent in                                                | No       | `.`            |

@@ -37,13 +37,7 @@ inputs:
     description: "Mistral API key"
     required: false
   github-token:
-    description: "GitHub token for API access (overridden if github-app-id is provided)"
-    required: false
-  github-app-id:
-    description: "GitHub App ID for custom app identity (comments/reviews will appear as the app)"
-    required: false
-  github-app-private-key:
-    description: "GitHub App private key (required if github-app-id is provided)"
+    description: "GitHub token for API access (defaults to github.token)"
     required: false
   model:
     description: "Model to use for reviews (e.g., anthropic/claude-sonnet-4-5, openai/gpt-4o)"
@@ -51,10 +45,6 @@ inputs:
     default: ""
   add-prompt-files:
     description: "Comma-separated list of files to append to the prompt (e.g., 'AGENTS.md,CLAUDE.md')"
-    required: false
-    default: ""
-  trusted-bot-token:
-    description: "PAT for a trusted bot account that can bypass comment-based auth checks"
     required: false
     default: ""
   org-membership-token:
@@ -118,25 +108,16 @@ runs:
           echo "ℹ️  No comment ID - reactions will be skipped"
         fi
 
-    # Generate GitHub App token if credentials are provided
-    # This allows comments/reviews to appear as the custom app instead of github-actions[bot]
-    - name: Generate GitHub App token
-      id: app-token
-      if: inputs.github-app-id != ''
-      uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
-      with:
-        app-id: ${{ inputs.github-app-id }}
-        private-key: ${{ inputs.github-app-private-key }}
+    # ========================================
+    # GitHub Token Resolution
+    # ========================================
 
-    # Resolve which token to use: app token > explicit github-token > default github.token
+    # Resolve which token to use: explicit github-token > default github.token
     - name: Resolve GitHub token
       id: resolve-token
       shell: bash
       run: |
-        if [ -n "$APP_TOKEN" ]; then
-          echo "✅ Using GitHub App token"
-          echo "token=$APP_TOKEN" >> $GITHUB_OUTPUT
-        elif [ -n "$EXPLICIT_TOKEN" ]; then
+        if [ -n "$EXPLICIT_TOKEN" ]; then
           echo "✅ Using provided github-token"
           echo "token=$EXPLICIT_TOKEN" >> $GITHUB_OUTPUT
         else
@@ -144,7 +125,6 @@ runs:
           echo "token=$DEFAULT_TOKEN" >> $GITHUB_OUTPUT
         fi
       env:
-        APP_TOKEN: ${{ steps.app-token.outputs.token }}
         EXPLICIT_TOKEN: ${{ inputs.github-token }}
         DEFAULT_TOKEN: ${{ github.token }}
 
@@ -708,7 +688,6 @@ runs:
         nebius-api-key: ${{ inputs.nebius-api-key }}
         mistral-api-key: ${{ inputs.mistral-api-key }}
         github-token: ${{ steps.resolve-token.outputs.token }}
-        trusted-bot-token: ${{ inputs.trusted-bot-token }}
         extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
         skip-summary: "true"
         org-membership-token: ${{ inputs.org-membership-token }}
@@ -813,7 +792,6 @@ runs:
         nebius-api-key: ${{ inputs.nebius-api-key }}
         mistral-api-key: ${{ inputs.mistral-api-key }}
         github-token: ${{ steps.resolve-token.outputs.token }}
-        trusted-bot-token: ${{ inputs.trusted-bot-token }}
         extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
         add-prompt-files: ${{ inputs.add-prompt-files }}
         max-retries: "1"  # One retry handles transient API failures (e.g. Anthropic 400s) without risking duplicate reviews from full pipeline restarts

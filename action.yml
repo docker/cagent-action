@@ -44,12 +44,6 @@ inputs:
   github-token:
     description: "GitHub token for API access (defaults to github.token)"
     required: false
-  github-app-id:
-    description: "GitHub App ID for custom identity (comments/reviews appear as the app)"
-    required: false
-  github-app-private-key:
-    description: "GitHub App private key (required if github-app-id is provided)"
-    required: false
   timeout:
     description: "Timeout in seconds for agent execution (0 for no timeout)"
     required: false
@@ -76,10 +70,6 @@ inputs:
     default: "5"
   extra-args:
     description: "Additional arguments to pass to docker agent run"
-    required: false
-    default: ""
-  trusted-bot-token:
-    description: "PAT for a trusted bot account that can bypass comment-based auth checks (e.g., for self-review triggers)"
     required: false
     default: ""
   add-prompt-files:
@@ -222,14 +212,15 @@ runs:
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
-        TRUSTED_BOT_TOKEN: ${{ inputs.trusted-bot-token }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        DEFAULT_GH_TOKEN: ${{ github.token }}
         DEBUG: ${{ inputs.debug }}
         SKIP_AUTH: ${{ inputs.skip-auth }}
         ORG_MEMBERSHIP_TOKEN: ${{ inputs.org-membership-token }}
         AUTH_ORG: ${{ inputs.auth-org }}
       run: |
         # Mask tokens to prevent accidental exposure in logs
-        [ -n "$TRUSTED_BOT_TOKEN" ] && echo "::add-mask::$TRUSTED_BOT_TOKEN"
+        [ -n "$INPUT_GITHUB_TOKEN" ] && echo "::add-mask::$INPUT_GITHUB_TOKEN"
         [ -n "$ORG_MEMBERSHIP_TOKEN" ] && echo "::add-mask::$ORG_MEMBERSHIP_TOKEN"
 
         # Strategy 0: Skip auth if caller already verified
@@ -251,17 +242,16 @@ runs:
           exit 0
         fi
 
-        # Allow a trusted bot account to bypass auth (e.g., self-review triggers).
-        # Resolves the bot's login via the PAT, then compares against the comment author.
-        if [ -n "$TRUSTED_BOT_TOKEN" ]; then
-          TRUSTED_BOT_LOGIN=$(GH_TOKEN="$TRUSTED_BOT_TOKEN" gh api /user --jq '.login' 2>/tmp/gh_api_err || echo "")
-          if [ -z "$TRUSTED_BOT_LOGIN" ]; then
-            echo "::warning::trusted-bot-token set but could not resolve bot login ($(cat /tmp/gh_api_err)); bypass will not apply"
-          elif [ "$COMMENT_USER_LOGIN" = "$TRUSTED_BOT_LOGIN" ]; then
-            echo "ℹ️ Skipping auth check (trusted bot: $COMMENT_USER_LOGIN)"
-            echo "authorized=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+        # Always attempt trusted-bot bypass using the resolved github-token.
+        # Resolves the token's GitHub login via the API, then compares against the comment author.
+        ACTIVE_TOKEN="${INPUT_GITHUB_TOKEN:-$DEFAULT_GH_TOKEN}"
+        TRUSTED_BOT_LOGIN=$(GH_TOKEN="$ACTIVE_TOKEN" gh api /user --jq '.login' 2>/tmp/gh_api_err || echo "")
+        if [ -z "$TRUSTED_BOT_LOGIN" ]; then
+          echo "::warning::Could not resolve bot login from github-token ($(cat /tmp/gh_api_err)); trusted-bot bypass will not apply"
+        elif [ "$COMMENT_USER_LOGIN" = "$TRUSTED_BOT_LOGIN" ]; then
+          echo "ℹ️ Skipping auth check (trusted bot: $COMMENT_USER_LOGIN)"
+          echo "authorized=true" >> $GITHUB_OUTPUT
+          exit 0
         fi
 
         # Strategy 1: Org membership check (preferred — reliable for all event types)
@@ -296,26 +286,13 @@ runs:
         fi
 
     # ========================================
-    # GitHub App Token (Optional)
+    # GitHub Token Resolution
     # ========================================
-
-    # Generate token if GitHub App credentials are provided
-    - name: Generate GitHub App token
-      id: app-token
-      if: inputs.github-app-id != ''
-      uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
-      with:
-        app-id: ${{ inputs.github-app-id }}
-        private-key: ${{ inputs.github-app-private-key }}
-
     - name: Resolve GitHub token
       id: resolve-token
       shell: bash
       run: |
-        if [ -n "$APP_TOKEN" ]; then
-          echo "✅ Using GitHub App token"
-          echo "token=$APP_TOKEN" >> $GITHUB_OUTPUT
-        elif [ -n "$EXPLICIT_TOKEN" ]; then
+        if [ -n "$EXPLICIT_TOKEN" ]; then
           echo "✅ Using provided github-token"
           echo "token=$EXPLICIT_TOKEN" >> $GITHUB_OUTPUT
         else
@@ -323,7 +300,6 @@ runs:
           echo "token=$DEFAULT_TOKEN" >> $GITHUB_OUTPUT
         fi
       env:
-        APP_TOKEN: ${{ steps.app-token.outputs.token }}
         EXPLICIT_TOKEN: ${{ inputs.github-token }}
         DEFAULT_TOKEN: ${{ github.token }}
 
