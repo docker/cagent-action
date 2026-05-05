@@ -301,6 +301,19 @@ describe('run() — non-member', () => {
   });
 });
 
+describe('run() — non-member, rejection post fails', () => {
+  it('warns and exits cleanly with should-reply=false when postComment throws', async () => {
+    mockCheckOrgMembership.mockResolvedValueOnce(false);
+    mockPostComment.mockRejectedValueOnce(new Error('Service Unavailable'));
+
+    await run();
+
+    expect(core.warning).toHaveBeenCalledWith(expect.stringContaining('Service Unavailable'));
+    expect(core.setOutput).toHaveBeenCalledWith('should-reply', 'false');
+    expect(core.setFailed).not.toHaveBeenCalled();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // run() — happy path
 // ---------------------------------------------------------------------------

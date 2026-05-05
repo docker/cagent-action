@@ -151,7 +151,13 @@ export async function run(): Promise<void> {
   if (!isMember) {
     core.info(`⏭️  ${ctx.commentAuthor} is not a docker org member — posting rejection`);
     const rejectionBody = `Sorry @${ctx.commentAuthor}, I can only respond to Docker org members.\n\n<!-- cagent-review-reply -->`;
-    await postComment(token, ctx.owner, ctx.repo, ctx.prNumber, rejectionBody);
+    try {
+      await postComment(token, ctx.owner, ctx.repo, ctx.prNumber, rejectionBody);
+    } catch (err) {
+      core.warning(
+        `Failed to post non-member rejection: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     core.setOutput('should-reply', 'false');
     return;
   }
