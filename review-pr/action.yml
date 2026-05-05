@@ -53,8 +53,8 @@ inputs:
     description: "Comma-separated list of files to append to the prompt (e.g., 'AGENTS.md,CLAUDE.md')"
     required: false
     default: ""
-  trusted-bot-app-id:
-    description: "GitHub App ID of a trusted bot that can bypass comment-based auth checks"
+  trusted-bot-token:
+    description: "PAT for a trusted bot account that can bypass comment-based auth checks"
     required: false
     default: ""
   org-membership-token:
@@ -708,7 +708,7 @@ runs:
         nebius-api-key: ${{ inputs.nebius-api-key }}
         mistral-api-key: ${{ inputs.mistral-api-key }}
         github-token: ${{ steps.resolve-token.outputs.token }}
-        trusted-bot-app-id: ${{ inputs.trusted-bot-app-id }}
+        trusted-bot-token: ${{ inputs.trusted-bot-token }}
         extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
         skip-summary: "true"
         org-membership-token: ${{ inputs.org-membership-token }}
@@ -813,7 +813,7 @@ runs:
         nebius-api-key: ${{ inputs.nebius-api-key }}
         mistral-api-key: ${{ inputs.mistral-api-key }}
         github-token: ${{ steps.resolve-token.outputs.token }}
-        trusted-bot-app-id: ${{ inputs.trusted-bot-app-id }}
+        trusted-bot-token: ${{ inputs.trusted-bot-token }}
         extra-args: ${{ inputs.model && format('--model={0}', inputs.model) || '' }}
         add-prompt-files: ${{ inputs.add-prompt-files }}
         max-retries: "1"  # One retry handles transient API failures (e.g. Anthropic 400s) without risking duplicate reviews from full pipeline restarts

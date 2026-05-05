@@ -55,15 +55,6 @@ on:
       MISTRAL_API_KEY:
         description: "Mistral API key (at least one API key required)"
         required: false
-      CAGENT_ORG_MEMBERSHIP_TOKEN:
-        description: "(deprecated) PAT with read:org scope to check org membership for auto-reviews (now fetched via OIDC)"
-        required: false
-      CAGENT_REVIEWER_APP_ID:
-        description: "(deprecated) GitHub App ID for reviewer identity (now fetched via OIDC)"
-        required: false
-      CAGENT_REVIEWER_APP_PRIVATE_KEY:
-        description: "(deprecated) GitHub App private key (now fetched via OIDC)"
-        required: false
     outputs:
       exit-code:
         description: "Exit code from the review"
@@ -93,7 +84,7 @@ jobs:
         shell: bash
         run: |
           if [ -z "$GITHUB_APP_TOKEN" ]; then
-            echo "::error::GITHUB_APP_TOKEN is not set. setup-credentials may have failed (check OIDC and AWS Secrets Manager configuration)."
+                                echo "::error::GITHUB_APP_TOKEN is not set. setup-credentials may have failed (check OIDC and AWS Secrets Manager configuration)."
             echo "::error::Cross-run artifact download requires a token with actions:read scope."
             exit 1
           fi
@@ -347,7 +338,7 @@ jobs:
           add-prompt-files: ${{ inputs.add-prompt-files }}
           model: ${{ inputs.model }}
           github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
-          trusted-bot-app-id: ${{ env.GITHUB_APP_ID }}
+          trusted-bot-token: ${{ env.GITHUB_APP_TOKEN }}
           anthropic-api-key: ${{ env.ANTHROPIC_API_KEY_FROM_SSM || secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ env.OPENAI_API_KEY_FROM_SSM || secrets.OPENAI_API_KEY }}
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}

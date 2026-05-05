@@ -1,5 +1,5 @@
 name: 'Setup Credentials'
-description: 'Fetch credentials from AWS Secrets Manager via OIDC and generate GitHub App token'
+description: 'Fetch credentials from AWS Secrets Manager via OIDC'
 runs:
   using: composite
   steps:

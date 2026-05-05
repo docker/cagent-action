@@ -220,6 +220,7 @@ PR number and comment ID are auto-detected from `github.event` when not provided
 | `github-token`             | GitHub token                                                     | No       |
 | `github-app-id`            | GitHub App ID for custom identity                                | No       |
 | `github-app-private-key`   | GitHub App private key                                           | No       |
+| `trusted-bot-token`        | PAT for a trusted bot account that can bypass auth checks        | No       |
 | `add-prompt-files`         | Comma-separated files to append to the prompt                    | No       |
 
 \*API keys are optional when using the reusable workflow (credentials are fetched via OIDC). Only required when using the composite action directly without OIDC.
