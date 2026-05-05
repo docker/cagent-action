@@ -137,15 +137,16 @@ export async function run(): Promise<void> {
   }
 
   // 3. Resolve token
-  const token = process.env.GITHUB_APP_TOKEN ?? process.env.GITHUB_TOKEN;
-  if (!token) throw new Error('GITHUB_APP_TOKEN or GITHUB_TOKEN is required');
+  const token =
+    process.env.GITHUB_APP_TOKEN ?? process.env.GITHUB_TOKEN ?? core.getInput('github-token');
+  if (!token) throw new Error('GITHUB_APP_TOKEN, GITHUB_TOKEN, or github-token input is required');
 
   // 4. 👀 reaction (best-effort, before potentially slow org check)
   await addReaction(token, ctx.owner, ctx.repo, ctx.commentId, 'eyes');
 
   // 5. Org membership check
-  const orgToken = process.env.ORG_MEMBERSHIP_TOKEN;
-  if (!orgToken) throw new Error('ORG_MEMBERSHIP_TOKEN is required');
+  const orgToken = process.env.ORG_MEMBERSHIP_TOKEN ?? core.getInput('org-membership-token');
+  if (!orgToken) throw new Error('ORG_MEMBERSHIP_TOKEN or org-membership-token input is required');
 
   const isMember = await checkOrgMembership(orgToken, 'docker', ctx.commentAuthor);
   if (!isMember) {

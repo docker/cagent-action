@@ -13,19 +13,6 @@ inputs:
 outputs:
   is-member:
     description: "'true' if the user is an org member, 'false' otherwise"
-    value: ${{ steps.check.outputs.is-member }}
 runs:
-  using: composite
-  steps:
-    - name: Setup Node.js
-      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-      with:
-        node-version: '24'
-    - name: Check membership
-      id: check
-      shell: bash
-      env:
-        ORG_MEMBERSHIP_TOKEN: ${{ inputs.org-membership-token }}
-        INPUT_ORG: ${{ inputs.org }}
-        INPUT_USERNAME: ${{ inputs.username }}
-      run: node "$GITHUB_ACTION_PATH/../../../dist/check-org-membership.js"
+  using: 'node20'
+  main: '../../../dist/check-org-membership.js'

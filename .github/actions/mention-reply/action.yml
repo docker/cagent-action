@@ -10,33 +10,8 @@ inputs:
 outputs:
   should-reply:
     description: "'true' if the reply agent should run; 'false' if the event was skipped or rejected"
-    value: ${{ steps.handler.outputs.should-reply }}
   prompt:
     description: 'Formatted context prompt for the mention-reply agent'
-    value: ${{ steps.handler.outputs.prompt }}
 runs:
-  using: composite
-  steps:
-    - name: Setup Node.js
-      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-      with:
-        node-version: '24'
-
-    - name: Run mention-reply handler
-      id: handler
-      shell: bash
-      env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-        GITHUB_APP_TOKEN: ${{ inputs.github-token }}
-        ORG_MEMBERSHIP_TOKEN: ${{ inputs.org-membership-token }}
-      run: node "$GITHUB_ACTION_PATH/../../../dist/mention-reply.js"
-
-    - name: Verify handler ran
-      shell: bash
-      env:
-        SHOULD_REPLY: ${{ steps.handler.outputs.should-reply }}
-      run: |
-        if [ -z "$SHOULD_REPLY" ]; then
-          echo "::error::mention-reply handler did not set should-reply output"
-          exit 1
-        fi
+  using: 'node20'
+  main: '../../../dist/mention-reply.js'

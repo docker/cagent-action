@@ -17,18 +17,5 @@ inputs:
     description: 'Comment body (Markdown supported)'
     required: true
 runs:
-  using: composite
-  steps:
-    - name: Setup Node.js
-      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-      with:
-        node-version: '24'
-    - name: Post comment
-      shell: bash
-      env:
-        GITHUB_APP_TOKEN: ${{ inputs.github-token }}
-        INPUT_OWNER: ${{ inputs.owner }}
-        INPUT_REPO: ${{ inputs.repo }}
-        INPUT_ISSUE-NUMBER: ${{ inputs.issue-number }}
-        INPUT_BODY: ${{ inputs.body }}
-      run: node "$GITHUB_ACTION_PATH/../../../dist/post-comment.js"
+  using: 'node20'
+  main: '../../../dist/post-comment.js'
