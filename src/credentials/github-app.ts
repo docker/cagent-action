@@ -5,9 +5,8 @@ import type { AwsCredentialIdentityProvider } from '@aws-sdk/types';
 const SECRET_ID = 'docker-agent-action/github-app';
 const REGION = 'us-east-1';
 
-interface GitHubAppSecret {
-  app_id: string;
-  private_key: string;
+interface GitHubPATSecret {
+  pat: string;
   org_membership_token: string;
 }
 
@@ -26,9 +25,9 @@ export async function fetchGitHubAppCredentials(
 
   core.setSecret(secretJson);
 
-  let secret: GitHubAppSecret | undefined;
+  let secret: GitHubPATSecret | undefined;
   try {
-    secret = JSON.parse(secretJson) as GitHubAppSecret;
+    secret = JSON.parse(secretJson) as GitHubPATSecret;
   } catch {
     core.error(`${SECRET_ID} did not return valid JSON`);
     process.exit(1);
@@ -36,17 +35,12 @@ export async function fetchGitHubAppCredentials(
 
   if (!secret) return;
 
-  const { app_id, private_key, org_membership_token } = secret;
+  const { pat, org_membership_token } = secret;
 
-  core.setSecret(app_id);
-  core.setSecret(private_key);
+  core.setSecret(pat);
   core.setSecret(org_membership_token);
 
-  for (const [field, value] of Object.entries({
-    app_id,
-    private_key,
-    org_membership_token,
-  })) {
+  for (const [field, value] of Object.entries({ pat, org_membership_token })) {
     if (!value || value === 'null') {
       core.error(`Failed to extract ${field} from secret ${SECRET_ID}`);
       process.exit(1);
@@ -54,7 +48,6 @@ export async function fetchGitHubAppCredentials(
     }
   }
 
-  core.exportVariable('GITHUB_APP_ID', app_id);
+  core.exportVariable('GITHUB_APP_TOKEN', pat);
   core.exportVariable('ORG_MEMBERSHIP_TOKEN', org_membership_token);
-  core.exportVariable('GITHUB_APP_PRIVATE_KEY', private_key);
 }

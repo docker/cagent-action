@@ -18,8 +18,7 @@ vi.mock('@aws-sdk/client-secrets-manager', () => ({
 }));
 
 const VALID_SECRET = JSON.stringify({
-  app_id: 'test-app-id',
-  private_key: 'FAKE_PRIVATE_KEY_FOR_TESTING',
+  pat: 'test-pat-token',
   org_membership_token: 'test-org-token',
 });
 
@@ -32,28 +31,22 @@ describe('fetchGitHubAppCredentials', () => {
   it('sets env vars and masks fields on valid secret', async () => {
     mockSend.mockResolvedValue({ SecretString: VALID_SECRET });
     await fetchGitHubAppCredentials();
-    expect(core.exportVariable).toHaveBeenCalledWith('GITHUB_APP_ID', 'test-app-id');
+    expect(core.exportVariable).toHaveBeenCalledWith('GITHUB_APP_TOKEN', 'test-pat-token');
     expect(core.exportVariable).toHaveBeenCalledWith('ORG_MEMBERSHIP_TOKEN', 'test-org-token');
-    expect(core.exportVariable).toHaveBeenCalledWith(
-      'GITHUB_APP_PRIVATE_KEY',
-      'FAKE_PRIVATE_KEY_FOR_TESTING',
-    );
-    expect(core.setSecret).toHaveBeenCalledWith(
-      expect.stringContaining('FAKE_PRIVATE_KEY_FOR_TESTING'),
-    );
+    expect(core.setSecret).toHaveBeenCalledWith(expect.stringContaining('test-pat-token'));
   });
 
-  it('exits with error when app_id is missing', async () => {
+  it('exits with error when pat is missing', async () => {
     mockSend.mockResolvedValue({
-      SecretString: JSON.stringify({ app_id: '', private_key: 'key', org_membership_token: 'tok' }),
+      SecretString: JSON.stringify({ pat: '', org_membership_token: 'test-org-token' }),
     });
     await fetchGitHubAppCredentials();
     expect(process.exit).toHaveBeenCalledWith(1);
   });
 
-  it('exits with error when private_key is missing', async () => {
+  it('exits with error when org_membership_token is missing', async () => {
     mockSend.mockResolvedValue({
-      SecretString: JSON.stringify({ app_id: 'id', private_key: '', org_membership_token: 'tok' }),
+      SecretString: JSON.stringify({ pat: 'test-pat-token', org_membership_token: '' }),
     });
     await fetchGitHubAppCredentials();
     expect(process.exit).toHaveBeenCalledWith(1);
@@ -77,6 +70,6 @@ describe('fetchGitHubAppCredentials', () => {
     mockSend.mockResolvedValue({ SecretString: VALID_SECRET });
     const fakeCredentials = vi.fn();
     await fetchGitHubAppCredentials(fakeCredentials as never);
-    expect(core.exportVariable).toHaveBeenCalledWith('GITHUB_APP_ID', 'test-app-id');
+    expect(core.exportVariable).toHaveBeenCalledWith('GITHUB_APP_TOKEN', 'test-pat-token');
   });
 });
