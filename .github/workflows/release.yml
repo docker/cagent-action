@@ -131,22 +131,6 @@ jobs:
             echo "::error::dist/mention-reply.js is missing — build may have failed"
             exit 1
           fi
-          if [ ! -f "$GITHUB_WORKSPACE/dist/add-reaction.js" ]; then
-            echo "::error::dist/add-reaction.js is missing — build may have failed"
-            exit 1
-          fi
-          if [ ! -f "$GITHUB_WORKSPACE/dist/check-org-membership.js" ]; then
-            echo "::error::dist/check-org-membership.js is missing — build may have failed"
-            exit 1
-          fi
-          if [ ! -f "$GITHUB_WORKSPACE/dist/post-comment.js" ]; then
-            echo "::error::dist/post-comment.js is missing — build may have failed"
-            exit 1
-          fi
-          if [ ! -f "$GITHUB_WORKSPACE/dist/get-pr-meta.js" ]; then
-            echo "::error::dist/get-pr-meta.js is missing — build may have failed"
-            exit 1
-          fi
 
           # Create temp branch and first commit (staging dist/)
           STAGING_BRANCH="release-staging/${VERSION}"
