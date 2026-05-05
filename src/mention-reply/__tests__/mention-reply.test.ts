@@ -151,6 +151,22 @@ describe('runGuards', () => {
     expect(result.reason).toMatch(/@docker-agent/);
   });
 
+  it('fails when mention is a longer username (@docker-agentfoo)', () => {
+    const result = runGuards({ ...BASE_CTX, commentBody: 'hey @docker-agentfoo, look at this' });
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/@docker-agent/);
+  });
+
+  it('passes when @docker-agent appears at end of string', () => {
+    expect(runGuards({ ...BASE_CTX, commentBody: 'thoughts @docker-agent' }).pass).toBe(true);
+  });
+
+  it('passes when @docker-agent is followed by punctuation', () => {
+    expect(runGuards({ ...BASE_CTX, commentBody: '@docker-agent, can you review?' }).pass).toBe(
+      true,
+    );
+  });
+
   it('fails when comment body starts with /review', () => {
     const result = runGuards({ ...BASE_CTX, commentBody: '/review @docker-agent please' });
     expect(result.pass).toBe(false);

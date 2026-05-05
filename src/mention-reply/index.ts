@@ -12,12 +12,12 @@
  *      - On non-member: post a polite rejection reply and exit cleanly
  *   5. Fetch PR metadata (title, body, author, base branch)
  *   6. Build context prompt with injection-safe delimiters around user-controlled fields
- *   7. Write context to /tmp/mention_context.txt and set output should-reply=true
+ *   7. Build context prompt and set outputs should-reply=true and prompt
  *
  * Outputs (via @actions/core.setOutput):
  *   should-reply  – 'true' | 'false'
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import * as core from '@actions/core';
 import { Octokit } from '@octokit/rest';
 
@@ -81,7 +81,7 @@ export function runGuards(ctx: EventContext): { pass: boolean; reason?: string }
   if (!ctx.isPrComment) {
     return { pass: false, reason: 'not a PR comment' };
   }
-  if (!ctx.commentBody.includes('@docker-agent')) {
+  if (!/@docker-agent(?=[^a-zA-Z0-9_-]|$)/.test(ctx.commentBody)) {
     return { pass: false, reason: 'no @docker-agent mention' };
   }
   if (ctx.commentBody.startsWith('/review')) {
@@ -232,8 +232,7 @@ export async function run(): Promise<void> {
 
   // 7. Build and write context prompt
   const prompt = buildContextPrompt(ctx, pr);
-  writeFileSync('/tmp/mention_context.txt', prompt, 'utf8');
-  core.info('✅ Wrote mention context to /tmp/mention_context.txt');
+  core.info('✅ Built mention context prompt');
 
   core.setOutput('prompt', prompt);
   core.setOutput('should-reply', 'true');

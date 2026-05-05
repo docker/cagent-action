@@ -33,8 +33,10 @@ runs:
 
     - name: Verify handler ran
       shell: bash
+      env:
+        SHOULD_REPLY: ${{ steps.handler.outputs.should-reply }}
       run: |
-        if [ -z "${{ steps.handler.outputs.should-reply }}" ]; then
+        if [ -z "$SHOULD_REPLY" ]; then
           echo "::error::mention-reply handler did not set should-reply output"
           exit 1
         fi
