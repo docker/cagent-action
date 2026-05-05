@@ -254,8 +254,10 @@ runs:
         # Allow a trusted bot account to bypass auth (e.g., self-review triggers).
         # Resolves the bot's login via the PAT, then compares against the comment author.
         if [ -n "$TRUSTED_BOT_TOKEN" ]; then
-          TRUSTED_BOT_LOGIN=$(GH_TOKEN="$TRUSTED_BOT_TOKEN" gh api /user --jq '.login' 2>/dev/null || echo "")
-          if [ -n "$TRUSTED_BOT_LOGIN" ] && [ "$COMMENT_USER_LOGIN" = "$TRUSTED_BOT_LOGIN" ]; then
+          TRUSTED_BOT_LOGIN=$(GH_TOKEN="$TRUSTED_BOT_TOKEN" gh api /user --jq '.login' 2>/tmp/gh_api_err || echo "")
+          if [ -z "$TRUSTED_BOT_LOGIN" ]; then
+            echo "::warning::trusted-bot-token set but could not resolve bot login ($(cat /tmp/gh_api_err)); bypass will not apply"
+          elif [ "$COMMENT_USER_LOGIN" = "$TRUSTED_BOT_LOGIN" ]; then
             echo "ℹ️ Skipping auth check (trusted bot: $COMMENT_USER_LOGIN)"
             echo "authorized=true" >> $GITHUB_OUTPUT
             exit 0
