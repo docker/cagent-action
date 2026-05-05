@@ -244,6 +244,9 @@ runs:
 
         # Always attempt trusted-bot bypass using the resolved github-token.
         # Resolves the token's GitHub login via the API, then compares against the comment author.
+        # Note: no comment.user.type == "Bot" check — github-token may be owned by a machine user
+        # (type "User", not "Bot"). Login equality is sufficient: GitHub enforces global username
+        # uniqueness, so no human account can impersonate the machine user's login.
         ACTIVE_TOKEN="${INPUT_GITHUB_TOKEN:-$DEFAULT_GH_TOKEN}"
         TRUSTED_BOT_LOGIN=$(GH_TOKEN="$ACTIVE_TOKEN" gh api /user --jq '.login' 2>/tmp/gh_api_err || echo "")
         if [ -z "$TRUSTED_BOT_LOGIN" ]; then
