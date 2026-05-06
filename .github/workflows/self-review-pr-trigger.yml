@@ -9,6 +9,7 @@ permissions: {}
 
 jobs:
   save-context:
+    if: github.event.comment.user.login != 'docker-agent'
     runs-on: ubuntu-latest
     steps:
       - name: Save event context
