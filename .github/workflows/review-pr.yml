@@ -76,6 +76,7 @@ jobs:
       pr-number: ${{ steps.read.outputs.pr-number }}
       pr-head-sha: ${{ steps.read.outputs.pr-head-sha }}
       comment-json: ${{ steps.read.outputs.comment-json }}
+      comment-author: ${{ steps.read.outputs.comment-author }}
     steps:
       - name: Setup credentials
         uses: docker/cagent-action/.github/actions/setup-credentials@2369328cd25777eb0a4ff959a399b6d1a5204fc7 # v1.4.4
@@ -120,6 +121,7 @@ jobs:
               jq -c '.' /tmp/context/comment.json
               echo 'COMMENT_JSON_EOF'
             } >> $GITHUB_OUTPUT
+            echo "comment-author=$(jq -r '.user.login' /tmp/context/comment.json)" >> $GITHUB_OUTPUT
           fi
 
   review:
@@ -127,7 +129,7 @@ jobs:
     if: |
       always() && (
         (github.event_name == 'issue_comment' && github.event.issue.pull_request) ||
-        (github.event_name == 'pull_request' && github.event.action != 'review_requested') ||
+        (github.event_name == 'pull_request' && github.event.action != 'review_requested' && github.event.sender.type != 'Bot') ||
         (github.event_name == 'pull_request' && github.event.action == 'review_requested' && github.event.requested_reviewer.login == 'docker-agent') ||
         inputs.pr-number != '' ||
         (needs.resolve-context.result == 'success' && needs.resolve-context.outputs.trigger-event == 'pull_request')
@@ -359,8 +361,8 @@ jobs:
     needs: [resolve-context]
     if: |
       always() && needs.resolve-context.result != 'failure' && (
-        (github.event_name == 'pull_request_review_comment' && github.event.comment.in_reply_to_id) ||
-        (needs.resolve-context.result == 'success' && needs.resolve-context.outputs.trigger-event == 'pull_request_review_comment')
+        (github.event_name == 'pull_request_review_comment' && github.event.comment.in_reply_to_id && github.event.comment.user.login != 'docker-agent' && github.event.comment.user.type != 'Bot') ||
+        (needs.resolve-context.result == 'success' && needs.resolve-context.outputs.trigger-event == 'pull_request_review_comment' && needs.resolve-context.outputs.comment-author != 'docker-agent')
       )
     runs-on: ubuntu-latest
     permissions:
@@ -701,7 +703,8 @@ jobs:
         github.event.issue.pull_request &&
         contains(github.event.comment.body, '@docker-agent') &&
         !startsWith(github.event.comment.body, '/review') &&
-        github.event.comment.user.login != 'docker-agent'
+        github.event.comment.user.login != 'docker-agent' &&
+        github.event.comment.user.type != 'Bot'
       )
     runs-on: ubuntu-latest
     permissions:
