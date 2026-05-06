@@ -699,12 +699,16 @@ jobs:
     needs: [resolve-context]
     if: |
       always() && needs.resolve-context.result != 'failure' && (
-        github.event_name == 'issue_comment' &&
+        (github.event_name == 'issue_comment' &&
         github.event.issue.pull_request &&
         contains(github.event.comment.body, '@docker-agent') &&
         !startsWith(github.event.comment.body, '/review') &&
         github.event.comment.user.login != 'docker-agent' &&
-        github.event.comment.user.type != 'Bot'
+        github.event.comment.user.type != 'Bot') ||
+        (github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '@docker-agent') &&
+        github.event.comment.user.login != 'docker-agent' &&
+        github.event.comment.user.type != 'Bot')
       )
     runs-on: ubuntu-latest
     permissions:
@@ -749,11 +753,17 @@ jobs:
           REPO: ${{ github.repository }}
           COMMENT_ID: ${{ github.event.comment.id }}
           OUTCOME: ${{ steps.run-reply.outcome }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           if [ "$OUTCOME" = "success" ]; then
-            gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" \
-              -X POST -f content='+1' || true
+            REACTION='+1'
+          else
+            REACTION='confused'
+          fi
+          if [ "$EVENT_NAME" = "pull_request_review_comment" ]; then
+            gh api "repos/$REPO/pulls/comments/$COMMENT_ID/reactions" \
+              -X POST -f content="$REACTION" || true
           else
             gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" \
-              -X POST -f content='confused' || true
+              -X POST -f content="$REACTION" || true
           fi

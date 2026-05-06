@@ -2,10 +2,11 @@
  * Mention-reply handler for the cagent-action review pipeline.
  *
  * Invoked by `.github/actions/mention-reply/action.yml` once per
- * issue_comment event that mentions @docker-agent on a pull request.
+ * issue_comment or pull_request_review_comment event that mentions
+ * @docker-agent on a pull request.
  *
  * Steps:
- *   1. Parse event context from GITHUB_EVENT_PATH
+ *   1. Parse event context from GITHUB_EVENT_PATH / GITHUB_EVENT_NAME
  *   2. Guard checks: PR comment, @docker-agent mention, not /review, not bot, not self-reply
  *   3. Post 👀 reaction on the triggering comment
  *   4. Verify commenter is a member of the docker org (ORG_MEMBERSHIP_TOKEN)
@@ -20,7 +21,7 @@
  */
 import { readFileSync } from 'node:fs';
 import * as core from '@actions/core';
-import { addReaction } from '../add-reaction/index.js';
+import { addReaction, type CommentType } from '../add-reaction/index.js';
 import { checkOrgMembership } from '../check-org-membership/index.js';
 import { getPrMeta, type PrMeta } from '../get-pr-meta/index.js';
 import { postComment } from '../post-comment/index.js';
@@ -38,6 +39,8 @@ export interface EventContext {
   commentAuthor: string;
   commentAuthorType: string;
   isPrComment: boolean;
+  /** Which GitHub API to use for reactions on this comment. */
+  commentType: CommentType;
 }
 
 export type { PrMeta };
@@ -50,6 +53,8 @@ export function parseEventContext(): EventContext {
   const eventPath = process.env.GITHUB_EVENT_PATH;
   if (!eventPath) throw new Error('GITHUB_EVENT_PATH is not set');
 
+  const eventName = process.env.GITHUB_EVENT_NAME ?? '';
+
   const raw = JSON.parse(readFileSync(eventPath, 'utf8')) as Record<string, unknown>;
 
   const repository = raw.repository as { owner: { login: string }; name: string };
@@ -58,8 +63,26 @@ export function parseEventContext(): EventContext {
     body: string;
     user: { login: string; type: string };
   };
-  const issue = raw.issue as { number: number; pull_request?: unknown };
 
+  if (eventName === 'pull_request_review_comment') {
+    // For pull_request_review_comment events the PR lives at raw.pull_request,
+    // not raw.issue.  The comment is always on a PR, so isPrComment is true.
+    const pullRequest = raw.pull_request as { number: number };
+    return {
+      owner: repository.owner.login,
+      repo: repository.name,
+      prNumber: pullRequest.number,
+      commentId: comment.id,
+      commentBody: comment.body,
+      commentAuthor: comment.user.login,
+      commentAuthorType: comment.user.type,
+      isPrComment: true,
+      commentType: 'pull_request_review',
+    };
+  }
+
+  // Default: issue_comment event shape
+  const issue = raw.issue as { number: number; pull_request?: unknown };
   return {
     owner: repository.owner.login,
     repo: repository.name,
@@ -69,6 +92,7 @@ export function parseEventContext(): EventContext {
     commentAuthor: comment.user.login,
     commentAuthorType: comment.user.type,
     isPrComment: issue.pull_request != null,
+    commentType: 'issue',
   };
 }
 
@@ -142,7 +166,8 @@ export async function run(): Promise<void> {
   if (!token) throw new Error('GITHUB_APP_TOKEN, GITHUB_TOKEN, or github-token input is required');
 
   // 4. 👀 reaction (best-effort, before potentially slow org check)
-  await addReaction(token, ctx.owner, ctx.repo, ctx.commentId, 'eyes');
+  //    Use the correct API endpoint based on comment type.
+  await addReaction(token, ctx.owner, ctx.repo, ctx.commentId, 'eyes', ctx.commentType);
 
   // 5. Org membership check
   const orgToken = process.env.ORG_MEMBERSHIP_TOKEN ?? core.getInput('org-membership-token');
