@@ -93,7 +93,14 @@ async function ensureDockerAgent(version: string, githubToken?: string): Promise
   // ── 2. Remote @actions/cache hit (cross-run persistence) ───────────────
   const tmpBinDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'docker-agent-'));
   const cacheKey = `docker-agent-${toolName}-${version}-${platform}-${arch}`;
-  const restoredKey = await actionsCache.restoreCache([tmpBinDir], cacheKey);
+  let restoredKey: string | undefined;
+  try {
+    restoredKey = await actionsCache.restoreCache([tmpBinDir], cacheKey);
+  } catch (err: unknown) {
+    core.warning(
+      `Remote cache restore failed (${(err as Error).message}); falling back to download`,
+    );
+  }
 
   if (restoredKey) {
     core.info(`Restored docker-agent ${version} from remote cache (key: ${restoredKey})`);
@@ -161,7 +168,14 @@ async function ensureMcpGateway(version: string, githubToken?: string): Promise<
   // ── 2. Remote @actions/cache hit ───────────────────────────────────────
   const tmpPluginDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'docker-mcp-'));
   const cacheKey = `docker-agent-${toolName}-${version}-${platform}-${arch}`;
-  const restoredKey = await actionsCache.restoreCache([tmpPluginDir], cacheKey);
+  let restoredKey: string | undefined;
+  try {
+    restoredKey = await actionsCache.restoreCache([tmpPluginDir], cacheKey);
+  } catch (err: unknown) {
+    core.warning(
+      `Remote cache restore failed (${(err as Error).message}); falling back to download`,
+    );
+  }
 
   if (restoredKey) {
     core.info(`Restored mcp-gateway ${version} from remote cache (key: ${restoredKey})`);

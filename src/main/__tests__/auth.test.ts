@@ -233,6 +233,27 @@ describe('Tier 3: org membership', () => {
     expect(result.authorized).toBe(false);
     expect(result.outcome).toBe('denied');
   });
+
+  it('falls through to author_association when org check throws (FIX 3)', async () => {
+    // Old code: exception → hard-deny. New code: exception → warn + fall through to Tier 4.
+    // Using OWNER association so Tier 4 authorizes — this distinguishes the two behaviors.
+    await writePayload({
+      comment: { author_association: 'OWNER', user: { login: 'repo-owner' } },
+    });
+    mockGetAuthenticated.mockResolvedValue({ data: { login: 'bot' } });
+    mockCheckOrgMembership.mockRejectedValue(new Error('Network timeout'));
+
+    const result = await checkAuthorization({
+      ...BASE_OPTS,
+      skipAuth: false,
+      orgMembershipToken: 'org-token',
+      authOrg: 'my-org',
+      eventPayloadPath,
+    });
+    // New behavior: falls through to Tier 4 → OWNER is authorized
+    expect(result.authorized).toBe(true);
+    expect(result.outcome).toBe('author-association');
+  });
 });
 
 // ── Tier 4: author_association fallback ──────────────────────────────────────

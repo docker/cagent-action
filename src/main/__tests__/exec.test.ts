@@ -40,8 +40,13 @@ function makeMockChild(exitCode: number, delayMs = 0) {
     kill: ReturnType<typeof vi.fn>;
   };
   emitter.stdin = { write: vi.fn(), end: vi.fn() };
-  emitter.kill = vi.fn();
 
+  // When killed (SIGTERM/SIGKILL), emit close shortly after — simulates real process dying.
+  emitter.kill = vi.fn().mockImplementation(() => {
+    setImmediate(() => emitter.emit('close', null));
+  });
+
+  // Natural exit after delayMs (ignored if kill fires first)
   setTimeout(() => emitter.emit('close', exitCode), delayMs);
 
   return emitter;
@@ -250,6 +255,18 @@ describe('runAgent', () => {
     // Only spawned once — no retries after timeout
     expect(mockSpawn).toHaveBeenCalledOnce();
   });
+
+  it('kills process with SIGTERM when timeout fires (FIX D)', async () => {
+    // Child exits naturally in 5 s; action timeout is 50 ms.
+    // The real timer path fires SIGTERM, then the child is killed.
+    const child = makeMockChild(0, 5000);
+    mockSpawn.mockReturnValue(child);
+
+    const result = await runAgent(baseOpts({ timeout: 0.05, maxRetries: 0 }));
+
+    expect(result.exitCode).toBe(TIMEOUT_EXIT_CODE);
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+  }, 2000);
 
   it('retries on non-zero exit code up to maxRetries times', async () => {
     // Each spawn call must have its own close event

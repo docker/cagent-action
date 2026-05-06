@@ -81,6 +81,18 @@ describe('filterAgentOutput', () => {
     expect(result).toContain('Clean output');
   });
 
+  it('drops blank line that terminates an inTool block (matches awk `next`)', () => {
+    // FIX 4: the blank line that closes an inTool block must be dropped (continue),
+    // not re-emitted. Reverting to fall-through would emit an extra blank line.
+    const input = ['--- Tool: bash ---', 'some tool output', '', 'Clean output'].join('\n');
+    const result = filterAgentOutput(input);
+    const lines = result.split('\n');
+    const cleanIdx = lines.findIndex((l) => l === 'Clean output');
+    expect(cleanIdx).toBeGreaterThan(-1);
+    // The line immediately before 'Clean output' must not be blank
+    expect(lines[cleanIdx - 1]).not.toBe('');
+  });
+
   it('strips Calling <fn>( … ) blocks', () => {
     const input =
       'Calling read_multiple_files(\n  paths: ["pr.diff"]\n)\n\n## Summary\n\nThis PR adds a greeting.\n';

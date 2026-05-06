@@ -446,13 +446,22 @@ describe('agent exit code propagation', () => {
 
 // ── Wiring — sanitizeOutput runs before block extraction ─────────────────────
 
+// ── Wiring — sanitizeOutput runs before block extraction ─────────────────────
+
 describe('security pipeline ordering (FIX 1)', () => {
   it('sanitizeOutput scans full filtered output before block extraction narrows it', async () => {
+    // This test MUST fail if FIX 1 is reverted (sanitize-after-extract order).
+    // Strategy: verbose log contains a real Anthropic API key (matching
+    // /sk-ant-[a-zA-Z0-9_-]{30,}/) in conversational text BEFORE a clean
+    // docker-agent-output block.  Under the correct order (filter → sanitize →
+    // extract), sanitizeOutput sees the key → secrets-detected=true.  Under the
+    // wrong order (filter → extract → sanitize) the outputFile contains only the
+    // clean block and the key is never scanned.
+    const LEAKED_KEY =
+      'sk-ant-api03-AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKKKLLLLMMMMNNNNOOOOPPPPQQQQRRRR';
+
     setupInputs({ prompt: 'Please review this PR' });
 
-    // Capture the paths that run() will assign to output/verbose files.
-    // setOutput('verbose-log-file', ...) is called BEFORE runAgent(), so
-    // capturedVerboseLog is populated before mockSpawn is invoked.
     let capturedVerboseLog: string | undefined;
     let capturedOutputFile: string | undefined;
 
@@ -461,13 +470,21 @@ describe('security pipeline ordering (FIX 1)', () => {
       if (name === 'output-file') capturedOutputFile = value;
     });
 
-    // Write verbose log content SYNCHRONOUSLY inside the spawn mock so it is
-    // present when run() reads the file immediately after spawn completes.
+    // Write verbose log content SYNCHRONOUSLY so it is present when run() reads
+    // the file immediately after spawn completes.
     mockSpawn.mockImplementation(() => {
       if (capturedVerboseLog) {
         fsSync.appendFileSync(
           capturedVerboseLog,
-          '--- Agent: root ---\nConversational text.\n```docker-agent-output\n## Result\n\nClean output.\n```\n',
+          [
+            'Here is my analysis.',
+            `Oops I leaked: ${LEAKED_KEY}`,
+            '```docker-agent-output',
+            '## Result',
+            '',
+            'Clean output with no secrets.',
+            '```',
+          ].join('\n'),
           'utf-8',
         );
       }
@@ -476,19 +493,16 @@ describe('security pipeline ordering (FIX 1)', () => {
 
     await run();
 
-    // outputFile should contain the block-extracted clean content
-    if (capturedOutputFile && fsSync.existsSync(capturedOutputFile)) {
-      const outputContent = fsSync.readFileSync(capturedOutputFile, 'utf-8');
-      // Block extraction should have run: output is the docker-agent-output block
-      expect(outputContent.trim()).toBe('## Result\n\nClean output.');
-    } else {
-      // If output file wasn\'t created, ensure run() completed without failure
-      expect(mockSetFailed).not.toHaveBeenCalled();
-    }
-
-    // Security outputs are correct (no leak in test content)
+    // The key must have been detected BEFORE block extraction narrowed the file.
     const outputCalls = Object.fromEntries(mockSetOutput.mock.calls.map(([n, v]) => [n, v]));
-    expect(outputCalls['secrets-detected']).toBe('false');
-    expect(outputCalls['security-blocked']).toBe('false');
+    expect(outputCalls['secrets-detected']).toBe('true');
+    expect(outputCalls['security-blocked']).toBe('true');
+
+    // When a leak is detected, Step 9b is skipped — outputFile retains full
+    // filtered text so the incident path can see the leaked key.
+    if (capturedOutputFile && fsSync.existsSync(capturedOutputFile)) {
+      const content = fsSync.readFileSync(capturedOutputFile, 'utf-8');
+      expect(content).toContain(LEAKED_KEY);
+    }
   });
 });
