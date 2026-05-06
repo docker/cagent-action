@@ -706,7 +706,9 @@ jobs:
         github.event.comment.user.login != 'docker-agent' &&
         github.event.comment.user.type != 'Bot') ||
         (github.event_name == 'pull_request_review_comment' &&
+        !github.event.comment.in_reply_to_id &&
         contains(github.event.comment.body, '@docker-agent') &&
+        !startsWith(github.event.comment.body, '/review') &&
         github.event.comment.user.login != 'docker-agent' &&
         github.event.comment.user.type != 'Bot')
       )
