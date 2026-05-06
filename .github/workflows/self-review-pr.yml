@@ -316,10 +316,10 @@ jobs:
   reply-to-feedback:
     needs: [resolve-context]
     if: |
-      always() && needs.resolve-context.result != 'failure' && (
-        (github.event_name == 'pull_request_review_comment' && github.event.comment.in_reply_to_id && github.event.comment.user.login != 'docker-agent' && github.event.comment.user.type != 'Bot') ||
-        (needs.resolve-context.result == 'success' && needs.resolve-context.outputs.trigger-event == 'pull_request_review_comment' && needs.resolve-context.outputs.comment-author != 'docker-agent')
-      )
+      always() &&
+      needs.resolve-context.result == 'success' &&
+      needs.resolve-context.outputs.trigger-event == 'pull_request_review_comment' &&
+      needs.resolve-context.outputs.comment-author != 'docker-agent'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -657,20 +657,13 @@ jobs:
   reply-to-mention:
     needs: [resolve-context]
     if: |
-      always() && needs.resolve-context.result != 'failure' && (
-        (github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request &&
-        contains(github.event.comment.body, '@docker-agent') &&
-        !startsWith(github.event.comment.body, '/review') &&
-        github.event.comment.user.login != 'docker-agent' &&
-        github.event.comment.user.type != 'Bot') ||
-        (github.event_name == 'pull_request_review_comment' &&
-        !github.event.comment.in_reply_to_id &&
-        contains(github.event.comment.body, '@docker-agent') &&
-        !startsWith(github.event.comment.body, '/review') &&
-        github.event.comment.user.login != 'docker-agent' &&
-        github.event.comment.user.type != 'Bot')
-      )
+      always() && needs.resolve-context.result != 'failure' &&
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@docker-agent') &&
+      !startsWith(github.event.comment.body, '/review') &&
+      github.event.comment.user.login != 'docker-agent' &&
+      github.event.comment.user.type != 'Bot'
     runs-on: ubuntu-latest
     permissions:
       contents: read
