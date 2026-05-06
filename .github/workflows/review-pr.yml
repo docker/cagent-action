@@ -199,8 +199,38 @@ jobs:
             echo "⏭️ Not a /review command, skipping"
           fi
 
+      - name: Classify trigger type
+        id: trigger-type
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          INPUT_PR_NUMBER: ${{ inputs.pr-number }}
+          RESOLVE_CONTEXT_RESULT: ${{ needs.resolve-context.result }}
+          IS_REVIEW_COMMAND: ${{ steps.command.outputs.is_review }}
+        run: |
+          # Classify whether this is a user-requested or automatic review.
+          # User-requested triggers bypass ALL gates (draft check, org membership).
+          # Automatic triggers only apply the draft check (no membership gate).
+          if [ "$EVENT_NAME" = "issue_comment" ] && [ "$IS_REVIEW_COMMAND" = "true" ]; then
+            echo "user_requested=true" >> $GITHUB_OUTPUT
+            echo "🎯 Trigger type: user-requested (issue_comment /review command)"
+          elif [ "$EVENT_NAME" = "pull_request" ] && [ "$EVENT_ACTION" = "review_requested" ]; then
+            echo "user_requested=true" >> $GITHUB_OUTPUT
+            echo "🎯 Trigger type: user-requested (review_requested)"
+          elif [ -n "$INPUT_PR_NUMBER" ]; then
+            echo "user_requested=true" >> $GITHUB_OUTPUT
+            echo "🎯 Trigger type: user-requested (explicit pr-number input)"
+          elif [ "$RESOLVE_CONTEXT_RESULT" = "success" ]; then
+            echo "user_requested=true" >> $GITHUB_OUTPUT
+            echo "🎯 Trigger type: user-requested (trigger path via resolve-context)"
+          else
+            echo "user_requested=false" >> $GITHUB_OUTPUT
+            echo "🤖 Trigger type: automatic (pull_request event)"
+          fi
+
       - name: Check if PR is draft
-        if: github.event_name != 'issue_comment'
+        if: github.event_name != 'issue_comment' && steps.trigger-type.outputs.user_requested != 'true'
         id: draft
         shell: bash
         env:
@@ -219,61 +249,14 @@ jobs:
       - name: Setup credentials
         if: |
           steps.command.outputs.is_review != 'false' &&
-          steps.draft.outputs.skip != 'true'
+          (steps.trigger-type.outputs.user_requested == 'true' || steps.draft.outputs.skip != 'true')
         uses: docker/cagent-action/.github/actions/setup-credentials@2369328cd25777eb0a4ff959a399b6d1a5204fc7 # v1.4.4
-
-      - name: Check if org member
-        id: membership
-        if: |
-          steps.command.outputs.is_review != 'false' &&
-          steps.draft.outputs.skip != 'true'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
-          PR_SOURCE: ${{ steps.pr.outputs.source }}
-          ORG: docker
-          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
-        with:
-          github-token: ${{ env.ORG_MEMBERSHIP_TOKEN }}
-          script: |
-            const org = process.env.ORG;
-            const source = process.env.PR_SOURCE;
-
-            let username;
-            if (source === 'event') {
-              username = process.env.COMMENT_AUTHOR;
-            } else {
-              const { data: pr } = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: parseInt(process.env.PR_NUMBER, 10)
-              });
-              username = pr.user.login;
-            }
-
-            try {
-              await github.rest.orgs.checkMembershipForUser({ org, username });
-              core.setOutput('is_member', 'true');
-              console.log(`✅ ${username} is a ${org} org member — proceeding with review`);
-            } catch (error) {
-              if (error.status === 404 || error.status === 302) {
-                core.setOutput('is_member', 'false');
-                console.log(`⏭️ ${username} is not a ${org} org member — skipping review`);
-              } else if (error.status === 401) {
-                core.setFailed(
-                  `❌ Org membership token is missing or invalid (HTTP 401).\n\n` +
-                  `This token is fetched automatically from AWS Secrets Manager in docker/* repos.\n` +
-                  `Ensure the workflow job has 'id-token: write' permission and OIDC is configured.`
-                );
-              } else {
-                core.setFailed(`Failed to check org membership: ${error.message}`);
-              }
-            }
 
       - name: Create check run
         if: |
           (steps.pr.outputs.source == 'event' || steps.pr.outputs.source == 'trigger') &&
-          steps.membership.outputs.is_member == 'true'
+          steps.command.outputs.is_review != 'false' &&
+          (steps.trigger-type.outputs.user_requested == 'true' || steps.draft.outputs.skip != 'true')
         id: create-check
         continue-on-error: true
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -302,9 +285,8 @@ jobs:
 
       - name: Checkout PR head
         if: |
-          steps.membership.outputs.is_member == 'true' &&
           steps.command.outputs.is_review != 'false' &&
-          steps.draft.outputs.skip != 'true'
+          (steps.trigger-type.outputs.user_requested == 'true' || steps.draft.outputs.skip != 'true')
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
@@ -312,9 +294,8 @@ jobs:
 
       - name: Run PR Review
         if: |
-          steps.membership.outputs.is_member == 'true' &&
           steps.command.outputs.is_review != 'false' &&
-          steps.draft.outputs.skip != 'true'
+          (steps.trigger-type.outputs.user_requested == 'true' || steps.draft.outputs.skip != 'true')
         id: run-review
         continue-on-error: true
         uses: docker/cagent-action/review-pr@2369328cd25777eb0a4ff959a399b6d1a5204fc7 # v1.4.4
@@ -497,69 +478,8 @@ jobs:
         if: steps.check.outputs.is_agent == 'true'
         uses: docker/cagent-action/.github/actions/setup-credentials@2369328cd25777eb0a4ff959a399b6d1a5204fc7 # v1.4.4
 
-      - name: Check authorization
-        if: steps.check.outputs.is_agent == 'true'
-        id: auth
-        shell: bash
-        env:
-          GH_TOKEN: ${{ env.ORG_MEMBERSHIP_TOKEN }}
-          ORG: docker
-          USERNAME: ${{ steps.feedback.outputs.comment-author }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::error::ORG_MEMBERSHIP_TOKEN is not set — org membership check cannot run (ensure id-token: write permission is configured)"
-            echo "authorized=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          # Check org membership with explicit error handling
-          if ! RESPONSE=$(gh api "orgs/$ORG/members/$USERNAME" --silent -i 2>/dev/null); then
-            echo "authorized=false" >> $GITHUB_OUTPUT
-            echo "⏭️ API call failed or @$USERNAME is not a $ORG org member — not authorized"
-            exit 0
-          fi
-          # Verify response starts with HTTP status line before parsing
-          if ! echo "$RESPONSE" | head -1 | grep -q '^HTTP/'; then
-            echo "::warning::Unexpected API response format"
-            echo "authorized=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          # Extract status code from HTTP/1.1 204 No Content format
-          STATUS=$(echo "$RESPONSE" | head -1 | grep -oP 'HTTP/[0-9.]+ \K[0-9]+')
-          if [ -z "$STATUS" ]; then
-            echo "::warning::Failed to extract HTTP status code"
-            echo "authorized=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          if [ "$STATUS" = "204" ]; then
-            echo "authorized=true" >> $GITHUB_OUTPUT
-            echo "✅ @$USERNAME is a $ORG org member — authorized"
-          else
-            echo "authorized=false" >> $GITHUB_OUTPUT
-            echo "⏭️ @$USERNAME is not a $ORG org member — not authorized"
-          fi
-
-      - name: Notify unauthorized user
-        if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'false'
-        continue-on-error: true
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ steps.feedback.outputs.pr-number }}
-          ROOT_COMMENT_ID: ${{ steps.check.outputs.root_comment_id }}
-          AUTHOR: ${{ steps.feedback.outputs.comment-author }}
-        run: |
-
-          jq -n \
-            --arg body "Sorry @$AUTHOR, conversational replies are currently available to repository collaborators only. Your feedback has still been captured and will be used to improve future reviews.
-
-          <!-- cagent-review-reply -->" \
-            --argjson reply_to "$ROOT_COMMENT_ID" \
-            '{body: $body, in_reply_to: $reply_to}' | \
-          gh api "repos/$REPO/pulls/$PR_NUMBER/comments" --input -
-
       - name: Build thread context
-        if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true'
+        if: steps.check.outputs.is_agent == 'true'
         id: thread
         shell: bash
         env:
@@ -645,14 +565,14 @@ jobs:
           echo "✅ Built thread context with replies (triggering comment from /tmp/comment_body.txt)"
 
       - name: Checkout PR head
-        if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true'
+        if: steps.check.outputs.is_agent == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           ref: refs/pull/${{ steps.feedback.outputs.pr-number }}/head
 
       - name: Run reply
-        if: steps.check.outputs.is_agent == 'true' && steps.auth.outputs.authorized == 'true'
+        if: steps.check.outputs.is_agent == 'true'
         continue-on-error: true
         uses: docker/cagent-action/review-pr/reply@2369328cd25777eb0a4ff959a399b6d1a5204fc7 # v1.4.4
         with:
@@ -666,7 +586,7 @@ jobs:
           nebius-api-key: ${{ secrets.NEBIUS_API_KEY }}
           mistral-api-key: ${{ secrets.MISTRAL_API_KEY }}
           github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
-          skip-auth: "true" # Org membership already verified above
+          skip-auth: "true" # Authorization is handled at the job-trigger level (reply-to-agent-comment check)
 
       - name: Save feedback artifact
         if: steps.check.outputs.is_agent == 'true'
