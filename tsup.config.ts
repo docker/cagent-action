@@ -13,6 +13,7 @@ const src = (name: string) => {
 };
 const entry = {
   credentials: src('credentials'),
+  main: src('main'),
   'mention-reply': src('mention-reply'),
   security: src('security'),
   'signed-commit': src('signed-commit'),
