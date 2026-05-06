@@ -131,6 +131,24 @@ pull_request_review_comment
 
 Adding `docker-agent` as a reviewer fires a `pull_request` event with `action: review_requested`, which follows the trigger-workflow path above. The `issue_comment` event (`/review` command and `@docker-agent` mentions) always has full permissions regardless of fork status, so those paths work directly without the trigger workflow.
 
+### Choosing a trigger mode
+
+The `pull_request` trigger types in your calling workflow control how often reviews run. Two modes are supported — the examples above use **Mode B**:
+
+**Mode B — recommended default:**
+```yaml
+pull_request:
+  types: [opened, ready_for_review, review_requested]
+```
+Reviews run when a PR is opened or marked ready for review. After the initial review, further `pull_request`-triggered reviews only run when `docker-agent` is explicitly re-requested as a reviewer. Use `/review` to re-trigger ad-hoc at any time.
+
+**Mode A — continuous re-review on every push:**
+```yaml
+pull_request:
+  types: [opened, ready_for_review, synchronize, review_requested]
+```
+Adds `synchronize` to also trigger on every push to the PR branch. Opt in if your team wants the reviewer to automatically re-examine every update, at the cost of more workflow runs.
+
 ### Customizing
 
 ```yaml
