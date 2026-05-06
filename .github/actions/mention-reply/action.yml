@@ -13,5 +13,5 @@ outputs:
   prompt:
     description: 'Formatted context prompt for the mention-reply agent'
 runs:
-  using: 'node20'
+  using: 'node24'
   main: '../../../dist/mention-reply.js'
