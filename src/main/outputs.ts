@@ -74,10 +74,14 @@ export function filterAgentOutput(raw: string): string {
 
     // ── --- Tool: block ──────────────────────────────────────────────────
     if (state === 'inTool') {
-      // End when we see another --- Tool:, --- Agent:, or a blank line
-      if (/^--- (Tool:|Agent:)/.test(line) || line.trim() === '') {
+      // End on blank line (drop it — matches awk `next`) or next Tool:/Agent: header.
+      if (line.trim() === '') {
         state = 'normal';
-        // Fall through so the triggering line is re-evaluated below
+        continue; // drop the blank line, matching awk `next`
+      }
+      if (/^--- (Tool:|Agent:)/.test(line)) {
+        state = 'normal';
+        // fall through — re-evaluate the header line below
       } else {
         continue;
       }

@@ -32,7 +32,7 @@ import { makeArtifactName, uploadVerboseLog } from './artifact.js';
 import { checkAuthorization } from './auth.js';
 import { setupBinaries } from './binary.js';
 import { runAgent } from './exec.js';
-import { processAgentOutput } from './outputs.js';
+import { extractDockerAgentOutputBlock, filterAgentOutput } from './outputs.js';
 import { writeJobSummary } from './summary.js';
 
 // ── Paths ────────────────────────────────────────────────────────────────────
@@ -210,7 +210,7 @@ async function run(): Promise<void> {
     }
 
     const debug = core.getBooleanInput('debug');
-    const _skipSummary = core.getBooleanInput('skip-summary');
+    // skip-summary is read in the finally block via core.getBooleanInput
     const skipAuth = core.getBooleanInput('skip-auth');
     const timeout = parseInt(core.getInput('timeout') || '0', 10);
     const maxRetries = parseInt(core.getInput('max-retries') || '2', 10);
@@ -361,8 +361,10 @@ async function run(): Promise<void> {
     // ── Step 8: Post-process verbose log → clean output ───────────────────
     if (fs.existsSync(verboseLogFile)) {
       const rawVerbose = fs.readFileSync(verboseLogFile, 'utf-8');
-      const cleanOutput = processAgentOutput(rawVerbose);
-      fs.writeFileSync(outputFile, cleanOutput, 'utf-8');
+      // Step 8a: awk-equivalent noise filter. Writes FULL filtered text so
+      // sanitizeOutput (Step 9) can scan it before block extraction narrows it.
+      const filteredOutput = filterAgentOutput(rawVerbose);
+      fs.writeFileSync(outputFile, filteredOutput, 'utf-8');
     }
   } catch (err: unknown) {
     core.setFailed(`Unexpected error: ${(err as Error).message}`);
@@ -378,6 +380,21 @@ async function run(): Promise<void> {
       } catch (err: unknown) {
         core.warning(`Output sanitization failed: ${(err as Error).message}`);
         core.setOutput('secrets-detected', 'false');
+      }
+
+      // Step 9b: block extraction — runs AFTER sanitizeOutput.
+      // Replace outputFile with only the docker-agent-output block if present.
+      // Skipped when a secret was detected so the incident flow sees the full text.
+      if (!outputLeaked) {
+        try {
+          const fullFiltered = fs.readFileSync(outputFile, 'utf-8');
+          const block = extractDockerAgentOutputBlock(fullFiltered);
+          if (block !== null) {
+            fs.writeFileSync(outputFile, block, 'utf-8');
+          }
+        } catch {
+          // Non-fatal — leave the file as-is
+        }
       }
     } else {
       core.info('⚠️ No output file to scan (agent may have failed during validation)');
@@ -398,8 +415,7 @@ async function run(): Promise<void> {
     }
 
     // ── Step 11: Write job summary ─────────────────────────────────────────
-    const skipSummaryRaw = core.getInput('skip-summary');
-    const skipSummary = skipSummaryRaw === 'true';
+    const skipSummary = core.getBooleanInput('skip-summary');
     if (!skipSummary) {
       try {
         await writeJobSummary({

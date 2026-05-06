@@ -3,21 +3,21 @@
  *
  * Ports the `Setup binaries` step of the original composite action.yml.
  *
- * Uses @actions/tool-cache for download + extract + caching (no post-step
- * needed — tool-cache manages its own lifecycle keyed on tool name + version).
+ * Two-level caching strategy:
+ *   1. `@actions/cache` (remote)  — restores/saves the tool directory across workflow runs,
+ *      equivalent to what the original `actions/cache@v4` step provided.
+ *   2. `@actions/tool-cache` (local RUNNER_TOOL_CACHE) — in-process resolution once the
+ *      remote cache has been restored into the runner's tool directory.
  *
  * Binary download URLs:
  *   docker-agent:  https://github.com/docker/docker-agent/releases/download/<version>/<binary>
  *   mcp-gateway:   https://github.com/docker/mcp-gateway/releases/download/<version>/<tarball>
- *
- * The binary file names follow:
- *   docker-agent-<platform>-<arch>[.exe]
- *   docker-mcp-<platform>-<arch>.tar.gz
  */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as actionsCache from '@actions/cache';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as tc from '@actions/tool-cache';
@@ -32,7 +32,7 @@ export interface BinarySetupResult {
 }
 
 /** Detect {platform, arch} strings used in release asset names. */
-function detectPlatform(): { platform: string; arch: string; ext: string } {
+export function detectPlatform(): { platform: string; arch: string; ext: string } {
   const rawPlatform = os.platform();
   const rawArch = os.arch();
 
@@ -72,25 +72,39 @@ function detectPlatform(): { platform: string; arch: string; ext: string } {
 }
 
 /**
- * Ensure the docker-agent binary is available on disk (cached or freshly downloaded).
+ * Ensure the docker-agent binary is available on disk (remote cache → local cache → download).
  *
- * @param version   The version string (e.g. "v1.54.0") from DOCKER_AGENT_VERSION.
+ * @param version      The version string (e.g. "v1.54.0") from DOCKER_AGENT_VERSION.
  * @param githubToken  Optional GitHub PAT for authenticated download (avoids rate-limits).
- * @returns Path to the docker-agent binary.
+ * @returns Absolute path to the docker-agent binary.
  */
 async function ensureDockerAgent(version: string, githubToken?: string): Promise<string> {
   const { platform, arch, ext } = detectPlatform();
   const binaryName = `docker-agent${ext}`;
   const toolName = 'docker-agent';
 
-  // Check tool cache first
-  const cachedDir = tc.find(toolName, version);
-  if (cachedDir) {
-    core.info(`Using cached docker-agent ${version} from ${cachedDir}`);
-    return path.join(cachedDir, binaryName);
+  // ── 1. Local tool-cache hit (fastest path, same runner) ────────────────
+  const localCached = tc.find(toolName, version);
+  if (localCached) {
+    core.info(`Using local-cached docker-agent ${version} from ${localCached}`);
+    return path.join(localCached, binaryName);
   }
 
-  // Download
+  // ── 2. Remote @actions/cache hit (cross-run persistence) ───────────────
+  const tmpBinDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'docker-agent-'));
+  const cacheKey = `docker-agent-${toolName}-${version}-${platform}-${arch}`;
+  const restoredKey = await actionsCache.restoreCache([tmpBinDir], cacheKey);
+
+  if (restoredKey) {
+    core.info(`Restored docker-agent ${version} from remote cache (key: ${restoredKey})`);
+    // Populate local tool-cache from the restored directory
+    const cachedResult = await tc.cacheDir(tmpBinDir, toolName, version);
+    const binaryPath = path.join(cachedResult, binaryName);
+    fs.chmodSync(binaryPath, 0o755);
+    return binaryPath;
+  }
+
+  // ── 3. Download from GitHub releases ───────────────────────────────────
   const assetName = `docker-agent-${platform}-${arch}${ext}`;
   const downloadUrl = `https://github.com/docker/docker-agent/releases/download/${version}/${assetName}`;
   core.info(`Downloading docker-agent ${version} for ${platform}-${arch}...`);
@@ -99,19 +113,23 @@ async function ensureDockerAgent(version: string, githubToken?: string): Promise
   const auth = githubToken ? `token ${githubToken}` : undefined;
   const downloadedPath = await tc.downloadTool(downloadUrl, undefined, auth);
 
-  // The docker-agent binary is a single executable (not a tarball)
-  // Make it executable and cache it
-  fs.chmodSync(downloadedPath, 0o755);
-
-  // Create a temp directory to hold the binary under its canonical name
-  const tmpBinDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'docker-agent-'));
+  // Copy binary into our staging dir under its canonical name
   const binaryDest = path.join(tmpBinDir, binaryName);
   await fs.promises.copyFile(downloadedPath, binaryDest);
   fs.chmodSync(binaryDest, 0o755);
 
-  // Cache for future runs
+  // Persist to remote cache before populating local tool-cache
+  try {
+    await actionsCache.saveCache([tmpBinDir], cacheKey);
+    core.info(`Saved docker-agent ${version} to remote cache (key: ${cacheKey})`);
+  } catch (err: unknown) {
+    // Cache save failures are non-fatal (e.g. read-only in forked PRs)
+    core.warning(`Remote cache save skipped: ${(err as Error).message}`);
+  }
+
+  // Populate local tool-cache
   const cachedResult = await tc.cacheDir(tmpBinDir, toolName, version);
-  core.info(`Cached docker-agent ${version} at ${cachedResult}`);
+  core.info(`Cached docker-agent ${version} locally at ${cachedResult}`);
 
   return path.join(cachedResult, binaryName);
 }
@@ -119,7 +137,7 @@ async function ensureDockerAgent(version: string, githubToken?: string): Promise
 /**
  * Ensure mcp-gateway is installed into ~/.docker/cli-plugins/docker-mcp.
  *
- * @param version  The mcp-gateway version string (e.g. "v0.22.0").
+ * @param version      The mcp-gateway version string (e.g. "v0.22.0").
  * @param githubToken  Optional GitHub PAT for download.
  */
 async function ensureMcpGateway(version: string, githubToken?: string): Promise<void> {
@@ -129,18 +147,34 @@ async function ensureMcpGateway(version: string, githubToken?: string): Promise<
   const pluginBinary = os.platform() === 'win32' ? 'docker-mcp.exe' : 'docker-mcp';
   const pluginPath = path.join(pluginDir, pluginBinary);
 
-  // Check tool cache
-  const cachedDir = tc.find(toolName, version);
-  if (cachedDir) {
-    core.info(`Using cached mcp-gateway ${version}`);
-    const cachedBinary = path.join(cachedDir, pluginBinary);
+  // ── 1. Local tool-cache hit ─────────────────────────────────────────────
+  const localCached = tc.find(toolName, version);
+  if (localCached) {
+    core.info(`Using local-cached mcp-gateway ${version}`);
+    const cachedBinary = path.join(localCached, pluginBinary);
     await fs.promises.mkdir(pluginDir, { recursive: true });
     await fs.promises.copyFile(cachedBinary, pluginPath);
     fs.chmodSync(pluginPath, 0o755);
     return;
   }
 
-  // Download tarball
+  // ── 2. Remote @actions/cache hit ───────────────────────────────────────
+  const tmpPluginDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'docker-mcp-'));
+  const cacheKey = `docker-agent-${toolName}-${version}-${platform}-${arch}`;
+  const restoredKey = await actionsCache.restoreCache([tmpPluginDir], cacheKey);
+
+  if (restoredKey) {
+    core.info(`Restored mcp-gateway ${version} from remote cache (key: ${restoredKey})`);
+    const cachedResult = await tc.cacheDir(tmpPluginDir, toolName, version);
+    const cachedBinary = path.join(cachedResult, pluginBinary);
+    fs.chmodSync(cachedBinary, 0o755);
+    await fs.promises.mkdir(pluginDir, { recursive: true });
+    await fs.promises.copyFile(cachedBinary, pluginPath);
+    fs.chmodSync(pluginPath, 0o755);
+    return;
+  }
+
+  // ── 3. Download tarball from GitHub releases ────────────────────────────
   const assetName = `docker-mcp-${platform}-${arch}.tar.gz`;
   const downloadUrl = `https://github.com/docker/mcp-gateway/releases/download/${version}/${assetName}`;
   core.info(`Downloading mcp-gateway ${version} for ${platform}-${arch}...`);
@@ -149,14 +183,26 @@ async function ensureMcpGateway(version: string, githubToken?: string): Promise<
   const tarPath = await tc.downloadTool(downloadUrl, undefined, auth);
   const extractedDir = await tc.extractTar(tarPath);
 
-  // The tarball contains docker-mcp (or docker-mcp.exe on windows)
+  // The tarball contains the docker-mcp binary
   const extractedBinary = path.join(extractedDir, pluginBinary);
   fs.chmodSync(extractedBinary, 0o755);
 
-  // Cache the extracted directory
-  await tc.cacheDir(extractedDir, toolName, version);
+  // Stage binary for caching
+  await fs.promises.copyFile(extractedBinary, path.join(tmpPluginDir, pluginBinary));
+  fs.chmodSync(path.join(tmpPluginDir, pluginBinary), 0o755);
 
-  // Copy to plugin directory
+  // Persist to remote cache
+  try {
+    await actionsCache.saveCache([tmpPluginDir], cacheKey);
+    core.info(`Saved mcp-gateway ${version} to remote cache (key: ${cacheKey})`);
+  } catch (err: unknown) {
+    core.warning(`Remote cache save skipped: ${(err as Error).message}`);
+  }
+
+  // Populate local tool-cache
+  await tc.cacheDir(tmpPluginDir, toolName, version);
+
+  // Install to plugin directory
   await fs.promises.mkdir(pluginDir, { recursive: true });
   await fs.promises.copyFile(extractedBinary, pluginPath);
   fs.chmodSync(pluginPath, 0o755);
@@ -165,8 +211,8 @@ async function ensureMcpGateway(version: string, githubToken?: string): Promise<
 /**
  * Set up docker-agent and (optionally) mcp-gateway binaries.
  *
- * After this function completes, `docker-agent` is available at the returned path.
- * The caller should add its parent directory to PATH if needed, or use the full path.
+ * Caching strategy: remote @actions/cache for cross-run persistence,
+ * local @actions/tool-cache for in-process resolution.
  *
  * @param opts.version           docker-agent version (from DOCKER_AGENT_VERSION file).
  * @param opts.mcpGateway        Whether to install mcp-gateway.
