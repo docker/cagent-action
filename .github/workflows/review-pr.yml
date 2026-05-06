@@ -138,6 +138,7 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      checks: write
     outputs:
       exit-code: ${{ steps.run-review.outputs.exit-code }}
 
@@ -293,7 +294,7 @@ jobs:
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         with:
-          github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
+          github-token: ${{ github.token }}
           script: |
             const prNumber = parseInt(process.env.PR_NUMBER, 10);
             const { data: pr } = await github.rest.pulls.get({
@@ -354,7 +355,7 @@ jobs:
           CHECK_ID: ${{ steps.create-check.outputs.check-id }}
           JOB_STATUS: ${{ job.status }}
         with:
-          github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
+          github-token: ${{ github.token }}
           script: |
             const conclusion = process.env.JOB_STATUS === 'cancelled' ? 'cancelled' : process.env.JOB_STATUS === 'success' ? 'success' : 'failure';
             try {
