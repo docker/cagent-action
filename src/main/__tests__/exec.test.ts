@@ -26,7 +26,7 @@ vi.mock('node:child_process', () => ({
   spawn: mockSpawn,
 }));
 
-import { TIMEOUT_EXIT_CODE, buildArgs, runAgent } from '../exec.js';
+import { buildArgs, runAgent, TIMEOUT_EXIT_CODE } from '../exec.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -91,7 +91,15 @@ describe('buildArgs', () => {
       extraArgs: '',
       addPromptFiles: '',
     });
-    expect(args).toEqual(['run', '--exec', '--yolo', '--working-dir', '/workspace', 'docker/test', '-']);
+    expect(args).toEqual([
+      'run',
+      '--exec',
+      '--yolo',
+      '--working-dir',
+      '/workspace',
+      'docker/test',
+      '-',
+    ]);
   });
 
   it('omits --yolo when yolo=false', () => {
@@ -180,7 +188,11 @@ describe('runAgent', () => {
 
     await runAgent(baseOpts({ anthropicApiKey: 'sk-ant-secret' }));
 
-    const [binaryPath, args, opts] = mockSpawn.mock.calls[0] as [string, string[], object & { env: Record<string, string> }];
+    const [binaryPath, args, opts] = mockSpawn.mock.calls[0] as [
+      string,
+      string[],
+      object & { env: Record<string, string> },
+    ];
     // Binary path matches
     expect(binaryPath).toBe('/usr/local/bin/docker-agent');
     // API key NOT in args
@@ -193,10 +205,12 @@ describe('runAgent', () => {
     const { setSecret } = await import('@actions/core');
     mockSpawn.mockReturnValue(makeMockChild(0));
 
-    await runAgent(baseOpts({
-      anthropicApiKey: 'sk-ant-secret',
-      openaiApiKey: 'sk-openai-secret',
-    }));
+    await runAgent(
+      baseOpts({
+        anthropicApiKey: 'sk-ant-secret',
+        openaiApiKey: 'sk-openai-secret',
+      }),
+    );
 
     expect(vi.mocked(setSecret)).toHaveBeenCalledWith('sk-ant-secret');
     expect(vi.mocked(setSecret)).toHaveBeenCalledWith('sk-openai-secret');
@@ -291,17 +305,19 @@ describe('runAgent', () => {
   it('injects all API keys into env (never args)', async () => {
     mockSpawn.mockReturnValue(makeMockChild(0));
 
-    await runAgent(baseOpts({
-      anthropicApiKey: 'ant-key',
-      openaiApiKey: 'oai-key',
-      googleApiKey: 'goog-key',
-      awsBearerTokenBedrock: 'aws-key',
-      xaiApiKey: 'xai-key',
-      nebiusApiKey: 'neb-key',
-      mistralApiKey: 'mis-key',
-      ghToken: 'gh-token',
-      telemetryTags: 'source=ci',
-    }));
+    await runAgent(
+      baseOpts({
+        anthropicApiKey: 'ant-key',
+        openaiApiKey: 'oai-key',
+        googleApiKey: 'goog-key',
+        awsBearerTokenBedrock: 'aws-key',
+        xaiApiKey: 'xai-key',
+        nebiusApiKey: 'neb-key',
+        mistralApiKey: 'mis-key',
+        ghToken: 'gh-token',
+        telemetryTags: 'source=ci',
+      }),
+    );
 
     const envPassed = mockSpawn.mock.calls[0][2].env as Record<string, string>;
     expect(envPassed.ANTHROPIC_API_KEY).toBe('ant-key');

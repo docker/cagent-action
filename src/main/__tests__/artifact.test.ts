@@ -101,9 +101,7 @@ describe('uploadVerboseLog', () => {
     await uploadVerboseLog({ name: 'test-artifact', filePath });
 
     expect(mockUploadArtifact).not.toHaveBeenCalled();
-    expect(vi.mocked(warning)).toHaveBeenCalledWith(
-      expect.stringContaining('not found'),
-    );
+    expect(vi.mocked(warning)).toHaveBeenCalledWith(expect.stringContaining('not found'));
   });
 
   it('warns and skips when path is a directory', async () => {
@@ -114,9 +112,7 @@ describe('uploadVerboseLog', () => {
     await uploadVerboseLog({ name: 'test-artifact', filePath: dirPath });
 
     expect(mockUploadArtifact).not.toHaveBeenCalled();
-    expect(vi.mocked(warning)).toHaveBeenCalledWith(
-      expect.stringContaining('not a file'),
-    );
+    expect(vi.mocked(warning)).toHaveBeenCalledWith(expect.stringContaining('not a file'));
   });
 
   it('warns but does not throw when upload fails', async () => {

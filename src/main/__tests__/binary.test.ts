@@ -32,7 +32,15 @@ const {
   const mockExec = vi.fn().mockResolvedValue(0);
   const mockRestoreCache = vi.fn().mockResolvedValue(undefined); // undefined = cache miss
   const mockSaveCache = vi.fn().mockResolvedValue(42);
-  return { mockFind, mockDownloadTool, mockCacheDir, mockExtractTar, mockExec, mockRestoreCache, mockSaveCache };
+  return {
+    mockFind,
+    mockDownloadTool,
+    mockCacheDir,
+    mockExtractTar,
+    mockExec,
+    mockRestoreCache,
+    mockSaveCache,
+  };
 });
 
 vi.mock('@actions/tool-cache', () => ({
@@ -245,9 +253,7 @@ describe('setupBinaries — mcp-gateway', () => {
     const fakeMcpTarball = await createFakeDownload('docker-mcp.tar.gz');
 
     // First downloadTool = docker-agent, second = mcp tar
-    mockDownloadTool
-      .mockResolvedValueOnce(fakeAgentDownload)
-      .mockResolvedValueOnce(fakeMcpTarball);
+    mockDownloadTool.mockResolvedValueOnce(fakeAgentDownload).mockResolvedValueOnce(fakeMcpTarball);
 
     // extractTar returns a dir with the docker-mcp binary
     mockExtractTar.mockImplementation(async () => {
@@ -280,9 +286,7 @@ describe('setupBinaries — mcp-gateway', () => {
     const fakeAgentDownload = await createFakeDownload('docker-agent');
     const fakeMcpTarball = await createFakeDownload('docker-mcp.tar.gz');
 
-    mockDownloadTool
-      .mockResolvedValueOnce(fakeAgentDownload)
-      .mockResolvedValueOnce(fakeMcpTarball);
+    mockDownloadTool.mockResolvedValueOnce(fakeAgentDownload).mockResolvedValueOnce(fakeMcpTarball);
 
     mockExtractTar.mockImplementation(async () => {
       const extractDir = await mkdtemp(join(tmpdir(), 'extracted-'));

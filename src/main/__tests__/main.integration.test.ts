@@ -232,7 +232,10 @@ beforeEach(async () => {
   eventPayloadPath = join(tmpDir, 'event.json');
 
   // Default event: non-comment PR event (auth tier 1 skips automatically)
-  await writeFile(eventPayloadPath, JSON.stringify({ action: 'opened', pull_request: { number: 1 } }));
+  await writeFile(
+    eventPayloadPath,
+    JSON.stringify({ action: 'opened', pull_request: { number: 1 } }),
+  );
   process.env.GITHUB_EVENT_PATH = eventPayloadPath;
   process.env.GITHUB_TOKEN = 'gha-fake-token';
   process.env.GITHUB_RUN_ID = '12345';
@@ -277,7 +280,7 @@ describe('happy path — agent succeeds', () => {
     const outputCalls = Object.fromEntries(
       mockSetOutput.mock.calls.map(([name, value]) => [name, value]),
     );
-    expect(outputCalls['authorized']).toBe('skipped-by-caller');
+    expect(outputCalls.authorized).toBe('skipped-by-caller');
     expect(outputCalls['prompt-suspicious']).toBe('false');
     expect(outputCalls['input-risk-level']).toBe('low');
     expect(outputCalls['cagent-version']).toBe('v1.54.0');
@@ -398,10 +401,8 @@ describe('authorization', () => {
     await run();
 
     expect(mockSetFailed).not.toHaveBeenCalled();
-    const outputCalls = Object.fromEntries(
-      mockSetOutput.mock.calls.map(([n, v]) => [n, v]),
-    );
-    expect(outputCalls['authorized']).toBe('skipped-by-caller');
+    const outputCalls = Object.fromEntries(mockSetOutput.mock.calls.map(([n, v]) => [n, v]));
+    expect(outputCalls.authorized).toBe('skipped-by-caller');
   });
 });
 
@@ -414,12 +415,8 @@ describe('security — prompt injection', () => {
 
     await run();
 
-    expect(mockSetFailed).toHaveBeenCalledWith(
-      expect.stringContaining('blocked'),
-    );
-    const outputCalls = Object.fromEntries(
-      mockSetOutput.mock.calls.map(([n, v]) => [n, v]),
-    );
+    expect(mockSetFailed).toHaveBeenCalledWith(expect.stringContaining('blocked'));
+    const outputCalls = Object.fromEntries(mockSetOutput.mock.calls.map(([n, v]) => [n, v]));
     expect(outputCalls['security-blocked']).toBe('true');
   });
 });
@@ -490,9 +487,7 @@ describe('security pipeline ordering (FIX 1)', () => {
     }
 
     // Security outputs are correct (no leak in test content)
-    const outputCalls = Object.fromEntries(
-      mockSetOutput.mock.calls.map(([n, v]) => [n, v]),
-    );
+    const outputCalls = Object.fromEntries(mockSetOutput.mock.calls.map(([n, v]) => [n, v]));
     expect(outputCalls['secrets-detected']).toBe('false');
     expect(outputCalls['security-blocked']).toBe('false');
   });
