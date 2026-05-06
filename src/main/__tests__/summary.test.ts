@@ -5,7 +5,6 @@
  * for all exit-code statuses and optional outputFile scenarios.
  */
 
-import * as fsSync from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
