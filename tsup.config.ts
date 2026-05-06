@@ -1,14 +1,22 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'tsup';
 
-// Auto-discover entries: every src/<name>/index.ts becomes dist/<name>.js
-const srcDir = resolve(import.meta.dirname, 'src');
-const entry = Object.fromEntries(
-  readdirSync(srcDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && existsSync(resolve(srcDir, d.name, 'index.ts')))
-    .map((d) => [d.name, resolve(srcDir, d.name, 'index.ts')]),
-);
+// Explicit entry list: only modules that back an actual action.yml entrypoint.
+// Library sub-modules (add-reaction, check-org-membership, get-pr-meta,
+// post-comment) are imported by mention-reply but have no standalone action,
+// so they don't get their own top-level dist bundle.
+const src = (name: string) => {
+  const p = resolve(import.meta.dirname, 'src', name, 'index.ts');
+  if (!existsSync(p)) throw new Error(`tsup entry not found: ${p}`);
+  return p;
+};
+const entry = {
+  credentials: src('credentials'),
+  'mention-reply': src('mention-reply'),
+  security: src('security'),
+  'signed-commit': src('signed-commit'),
+};
 
 export default defineConfig({
   entry,
