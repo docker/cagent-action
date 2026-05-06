@@ -210,8 +210,8 @@ jobs:
           IS_REVIEW_COMMAND: ${{ steps.command.outputs.is_review }}
         run: |
           # Classify whether this is a user-requested or automatic review.
-          # User-requested triggers bypass ALL gates (draft check, org membership).
-          # Automatic triggers only apply the draft check (no membership gate).
+          # User-requested triggers bypass the draft check only; org-membership
+          # check still applies on all paths via the downstream step.
           if [ "$EVENT_NAME" = "issue_comment" ] && [ "$IS_REVIEW_COMMAND" = "true" ]; then
             echo "user_requested=true" >> $GITHUB_OUTPUT
             echo "🎯 Trigger type: user-requested (issue_comment /review command)"
@@ -249,14 +249,61 @@ jobs:
       - name: Setup credentials
         if: |
           steps.command.outputs.is_review != 'false' &&
-          (steps.trigger-type.outputs.user_requested == 'true' || steps.draft.outputs.skip != 'true')
+          steps.draft.outputs.skip != 'true'
         uses: docker/cagent-action/.github/actions/setup-credentials@2369328cd25777eb0a4ff959a399b6d1a5204fc7 # v1.4.4
+
+      - name: Check if org member
+        id: membership
+        if: |
+          steps.command.outputs.is_review != 'false' &&
+          steps.draft.outputs.skip != 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_SOURCE: ${{ steps.pr.outputs.source }}
+          ORG: docker
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+        with:
+          github-token: ${{ env.ORG_MEMBERSHIP_TOKEN }}
+          script: |
+            const org = process.env.ORG;
+            const source = process.env.PR_SOURCE;
+
+            let username;
+            if (source === 'event') {
+              username = process.env.COMMENT_AUTHOR;
+            } else {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: parseInt(process.env.PR_NUMBER, 10)
+              });
+              username = pr.user.login;
+            }
+
+            try {
+              await github.rest.orgs.checkMembershipForUser({ org, username });
+              core.setOutput('is_member', 'true');
+              console.log(`✅ ${username} is a ${org} org member — proceeding with review`);
+            } catch (error) {
+              if (error.status === 404 || error.status === 302) {
+                core.setOutput('is_member', 'false');
+                console.log(`⏭️ ${username} is not a ${org} org member — skipping review`);
+              } else if (error.status === 401) {
+                core.setFailed(
+                  `❌ Org membership token is missing or invalid (HTTP 401).\n\n` +
+                  `This token is fetched automatically from AWS Secrets Manager in docker/* repos.\n` +
+                  `Ensure the workflow job has 'id-token: write' permission and OIDC is configured.`
+                );
+              } else {
+                core.setFailed(`Failed to check org membership: ${error.message}`);
+              }
+            }
 
       - name: Create check run
         if: |
           (steps.pr.outputs.source == 'event' || steps.pr.outputs.source == 'trigger') &&
-          steps.command.outputs.is_review != 'false' &&
-          (steps.trigger-type.outputs.user_requested == 'true' || steps.draft.outputs.skip != 'true')
+          steps.membership.outputs.is_member == 'true'
         id: create-check
         continue-on-error: true
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -285,8 +332,9 @@ jobs:
 
       - name: Checkout PR head
         if: |
+          steps.membership.outputs.is_member == 'true' &&
           steps.command.outputs.is_review != 'false' &&
-          (steps.trigger-type.outputs.user_requested == 'true' || steps.draft.outputs.skip != 'true')
+          steps.draft.outputs.skip != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
@@ -294,8 +342,9 @@ jobs:
 
       - name: Run PR Review
         if: |
+          steps.membership.outputs.is_member == 'true' &&
           steps.command.outputs.is_review != 'false' &&
-          (steps.trigger-type.outputs.user_requested == 'true' || steps.draft.outputs.skip != 'true')
+          steps.draft.outputs.skip != 'true'
         id: run-review
         continue-on-error: true
         uses: docker/cagent-action/review-pr@2369328cd25777eb0a4ff959a399b6d1a5204fc7 # v1.4.4
