@@ -108,7 +108,7 @@ Anything else here (workflows under `.github/workflows/`, scripts, tests) exists
 
 ### TypeScript / `src` rules
 
-- Every `src/<name>/index.ts` becomes a top-level bundle at `dist/<name>.js`. `tsup.config.ts` auto-discovers entries — to add a new sub-action helper, just create `src/<name>/index.ts`.
+- Only `src/<name>/index.ts` files listed in the explicit `entry` map in `tsup.config.ts` are bundled to `dist/<name>.js`. To add a new action entrypoint, create `src/<name>/index.ts` **and** add it to the `entry` map in `tsup.config.ts`. Pure library modules that are only imported by other actions (e.g. `add-reaction`, `check-org-membership`, `get-pr-meta`, `post-comment`) should **not** be added to the entry map — they get bundled into their consumer automatically.
 - `tsup` runs with `noExternal: [/.*/]` — **all npm dependencies are bundled in**. Do not assume `node_modules` exists at runtime.
 - Target is `node24`, ESM only, Node platform (so AWS SDK uses the Node export, not browser).
 - Sourcemaps are intentionally disabled (consumers clone `dist/`; sourcemaps would bloat every checkout).
