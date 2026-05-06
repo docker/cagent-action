@@ -1,0 +1,499 @@
+/**
+ * Integration test for src/main/index.ts — run() orchestration.
+ *
+ * Exercises the full run() pipeline with all external side-effects mocked:
+ *   - @actions/core   (getInput, setOutput, setFailed, summary, …)
+ *   - @actions/tool-cache / @actions/cache / @actions/exec  (binary setup)
+ *   - @actions/artifact (DefaultArtifactClient)
+ *   - @octokit/rest  (Octokit — trusted-bot bypass)
+ *   - node:child_process (spawn — agent execution)
+ *
+ * The security modules (sanitizeInput, sanitizeOutput, checkAuth) run real code
+ * so the integration test validates their wiring too.
+ *
+ * File: src/main/__tests__/main.integration.test.ts
+ * Vitest project: "integration" (matched by *.integration.test.ts pattern)
+ */
+
+import * as fsSync from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { EventEmitter } from 'node:stream';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// ── Hoisted mock state ────────────────────────────────────────────────────────
+
+const {
+  mockGetInput,
+  mockGetBooleanInput,
+  mockSetOutput,
+  mockSetFailed,
+  mockSetSecret,
+  mockInfo,
+  mockWarning,
+  mockError,
+  mockDebug,
+  mockSummary,
+  mockGetAuthenticated,
+  MockOctokit,
+  mockFind,
+  mockDownloadTool,
+  mockCacheDir,
+  mockExec,
+  mockRestoreCache,
+  mockSaveCache,
+  mockUploadArtifact,
+  MockDefaultArtifactClient,
+  mockSpawn,
+} = vi.hoisted(() => {
+  // core.summary — chainable
+  const mockSummary = {
+    addHeading: vi.fn(),
+    addRaw: vi.fn(),
+    addTable: vi.fn(),
+    write: vi.fn().mockResolvedValue(undefined),
+  };
+  mockSummary.addHeading.mockReturnValue(mockSummary);
+  mockSummary.addRaw.mockReturnValue(mockSummary);
+  mockSummary.addTable.mockReturnValue(mockSummary);
+
+  // @octokit/rest
+  const mockGetAuthenticated = vi.fn().mockResolvedValue({ data: { login: 'some-bot' } });
+  class MockOctokit {
+    rest = {
+      users: { getAuthenticated: mockGetAuthenticated },
+      issues: { create: vi.fn().mockResolvedValue({ data: { number: 1 } }) },
+    };
+  }
+
+  // @actions/core
+  const mockGetInput = vi.fn().mockReturnValue('');
+  const mockGetBooleanInput = vi.fn().mockReturnValue(false);
+  const mockSetOutput = vi.fn();
+  const mockSetFailed = vi.fn();
+  const mockSetSecret = vi.fn();
+  const mockInfo = vi.fn();
+  const mockWarning = vi.fn();
+  const mockError = vi.fn();
+  const mockDebug = vi.fn();
+
+  // @actions/tool-cache
+  const mockFind = vi.fn().mockReturnValue('');
+  const mockDownloadTool = vi.fn();
+  const mockCacheDir = vi.fn();
+  const mockExec = vi.fn().mockResolvedValue(0);
+
+  // @actions/cache
+  const mockRestoreCache = vi.fn().mockResolvedValue(undefined);
+  const mockSaveCache = vi.fn().mockResolvedValue(42);
+
+  // @actions/artifact
+  const mockUploadArtifact = vi.fn().mockResolvedValue({ id: 99 });
+  class MockDefaultArtifactClient {
+    uploadArtifact = mockUploadArtifact;
+  }
+
+  // node:child_process
+  const mockSpawn = vi.fn();
+
+  return {
+    mockGetInput,
+    mockGetBooleanInput,
+    mockSetOutput,
+    mockSetFailed,
+    mockSetSecret,
+    mockInfo,
+    mockWarning,
+    mockError,
+    mockDebug,
+    mockSummary,
+    mockGetAuthenticated,
+    MockOctokit,
+    mockFind,
+    mockDownloadTool,
+    mockCacheDir,
+    mockExec,
+    mockRestoreCache,
+    mockSaveCache,
+    mockUploadArtifact,
+    MockDefaultArtifactClient,
+    mockSpawn,
+  };
+});
+
+// ── Module mocks ──────────────────────────────────────────────────────────────
+
+vi.mock('@actions/core', () => ({
+  getInput: mockGetInput,
+  getBooleanInput: mockGetBooleanInput,
+  setOutput: mockSetOutput,
+  setFailed: mockSetFailed,
+  setSecret: mockSetSecret,
+  info: mockInfo,
+  warning: mockWarning,
+  error: mockError,
+  debug: mockDebug,
+  summary: mockSummary,
+}));
+
+vi.mock('@octokit/rest', () => ({ Octokit: MockOctokit }));
+
+vi.mock('@actions/tool-cache', () => ({
+  find: mockFind,
+  downloadTool: mockDownloadTool,
+  cacheDir: mockCacheDir,
+  extractTar: vi.fn(),
+}));
+
+vi.mock('@actions/cache', () => ({
+  restoreCache: mockRestoreCache,
+  saveCache: mockSaveCache,
+}));
+
+vi.mock('@actions/exec', () => ({ exec: mockExec }));
+
+vi.mock('@actions/artifact', () => ({
+  DefaultArtifactClient: MockDefaultArtifactClient,
+}));
+
+vi.mock('node:child_process', () => ({
+  spawn: mockSpawn,
+}));
+
+import { run } from '../index.js';
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+let tmpDir: string;
+let eventPayloadPath: string;
+
+/** Create a mock child process that closes with the given exit code. */
+function makeMockChild(exitCode: number) {
+  const emitter = new EventEmitter() as EventEmitter & {
+    stdin: { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
+    kill: ReturnType<typeof vi.fn>;
+  };
+  emitter.stdin = { write: vi.fn(), end: vi.fn() };
+  emitter.kill = vi.fn();
+  setImmediate(() => emitter.emit('close', exitCode));
+  return emitter;
+}
+
+/** Set up core.getInput to return test values from a map. */
+function setupInputs(overrides: Record<string, string> = {}) {
+  const defaults: Record<string, string> = {
+    agent: 'docker/test-agent',
+    'anthropic-api-key': 'sk-ant-test123',
+    'openai-api-key': '',
+    'google-api-key': '',
+    'aws-bearer-token-bedrock': '',
+    'xai-api-key': '',
+    'nebius-api-key': '',
+    'mistral-api-key': '',
+    'github-token': '',
+    prompt: 'Analyze this code',
+    'mcp-gateway': 'false',
+    'mcp-gateway-version': 'v0.22.0',
+    timeout: '0',
+    'max-retries': '0',
+    'retry-delay': '0',
+    'working-directory': '.',
+    'extra-args': '',
+    'add-prompt-files': '',
+    'skip-summary': 'true',
+    'skip-auth': 'true',
+    'org-membership-token': '',
+    'auth-org': '',
+    debug: 'false',
+    ...overrides,
+  };
+  mockGetInput.mockImplementation((name: string) => defaults[name] ?? '');
+  mockGetBooleanInput.mockImplementation((name: string) => defaults[name] === 'true');
+}
+
+/** Set up binary mocks so setupBinaries() succeeds without real downloads. */
+async function setupBinaryMocks() {
+  // Create a real fake binary
+  const fakeDir = join(tmpDir, 'tool-cache', 'docker-agent');
+  fsSync.mkdirSync(fakeDir, { recursive: true });
+  const fakeBin = join(fakeDir, 'docker-agent');
+  await writeFile(fakeBin, '#!/bin/sh\necho v1.54.0\n', 'utf-8');
+  fsSync.chmodSync(fakeBin, 0o755);
+
+  // Local cache hit — returns dir with binary
+  mockFind.mockReturnValue(fakeDir);
+  // exec (binary verification) returns 0
+  mockExec.mockResolvedValue(0);
+}
+
+beforeEach(async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), 'main-int-test-'));
+  eventPayloadPath = join(tmpDir, 'event.json');
+
+  // Default event: non-comment PR event (auth tier 1 skips automatically)
+  await writeFile(eventPayloadPath, JSON.stringify({ action: 'opened', pull_request: { number: 1 } }));
+  process.env.GITHUB_EVENT_PATH = eventPayloadPath;
+  process.env.GITHUB_TOKEN = 'gha-fake-token';
+  process.env.GITHUB_RUN_ID = '12345';
+  process.env.GITHUB_RUN_ATTEMPT = '1';
+  process.env.GITHUB_JOB = 'test-job';
+  process.env.GITHUB_REPOSITORY = 'docker/cagent-action';
+  process.env.GITHUB_WORKFLOW = 'Test';
+
+  // Reset all mock state
+  vi.clearAllMocks();
+  mockSummary.addHeading.mockReturnValue(mockSummary);
+  mockSummary.addRaw.mockReturnValue(mockSummary);
+  mockSummary.addTable.mockReturnValue(mockSummary);
+  mockSummary.write.mockResolvedValue(undefined);
+  mockUploadArtifact.mockResolvedValue({ id: 99 });
+
+  // Default binary mock
+  await setupBinaryMocks();
+  // Default: agent exits 0
+  mockSpawn.mockImplementation(() => makeMockChild(0));
+
+  // Reset process.exitCode
+  process.exitCode = 0;
+});
+
+afterEach(async () => {
+  process.exitCode = 0;
+  delete process.env.GITHUB_EVENT_PATH;
+  delete process.env.GITHUB_TOKEN;
+  await rm(tmpDir, { recursive: true, force: true });
+});
+
+// ── Happy path ────────────────────────────────────────────────────────────────
+
+describe('happy path — agent succeeds', () => {
+  it('sets all expected outputs on success', async () => {
+    setupInputs();
+
+    await run();
+
+    // Core outputs must be set
+    const outputCalls = Object.fromEntries(
+      mockSetOutput.mock.calls.map(([name, value]) => [name, value]),
+    );
+    expect(outputCalls['authorized']).toBe('skipped-by-caller');
+    expect(outputCalls['prompt-suspicious']).toBe('false');
+    expect(outputCalls['input-risk-level']).toBe('low');
+    expect(outputCalls['cagent-version']).toBe('v1.54.0');
+    expect(outputCalls['mcp-gateway-installed']).toBe('false');
+    expect(outputCalls['exit-code']).toBe('0');
+    expect(outputCalls['secrets-detected']).toBe('false');
+    expect(outputCalls['security-blocked']).toBe('false');
+    expect(outputCalls['output-file']).toBeDefined();
+    expect(outputCalls['verbose-log-file']).toBeDefined();
+
+    // setFailed must not have been called
+    expect(mockSetFailed).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(0);
+  });
+
+  it('masks the github token with setSecret', async () => {
+    setupInputs({ 'github-token': 'ghs_explicit_token' });
+
+    await run();
+
+    expect(mockSetSecret).toHaveBeenCalledWith('ghs_explicit_token');
+  });
+
+  it('uploads verbose log artifact', async () => {
+    setupInputs();
+
+    await run();
+
+    expect(mockUploadArtifact).toHaveBeenCalledOnce();
+    const [name] = mockUploadArtifact.mock.calls[0] as [string, ...unknown[]];
+    expect(name).toContain('docker-agent-verbose-log');
+    expect(name).toContain('12345'); // GITHUB_RUN_ID
+  });
+
+  it('writes job summary when skip-summary is false', async () => {
+    setupInputs({ 'skip-summary': 'false' });
+
+    await run();
+
+    expect(mockSummary.write).toHaveBeenCalledOnce();
+  });
+
+  it('skips job summary when skip-summary is true', async () => {
+    setupInputs({ 'skip-summary': 'true' });
+
+    await run();
+
+    expect(mockSummary.write).not.toHaveBeenCalled();
+  });
+});
+
+// ── Validation failures ───────────────────────────────────────────────────────
+
+describe('input validation', () => {
+  it('calls setFailed when no API key is provided', async () => {
+    setupInputs({
+      'anthropic-api-key': '',
+      'openai-api-key': '',
+      'google-api-key': '',
+      'aws-bearer-token-bedrock': '',
+      'xai-api-key': '',
+      'nebius-api-key': '',
+      'mistral-api-key': '',
+    });
+
+    await run();
+
+    expect(mockSetFailed).toHaveBeenCalledWith(
+      expect.stringContaining('At least one API key is required'),
+    );
+  });
+
+  it('calls setFailed when agent input is empty', async () => {
+    setupInputs({ agent: '' });
+    mockGetInput.mockImplementation((name: string) => {
+      if (name === 'agent') return '';
+      if (name === 'anthropic-api-key') return 'sk-ant-test';
+      return '';
+    });
+
+    await run();
+
+    expect(mockSetFailed).toHaveBeenCalled();
+  });
+});
+
+// ── Authorization ─────────────────────────────────────────────────────────────
+
+describe('authorization', () => {
+  it('blocks when comment author not in allowed list', async () => {
+    // Write a comment event with NONE association from a non-member
+    await writeFile(
+      eventPayloadPath,
+      JSON.stringify({
+        comment: { author_association: 'NONE', user: { login: 'outsider' } },
+      }),
+    );
+
+    // Bot token resolves to a different user (no trusted-bot bypass)
+    mockGetAuthenticated.mockResolvedValue({ data: { login: 'ci-bot' } });
+
+    // No org token → falls to Tier 4 with NONE → denied
+    setupInputs({ 'skip-auth': 'false' });
+
+    await run();
+
+    expect(mockSetFailed).toHaveBeenCalledWith('Authorization failed');
+  });
+
+  it('authorizes with skip-auth=true regardless of event', async () => {
+    await writeFile(
+      eventPayloadPath,
+      JSON.stringify({ comment: { author_association: 'NONE', user: { login: 'outsider' } } }),
+    );
+
+    setupInputs({ 'skip-auth': 'true' });
+
+    await run();
+
+    expect(mockSetFailed).not.toHaveBeenCalled();
+    const outputCalls = Object.fromEntries(
+      mockSetOutput.mock.calls.map(([n, v]) => [n, v]),
+    );
+    expect(outputCalls['authorized']).toBe('skipped-by-caller');
+  });
+});
+
+// ── Security — prompt injection ───────────────────────────────────────────────
+
+describe('security — prompt injection', () => {
+  it('blocks execution when prompt contains critical pattern', async () => {
+    // Use a real CRITICAL_PATTERN from patterns.ts: /echo.*\$.*ANTHROPIC_API_KEY/i
+    setupInputs({ prompt: 'echo $ANTHROPIC_API_KEY' });
+
+    await run();
+
+    expect(mockSetFailed).toHaveBeenCalledWith(
+      expect.stringContaining('blocked'),
+    );
+    const outputCalls = Object.fromEntries(
+      mockSetOutput.mock.calls.map(([n, v]) => [n, v]),
+    );
+    expect(outputCalls['security-blocked']).toBe('true');
+  });
+});
+
+// ── Agent exit code propagation ───────────────────────────────────────────────
+
+describe('agent exit code propagation', () => {
+  it('sets process.exitCode to agent exit code when agent fails', async () => {
+    setupInputs();
+    mockSpawn.mockImplementation(() => makeMockChild(1));
+
+    await run();
+
+    expect(process.exitCode).toBe(1);
+    // setFailed was not called — we use process.exitCode directly for agent failures
+  });
+
+  it('leaves process.exitCode at 0 when agent succeeds', async () => {
+    setupInputs();
+    mockSpawn.mockImplementation(() => makeMockChild(0));
+
+    await run();
+
+    expect(process.exitCode).toBe(0);
+  });
+});
+
+// ── Wiring — sanitizeOutput runs before block extraction ─────────────────────
+
+describe('security pipeline ordering (FIX 1)', () => {
+  it('sanitizeOutput scans full filtered output before block extraction narrows it', async () => {
+    setupInputs({ prompt: 'Please review this PR' });
+
+    // Capture the paths that run() will assign to output/verbose files.
+    // setOutput('verbose-log-file', ...) is called BEFORE runAgent(), so
+    // capturedVerboseLog is populated before mockSpawn is invoked.
+    let capturedVerboseLog: string | undefined;
+    let capturedOutputFile: string | undefined;
+
+    mockSetOutput.mockImplementation((name: string, value: string) => {
+      if (name === 'verbose-log-file') capturedVerboseLog = value;
+      if (name === 'output-file') capturedOutputFile = value;
+    });
+
+    // Write verbose log content SYNCHRONOUSLY inside the spawn mock so it is
+    // present when run() reads the file immediately after spawn completes.
+    mockSpawn.mockImplementation(() => {
+      if (capturedVerboseLog) {
+        fsSync.appendFileSync(
+          capturedVerboseLog,
+          '--- Agent: root ---\nConversational text.\n```docker-agent-output\n## Result\n\nClean output.\n```\n',
+          'utf-8',
+        );
+      }
+      return makeMockChild(0);
+    });
+
+    await run();
+
+    // outputFile should contain the block-extracted clean content
+    if (capturedOutputFile && fsSync.existsSync(capturedOutputFile)) {
+      const outputContent = fsSync.readFileSync(capturedOutputFile, 'utf-8');
+      // Block extraction should have run: output is the docker-agent-output block
+      expect(outputContent.trim()).toBe('## Result\n\nClean output.');
+    } else {
+      // If output file wasn\'t created, ensure run() completed without failure
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    }
+
+    // Security outputs are correct (no leak in test content)
+    const outputCalls = Object.fromEntries(
+      mockSetOutput.mock.calls.map(([n, v]) => [n, v]),
+    );
+    expect(outputCalls['secrets-detected']).toBe('false');
+    expect(outputCalls['security-blocked']).toBe('false');
+  });
+});

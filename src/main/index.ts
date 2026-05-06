@@ -447,7 +447,12 @@ async function run(): Promise<void> {
   }
 }
 
-run().catch((err: unknown) => {
-  core.setFailed(`Fatal: ${(err as Error).message}`);
-  process.exit(1);
-});
+export { run };
+
+// Auto-invoke only when running as the real action entrypoint (not under Vitest).
+if (!process.env.VITEST) {
+  run().catch((err: unknown) => {
+    core.setFailed(`Fatal: ${(err as Error).message}`);
+    process.exit(1);
+  });
+}
