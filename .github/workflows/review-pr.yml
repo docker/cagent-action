@@ -486,13 +486,13 @@ jobs:
             exit 0
           fi
           body=$(echo "$parent" | jq -r '.body')
-          parent_user_type=$(echo "$parent" | jq -r '.user.type')
+          parent_user_login=$(echo "$parent" | jq -r '.user.login')
 
-          # Defense-in-depth: verify the root comment was posted by a Bot (agent) AND
+          # Defense-in-depth: verify the root comment was posted by docker-agent AND
           # contains the review marker but NOT the reply marker (substring overlap).
-          # The user.type check prevents matching human comments that happen to contain
+          # The login check prevents matching human comments that happen to contain
           # the marker text (e.g., in discussions about the review system).
-          if [ "$parent_user_type" = "Bot" ] && \
+          if [ "$parent_user_login" = "docker-agent" ] && \
              echo "$body" | grep -q "<!-- cagent-review -->" && \
              ! echo "$body" | grep -q "<!-- cagent-review-reply -->"; then
             echo "is_agent=true" >> $GITHUB_OUTPUT

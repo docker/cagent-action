@@ -214,7 +214,7 @@ jobs:
 
 ### PR Review Workflow
 
-For comprehensive documentation on setting up AI-powered PR reviews, including features like automatic reviews, the `/review` command, feedback learning, and customization options, see the **[PR Review documentation](review-pr/README.md)**.
+For comprehensive documentation on setting up AI-powered PR reviews, including features like requesting a review from `docker-agent`, automatic reviews, the `/review` command, feedback learning, and customization options, see the **[PR Review documentation](review-pr/README.md)**.
 
 ### Manual Trigger with Inputs
 
