@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'tsup';
 
@@ -5,7 +6,11 @@ import { defineConfig } from 'tsup';
 // Library sub-modules (add-reaction, check-org-membership, get-pr-meta,
 // post-comment) are imported by mention-reply but have no standalone action,
 // so they don't get their own top-level dist bundle.
-const src = (name: string) => resolve(import.meta.dirname, 'src', name, 'index.ts');
+const src = (name: string) => {
+  const p = resolve(import.meta.dirname, 'src', name, 'index.ts');
+  if (!existsSync(p)) throw new Error(`tsup entry not found: ${p}`);
+  return p;
+};
 const entry = {
   credentials: src('credentials'),
   'mention-reply': src('mention-reply'),
