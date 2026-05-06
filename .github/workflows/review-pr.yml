@@ -755,15 +755,13 @@ jobs:
           OUTCOME: ${{ steps.run-reply.outcome }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "$OUTCOME" = "success" ]; then
-            REACTION='+1'
-          else
-            REACTION='confused'
+          if [ "$OUTCOME" != "success" ]; then
+            exit 0
           fi
           if [ "$EVENT_NAME" = "pull_request_review_comment" ]; then
             gh api "repos/$REPO/pulls/comments/$COMMENT_ID/reactions" \
-              -X POST -f content="$REACTION" || true
+              -X POST -f content='+1' || true
           else
             gh api "repos/$REPO/issues/comments/$COMMENT_ID/reactions" \
-              -X POST -f content="$REACTION" || true
+              -X POST -f content='+1' || true
           fi
