@@ -87,7 +87,7 @@ describe('filterAgentOutput', () => {
     const input = ['--- Tool: bash ---', 'some tool output', '', 'Clean output'].join('\n');
     const result = filterAgentOutput(input);
     const lines = result.split('\n');
-    const cleanIdx = lines.findIndex((l) => l === 'Clean output');
+    const cleanIdx = lines.indexOf('Clean output');
     expect(cleanIdx).toBeGreaterThan(-1);
     // The line immediately before 'Clean output' must not be blank
     expect(lines[cleanIdx - 1]).not.toBe('');
