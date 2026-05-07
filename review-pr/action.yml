@@ -322,6 +322,7 @@ runs:
       env:
         EXCLUDE_PATHS: ${{ inputs.exclude-paths }}
       run: |
+        set -euo pipefail
         node "$ACTION_PATH/dist/score-risk.js" pr.diff "$EXCLUDE_PATHS"
         echo "✅ File risk scores: $(jq -c . /tmp/file_risk_scores.json)"
 

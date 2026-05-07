@@ -387,6 +387,24 @@ describe('scoreFiles — combined rules', () => {
   });
 });
 
+// ── extractFilePath regression: greedy-regex vs indexOf(' b/') ─────────────────
+
+describe('scoreFiles — extractFilePath: indexOf regression for paths containing b/', () => {
+  it('path with security keyword before a b/ directory component scores 2, not 0', () => {
+    // Old greedy regex: replace(/.*b\//, '') on
+    //   "diff --git a/src/auth/b/helper.ts b/src/auth/b/helper.ts"
+    // matches everything up to the last 'b/' giving 'helper.ts'.
+    // 'helper.ts' has no security keyword → score 0.
+    //
+    // New indexOf(' b/'): strips "diff --git a/" prefix and splits at the
+    // first ' b/' separator giving 'src/auth/b/helper.ts'.
+    // 'src/auth/b/helper.ts' matches SECURITY_PATH_RE ('auth') → score 2.
+    const diff = makeDiff('src/auth/b/helper.ts', ['+changed']);
+    const scores = scoreFiles(diff, []);
+    expect(scores['src/auth/b/helper.ts']).toBe(2);
+  });
+});
+
 // ── Edge cases ────────────────────────────────────────────────────────────────
 
 describe('scoreFiles — edge cases', () => {
