@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: ""
+      exclude-paths:
+        description: 'Newline-separated list of path prefixes to strip from the diff before chunking. Files matching these prefixes are excluded from review entirely.'
+        required: false
+        type: string
+        default: ''
       trigger-run-id:
         description: "Workflow run ID from pr-review-trigger.yml — used to download the event context artifact. When set, resolve-context job downloads the artifact and routes to the appropriate job."
         required: false
@@ -353,6 +358,7 @@ jobs:
           comment-id: ${{ inputs.comment-id || github.event.comment.id }}
           additional-prompt: ${{ inputs.additional-prompt }}
           add-prompt-files: ${{ inputs.add-prompt-files }}
+          exclude-paths: ${{ inputs.exclude-paths }}
           model: ${{ inputs.model }}
           github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           anthropic-api-key: ${{ env.ANTHROPIC_API_KEY_FROM_SSM || secrets.ANTHROPIC_API_KEY }}

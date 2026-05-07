@@ -59,6 +59,10 @@ inputs:
     description: "Skip the built-in authorization check (caller already verified auth)"
     required: false
     default: "false"
+  exclude-paths:
+    description: 'Newline-separated list of path prefixes to strip from the diff before chunking. Files matching these prefixes are excluded from review entirely.'
+    required: false
+    default: ''
 
 outputs:
   exit-code:
@@ -233,6 +237,82 @@ runs:
           fi
         fi
 
+    - name: Filter excluded paths from diff
+      if: hashFiles('pr.diff') != '' && inputs.exclude-paths != ''
+      shell: bash
+      env:
+        EXCLUDE_PATHS: ${{ inputs.exclude-paths }}
+      run: |
+        set -euo pipefail
+
+        # Parse newline-separated exclude-paths prefixes into array
+        mapfile -t PREFIXES < <(printf '%s' "$EXCLUDE_PATHS" | tr -d '\r' | grep -v '^[[:space:]]*$')
+
+        if [ "${#PREFIXES[@]}" -eq 0 ]; then
+          echo "ℹ️  No valid prefixes in exclude-paths — skipping filter"
+          exit 0
+        fi
+
+        echo "🔍 Filtering diff against ${#PREFIXES[@]} excluded prefix(es):"
+        for p in "${PREFIXES[@]}"; do
+          echo "   - $p"
+        done
+
+        TMPFILE=$(mktemp)
+        EXCLUDED_LIST=$(mktemp)
+
+        # Process diff section-by-section.
+        # Each section starts with "diff --git a/... b/..."; the target file path
+        # is on the "+++ b/<path>" line. Buffer each section and flush only when
+        # the path does not match any excluded prefix.
+        awk '
+        function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+        BEGIN {
+          np = 0
+          n = split(ENVIRON["EXCLUDE_PATHS"], raw, "\n")
+          for (i = 1; i <= n; i++) {
+            p = trim(raw[i])
+            gsub(/\r/, "", p)
+            if (length(p) > 0) prefixes[++np] = p
+          }
+          skip = 0
+          buf  = ""
+        }
+        /^diff --git / {
+          if (length(buf) > 0 && !skip) printf "%s", buf
+          buf  = $0 "\n"
+          skip = 0
+          next
+        }
+        /^\+\+\+ b\// {
+          file = substr($0, 7)
+          for (i = 1; i <= np; i++) {
+            if (substr(file, 1, length(prefixes[i])) == prefixes[i]) {
+              skip = 1
+              print file > "/dev/stderr"
+              break
+            }
+          }
+          buf = buf $0 "\n"
+          next
+        }
+        { buf = buf $0 "\n" }
+        END { if (length(buf) > 0 && !skip) printf "%s", buf }
+        ' pr.diff > "$TMPFILE" 2>"$EXCLUDED_LIST"
+
+        EXCLUDED_COUNT=0
+        while IFS= read -r filepath; do
+          echo "⏭️ Excluded from review: $filepath"
+          EXCLUDED_COUNT=$((EXCLUDED_COUNT + 1))
+        done < "$EXCLUDED_LIST"
+
+        REMAINING_COUNT=$(grep -c '^diff --git ' "$TMPFILE" 2>/dev/null || echo 0)
+
+        mv "$TMPFILE" pr.diff
+        rm -f "$EXCLUDED_LIST"
+
+        echo "✅ Filtered diff: $EXCLUDED_COUNT files excluded, $REMAINING_COUNT files remaining"
+
     - name: Split diff into chunks
       if: hashFiles('pr.diff') != ''
       id: chunk-diff
@@ -307,6 +387,8 @@ runs:
     - name: Score file risk
       if: hashFiles('pr.diff') != ''
       shell: bash
+      env:
+        EXCLUDE_PATHS: ${{ inputs.exclude-paths }}
       run: |
         # Extract per-file diff stats (added lines, hunk count)
         awk '
@@ -325,34 +407,62 @@ runs:
         while read -r file added hunks; do
           SCORE=0
 
-          # Security-sensitive paths: +2
-          if echo "$file" | grep -qiE 'auth|security|crypto|session|secret|token|password|credential'; then
-            SCORE=$((SCORE + 2))
+          # Check if file matches any exclude-paths prefix → score 0, skip scoring
+          SKIP_FILE=false
+          while IFS= read -r prefix; do
+            prefix="$(printf '%s' "$prefix" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            [ -z "$prefix" ] && continue
+            if [[ "$file" == "${prefix}"* ]]; then
+              SKIP_FILE=true
+              break
+            fi
+          done <<< "$EXCLUDE_PATHS"
+
+          # Check for generated-file markers in first 5 added lines
+          if [ "$SKIP_FILE" = "false" ]; then
+            GENERATED=$(awk -v f="$file" '
+              /^diff --git/ { cur = $0; sub(/.*b\//, "", cur) }
+              cur == f && /^\+[^+]/ {
+                count++
+                if (/Code generated|DO NOT EDIT/) { print "yes"; exit }
+                if (count >= 5) exit
+              }
+            ' pr.diff)
+            if [ "$GENERATED" = "yes" ]; then
+              SKIP_FILE=true
+            fi
           fi
 
-          # Large change (>100 added lines): +2
-          if [ "$added" -gt 100 ]; then
-            SCORE=$((SCORE + 2))
-          fi
+          if [ "$SKIP_FILE" = "false" ]; then
+            # Security-sensitive paths: +2
+            if echo "$file" | grep -qiE 'auth|security|crypto|session|secret|token|password|credential'; then
+              SCORE=$((SCORE + 2))
+            fi
 
-          # Many hunks (>3): +1
-          if [ "$hunks" -gt 3 ]; then
-            SCORE=$((SCORE + 1))
-          fi
+            # Large change (>100 added lines): +2
+            if [ "$added" -gt 100 ]; then
+              SCORE=$((SCORE + 2))
+            fi
 
-          # Test/doc/config files: score = 0
-          if echo "$file" | grep -qiE '_test\.go$|\.test\.[tj]sx?$|\.spec\.[tj]sx?$|test_.*\.py$|\.md$|\.ya?ml$|\.json$|\.toml$'; then
-            SCORE=0
-          fi
+            # Many hunks (>3): +1
+            if [ "$hunks" -gt 3 ]; then
+              SCORE=$((SCORE + 1))
+            fi
 
-          # Error handling patterns in diff for this file: +1
-          ERROR_LINES=$(awk -v f="$file" '
-            /^diff --git/ { cur=$0; sub(/.*b\//, "", cur) }
-            cur == f && /^\+[^+]/ && /catch|rescue|except|recover|error|panic/ { count++ }
-            END { print count+0 }
-          ' pr.diff)
-          if [ "$ERROR_LINES" -gt 0 ]; then
-            SCORE=$((SCORE + 1))
+            # Test/doc/config files: score = 0
+            if echo "$file" | grep -qiE '_test\.go$|\.test\.[tj]sx?$|\.spec\.[tj]sx?$|test_.*\.py$|\.md$|\.ya?ml$|\.json$|\.toml$'; then
+              SCORE=0
+            fi
+
+            # Error handling patterns in diff for this file: +1
+            ERROR_LINES=$(awk -v f="$file" '
+              /^diff --git/ { cur=$0; sub(/.*b\//, "", cur) }
+              cur == f && /^\+[^+]/ && /catch|rescue|except|recover|error|panic/ { count++ }
+              END { print count+0 }
+            ' pr.diff)
+            if [ "$ERROR_LINES" -gt 0 ]; then
+              SCORE=$((SCORE + 1))
+            fi
           fi
 
           if jq --arg f "$file" --argjson s "$SCORE" '.[$f] = $s' /tmp/file_risk_scores.json > /tmp/file_risk_scores.tmp; then
