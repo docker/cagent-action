@@ -137,7 +137,12 @@ agents:
          a. Check for pre-split chunk files: `ls /tmp/drafter_chunk_*.diff`
             The CI workflow splits the diff before the agent runs. If chunk files exist,
             use them directly — do NOT recreate them.
-         b. For each chunk file, delegate to the drafter with that file path.
+         b. **Parallel delegation**: Issue ALL `transfer_task` delegations in a single
+            tool-call batch — do NOT wait for one drafter to complete before starting
+            the next. Submitting all delegations simultaneously allows the framework to
+            execute them in parallel, reducing total review wall-clock time from
+            O(N chunks × per-chunk time) to O(max per-chunk time). Each delegation is
+            fully independent; findings arrays are merged in step d below.
 
          **Console output mode** (GITHUB_ACTIONS empty/unset):
          a. Do NOT run `ls /tmp/drafter_chunk_*.diff` — there are no pre-staged files
@@ -395,11 +400,28 @@ agents:
       "undefined function" findings without checking — these are the #1 source of
       false positives.
 
-      ## File Reading Guardrails
+      ## File Reading Guardrails (HARD LIMITS — not advisory)
 
-      Never guess paths — use `list_directory`. Stop after 3 consecutive not-found reads.
-      Cap at 10 source file reads (excluding the diff chunk). Only read files referenced
-      in diff `+` lines. Never read the same file twice (diff chunk: exactly once).
+      The review timeout is ~10 minutes per chunk. Excessive file reads are the #1 cause
+      of timeouts. These limits are **mandatory** and override any domain-guide instruction
+      to be "systematic" or "thorough."
+
+      1. **Hard cap: 15 source files total** (not counting the diff chunk itself). Keep a
+         running mental count. When you reach 15 reads, STOP immediately and return your
+         current findings with `review_complete: false`.
+      2. **Early-exit at 10 reads with no high finding**: If you have read 10+ source files
+         and found zero high-severity bugs, STOP and return what you have with
+         `review_complete: true`. Low/medium findings do not justify continuing past 10.
+      3. **Never guess paths**: Use `list_directory` before `read_file` if unsure the path
+         exists. A not-found read counts toward the 15-file cap.
+      4. **3 consecutive not-found = full stop**: If 3 consecutive `read_file` calls return
+         "not found", stop reading files entirely and return findings immediately.
+      5. **No file twice**: Each source file at most once. The diff chunk: exactly once.
+      6. **Refs directory**: One `list_directory` call, each guide file read once. Never
+         re-read a guide you have already processed.
+      7. **No speculative reads**: Only read files referenced in diff `+` lines or directly
+         required to confirm or deny a specific finding. Never read files to "understand
+         the project structure" or "check for related patterns."
 
       ## CRITICAL RULE: Only Review Changed Code
 
