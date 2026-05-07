@@ -39,6 +39,10 @@ Anything else here (workflows under `.github/workflows/`, scripts, tests) exists
 │   │   ├── aws-credentials.ts
 │   │   ├── github-app.ts            # Reads docker-agent-action/github-app from Secrets Manager; exports GITHUB_APP_TOKEN (a PAT) + ORG_MEMBERSHIP_TOKEN.
 │   │   └── __tests__/
+│   ├── filter-diff/                 # Strips excluded-path sections from a unified diff.
+│   │   ├── index.ts                 # CLI entry → bundled to dist/filter-diff.js
+│   │   ├── filter-diff.ts           # Core filterDiff() pure function + applyFilter() I/O wrapper.
+│   │   └── __tests__/
 │   ├── get-pr-meta/                 # Fetches PR metadata (title, body, author, base branch) used by review-pr.
 │   │   ├── index.ts                 # Entry → bundled to dist/get-pr-meta.js
 │   │   └── __tests__/
@@ -109,6 +113,7 @@ Anything else here (workflows under `.github/workflows/`, scripts, tests) exists
 ### TypeScript / `src` rules
 
 - Only `src/<name>/index.ts` files listed in the explicit `entry` map in `tsup.config.ts` are bundled to `dist/<name>.js`. To add a new action entrypoint, create `src/<name>/index.ts` **and** add it to the `entry` map in `tsup.config.ts`. Pure library modules that are only imported by other actions (e.g. `add-reaction`, `check-org-membership`, `get-pr-meta`, `post-comment`) should **not** be added to the entry map — they get bundled into their consumer automatically.
+- **New logic in composite actions must be implemented as TypeScript in `src/` with Vitest unit tests — not as inline bash, awk, or other scripting languages embedded in YAML files.** Shell steps in action YAML files should only orchestrate calls to `dist/*.js` tools (e.g. `node "$ACTION_PATH/dist/filter-diff.js" pr.diff "$EXCLUDE_PATHS"`). This keeps business logic testable, type-safe, and auditable outside the YAML layer.
 - `tsup` runs with `noExternal: [/.*/]` — **all npm dependencies are bundled in**. Do not assume `node_modules` exists at runtime.
 - Target is `node24`, ESM only, Node platform (so AWS SDK uses the Node export, not browser).
 - Sourcemaps are intentionally disabled (consumers clone `dist/`; sourcemaps would bloat every checkout).
