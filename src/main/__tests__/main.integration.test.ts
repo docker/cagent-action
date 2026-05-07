@@ -22,6 +22,12 @@ import { join } from 'node:path';
 import { EventEmitter } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Read the pinned docker-agent version from the canonical source file so this
+// test stays in sync automatically whenever DOCKER_AGENT_VERSION is bumped.
+const DOCKER_AGENT_VERSION = fsSync
+  .readFileSync(join(import.meta.dirname, '..', '..', '..', 'DOCKER_AGENT_VERSION'), 'utf-8')
+  .trim();
+
 // ── Hoisted mock state ────────────────────────────────────────────────────────
 
 const {
@@ -218,7 +224,7 @@ async function setupBinaryMocks() {
   const fakeDir = join(tmpDir, 'tool-cache', 'docker-agent');
   fsSync.mkdirSync(fakeDir, { recursive: true });
   const fakeBin = join(fakeDir, 'docker-agent');
-  await writeFile(fakeBin, '#!/bin/sh\necho v1.54.0\n', 'utf-8');
+  await writeFile(fakeBin, `#!/bin/sh\necho ${DOCKER_AGENT_VERSION}\n`, 'utf-8');
   fsSync.chmodSync(fakeBin, 0o755);
 
   // Local cache hit — returns dir with binary
@@ -283,7 +289,7 @@ describe('happy path — agent succeeds', () => {
     expect(outputCalls.authorized).toBe('skipped-by-caller');
     expect(outputCalls['prompt-suspicious']).toBe('false');
     expect(outputCalls['input-risk-level']).toBe('low');
-    expect(outputCalls['cagent-version']).toBe('v1.54.0');
+    expect(outputCalls['cagent-version']).toBe(DOCKER_AGENT_VERSION);
     expect(outputCalls['mcp-gateway-installed']).toBe('false');
     expect(outputCalls['exit-code']).toBe('0');
     expect(outputCalls['secrets-detected']).toBe('false');
