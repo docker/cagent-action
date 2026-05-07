@@ -450,9 +450,91 @@ describe('agent exit code propagation', () => {
   });
 });
 
-// ── Wiring — sanitizeOutput runs before block extraction ─────────────────────
+// ── Retry output trimming (FIX 2) ───────────────────────────────────────────
 
-// ── Wiring — sanitizeOutput runs before block extraction ─────────────────────
+describe('retry output trimming (FIX 2)', () => {
+  it('uses only the last retry attempt content, not the full verbose log', async () => {
+    // Simulate a verbose log that contains two attempt sections separated by the
+    // marker that exec.ts appends before each retry attempt.  The first attempt
+    // has a partial docker-agent-output block (corrupt output); the second attempt
+    // has the correct final block.  The fix must ensure only the last section is
+    // passed to filterAgentOutput so the first-attempt block does not contaminate.
+    setupInputs();
+
+    let capturedVerboseLog: string | undefined;
+    let capturedOutputFile: string | undefined;
+
+    mockSetOutput.mockImplementation((name: string, value: string) => {
+      if (name === 'verbose-log-file') capturedVerboseLog = value;
+      if (name === 'output-file') capturedOutputFile = value;
+    });
+
+    mockSpawn.mockImplementation(() => {
+      // Write verbose log content with retry markers — simulates what exec.ts
+      // produces after a failed attempt 1 and a successful attempt 2.
+      if (capturedVerboseLog) {
+        const content = [
+          '## First attempt (partial / wrong)',
+          '```docker-agent-output',
+          'WRONG: first attempt block',
+          '```',
+          '',
+          '========== RETRY ATTEMPT 2 (2025-01-15T00:00:00.000Z) ==========',
+          '',
+          '## Second attempt (correct)',
+          '```docker-agent-output',
+          'CORRECT: last attempt block',
+          '```',
+        ].join('\n');
+        fsSync.appendFileSync(capturedVerboseLog, content, 'utf-8');
+      }
+      return makeMockChild(0);
+    });
+
+    await run();
+
+    expect(capturedOutputFile).toBeDefined();
+    // Safe cast: toBeDefined() assertion above guarantees this is set
+    const outputContent = fsSync.readFileSync(capturedOutputFile as string, 'utf-8');
+
+    // Only the last attempt's output block should be present
+    expect(outputContent).toContain('CORRECT: last attempt block');
+    expect(outputContent).not.toContain('WRONG: first attempt block');
+  });
+
+  it('passes the full log through when there are no retry markers', async () => {
+    // When no retries occurred the marker is absent; the log must be processed
+    // in its entirety (parts.length === 1, parts[0] === rawVerbose).
+    setupInputs();
+
+    let capturedVerboseLog: string | undefined;
+    let capturedOutputFile: string | undefined;
+
+    mockSetOutput.mockImplementation((name: string, value: string) => {
+      if (name === 'verbose-log-file') capturedVerboseLog = value;
+      if (name === 'output-file') capturedOutputFile = value;
+    });
+
+    mockSpawn.mockImplementation(() => {
+      if (capturedVerboseLog) {
+        fsSync.appendFileSync(
+          capturedVerboseLog,
+          '## Single attempt\n\nAll content from the one and only run.',
+          'utf-8',
+        );
+      }
+      return makeMockChild(0);
+    });
+
+    await run();
+
+    expect(capturedOutputFile).toBeDefined();
+    // Safe cast: toBeDefined() assertion above guarantees this is set
+    const outputContent = fsSync.readFileSync(capturedOutputFile as string, 'utf-8');
+    expect(outputContent).toContain('## Single attempt');
+    expect(outputContent).toContain('All content from the one and only run.');
+  });
+});
 
 describe('security pipeline ordering (FIX 1)', () => {
   it('sanitizeOutput scans full filtered output before block extraction narrows it', async () => {

@@ -234,13 +234,15 @@ describe('Tier 3: org membership', () => {
     expect(result.outcome).toBe('denied');
   });
 
-  it('falls through to author_association when org check throws (FIX 3)', async () => {
-    // Old code: exception → hard-deny. New code: exception → warn + fall through to Tier 4.
-    // Using OWNER association so Tier 4 authorizes — this distinguishes the two behaviors.
+  it('falls through to author_association when org check throws a non-401 error', async () => {
+    // Non-401 errors (network timeouts, 5xx) warn and fall through to Tier 4.
+    // Using OWNER association so Tier 4 authorizes — this distinguishes
+    // fallthrough from hard-deny and confirms the code path under test.
     await writePayload({
       comment: { author_association: 'OWNER', user: { login: 'repo-owner' } },
     });
     mockGetAuthenticated.mockResolvedValue({ data: { login: 'bot' } });
+    // Explicitly non-401: plain Error with no .status property
     mockCheckOrgMembership.mockRejectedValue(new Error('Network timeout'));
 
     const result = await checkAuthorization({
@@ -250,9 +252,33 @@ describe('Tier 3: org membership', () => {
       authOrg: 'my-org',
       eventPayloadPath,
     });
-    // New behavior: falls through to Tier 4 → OWNER is authorized
+    // Non-401: falls through to Tier 4 → OWNER is authorized
     expect(result.authorized).toBe(true);
     expect(result.outcome).toBe('author-association');
+  });
+
+  it('hard-denies when org membership token returns HTTP 401 (does not fall through to Tier 4)', async () => {
+    // A revoked / invalid token returns 401. This must hard-deny and must NOT
+    // fall through to the weaker Tier 4 author_association check.
+    // Using OWNER association: if the code fell through, Tier 4 would authorize;
+    // the expected `denied` outcome proves hard-deny fired instead.
+    await writePayload({
+      comment: { author_association: 'OWNER', user: { login: 'repo-owner' } },
+    });
+    mockGetAuthenticated.mockResolvedValue({ data: { login: 'bot' } });
+    const err401 = Object.assign(new Error('Unauthorized'), { status: 401 });
+    mockCheckOrgMembership.mockRejectedValue(err401);
+
+    const result = await checkAuthorization({
+      ...BASE_OPTS,
+      skipAuth: false,
+      orgMembershipToken: 'org-token',
+      authOrg: 'my-org',
+      eventPayloadPath,
+    });
+    // Hard-deny: 401 must NOT fall through to Tier 4 (which would authorize OWNER)
+    expect(result.authorized).toBe(false);
+    expect(result.outcome).toBe('denied');
   });
 });
 

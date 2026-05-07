@@ -122,8 +122,12 @@ export async function checkAuthorization(opts: {
         return { authorized: false, outcome: 'denied' };
       }
     } catch (err: unknown) {
-      // Network error / 5xx: warn and fall through to Tier 4 (author_association)
-      // rather than hard-denying a valid contributor.
+      const status = (err as { status?: number }).status;
+      if (status === 401) {
+        core.error(`Org membership token is invalid (HTTP 401): ${(err as Error).message}`);
+        return { authorized: false, outcome: 'denied' };
+      }
+      // Network / 5xx: warn and fall through to Tier 4
       core.warning(
         `Org membership check failed (${(err as Error).message}); falling back to author_association`,
       );

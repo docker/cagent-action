@@ -361,9 +361,17 @@ async function run(): Promise<void> {
     // ── Step 8: Post-process verbose log → clean output ───────────────────
     if (fs.existsSync(verboseLogFile)) {
       const rawVerbose = fs.readFileSync(verboseLogFile, 'utf-8');
+      // Trim to only the final retry attempt's content. The original bash
+      // truncated $OUTPUT_FILE before each retry; mirroring that here prevents
+      // a partial docker-agent-output block from an earlier attempt from
+      // corrupting the extracted output.
+      // When there are no retries, parts has length 1 and parts[0] is the full log.
+      const lastAttemptMarker = /^={10,} RETRY ATTEMPT \d+/m;
+      const parts = rawVerbose.split(lastAttemptMarker);
+      const lastAttemptContent = parts[parts.length - 1];
       // Step 8a: awk-equivalent noise filter. Writes FULL filtered text so
       // sanitizeOutput (Step 9) can scan it before block extraction narrows it.
-      const filteredOutput = filterAgentOutput(rawVerbose);
+      const filteredOutput = filterAgentOutput(lastAttemptContent);
       fs.writeFileSync(outputFile, filteredOutput, 'utf-8');
     }
   } catch (err: unknown) {
