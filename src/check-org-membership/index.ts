@@ -30,9 +30,12 @@ export async function checkOrgMembership(
     const status = (err as { status?: number }).status;
     if (status === 404 || status === 302) return false;
     if (status === 401) {
-      throw new Error(
-        'Org membership token is missing or invalid (HTTP 401). ' +
-          "Ensure the job has 'id-token: write' permission and OIDC is configured.",
+      throw Object.assign(
+        new Error(
+          'Org membership token is missing or invalid (HTTP 401). ' +
+            "Ensure the job has 'id-token: write' permission and OIDC is configured.",
+        ),
+        { status: 401 },
       );
     }
     throw err;

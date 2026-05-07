@@ -55,7 +55,10 @@ describe('checkOrgMembership', () => {
       Object.assign(new Error('Unauthorized'), { status: 401 }),
     );
 
-    await expect(checkOrgMembership(ORG_TOKEN, ORG, USERNAME)).rejects.toThrow(/HTTP 401/);
+    const err = await checkOrgMembership(ORG_TOKEN, ORG, USERNAME).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/HTTP 401/);
+    expect((err as { status?: number }).status).toBe(401);
   });
 
   it('re-throws unexpected errors', async () => {
