@@ -185,6 +185,24 @@ runs:
         # The restore step uses the fixed key with no run_id, so it matches via prefix
         key: pr-review-lock-${{ github.repository }}-${{ steps.resolve-context.outputs.pr-number }}-${{ github.run_id }}
 
+    - name: Ensure cache directory exists
+      if: steps.lock-check.outputs.skip != 'true'
+      shell: bash
+      env:
+        WORKSPACE: ${{ github.workspace }}
+      run: mkdir -p "$WORKSPACE/.cache"
+
+    - name: Restore reviewer memory
+      if: steps.lock-check.outputs.skip != 'true'
+      id: restore-memory
+      uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        path: ${{ github.workspace }}/.cache/pr-review-memory.db
+        key: pr-review-memory-${{ github.repository }}-${{ github.job }}-${{ github.run_id }}
+        restore-keys: |
+          pr-review-memory-${{ github.repository }}-${{ github.job }}-
+          pr-review-memory-${{ github.repository }}-
+
     - name: Add eyes reaction
       if: steps.resolve-context.outputs.comment-id != '' && steps.lock-check.outputs.skip != 'true'
       shell: bash
@@ -544,24 +562,6 @@ runs:
 
         echo ""
         echo "📋 Summary: Resolved $RESOLVED thread(s), kept $KEPT thread(s) open"
-
-    - name: Ensure cache directory exists
-      if: steps.lock-check.outputs.skip != 'true'
-      shell: bash
-      env:
-        WORKSPACE: ${{ github.workspace }}
-      run: mkdir -p "$WORKSPACE/.cache"
-
-    - name: Restore reviewer memory
-      if: steps.lock-check.outputs.skip != 'true'
-      id: restore-memory
-      uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
-      with:
-        path: ${{ github.workspace }}/.cache/pr-review-memory.db
-        key: pr-review-memory-${{ github.repository }}-${{ github.job }}-${{ github.run_id }}
-        restore-keys: |
-          pr-review-memory-${{ github.repository }}-${{ github.job }}-
-          pr-review-memory-${{ github.repository }}-
 
     # ========================================
     # PROCESS PENDING FEEDBACK
