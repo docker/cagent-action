@@ -241,6 +241,7 @@ runs:
       if: hashFiles('pr.diff') != '' && inputs.exclude-paths != ''
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         EXCLUDE_PATHS: ${{ inputs.exclude-paths }}
       run: |
         node "$ACTION_PATH/dist/filter-diff.js" pr.diff "$EXCLUDE_PATHS"
@@ -320,6 +321,7 @@ runs:
       if: hashFiles('pr.diff') != ''
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         EXCLUDE_PATHS: ${{ inputs.exclude-paths }}
       run: |
         set -euo pipefail
