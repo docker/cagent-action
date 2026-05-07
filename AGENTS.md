@@ -43,6 +43,10 @@ Anything else here (workflows under `.github/workflows/`, scripts, tests) exists
 │   │   ├── index.ts                 # CLI entry → bundled to dist/filter-diff.js
 │   │   ├── filter-diff.ts           # Core filterDiff() pure function + applyFilter() I/O wrapper.
 │   │   └── __tests__/
+│   ├── score-risk/                  # Per-file risk scoring for the PR review pipeline.
+│   │   ├── index.ts                 # CLI entry → bundled to dist/score-risk.js
+│   │   ├── score-risk.ts            # Core scoreFiles() pure function.
+│   │   └── __tests__/
 │   ├── get-pr-meta/                 # Fetches PR metadata (title, body, author, base branch) used by review-pr.
 │   │   ├── index.ts                 # Entry → bundled to dist/get-pr-meta.js
 │   │   └── __tests__/
