@@ -263,10 +263,22 @@ runs:
 
         # Process diff section-by-section.
         # Each section starts with "diff --git a/... b/..."; the target file path
-        # is on the "+++ b/<path>" line. Buffer each section and flush only when
-        # the path does not match any excluded prefix.
+        # is determined by whichever of these lines appears first in the section:
+        #   --- a/<path>   present for modifications and deletions
+        #   +++ b/<path>   present for modifications and additions (new files)
+        #   rename to <p>  present for pure renames (100% similarity — no --- or +++)
+        # We guard with !skip so only the first matching line logs to stderr.
         awk '
         function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+        function check_prefix(f) {
+          for (i = 1; i <= np; i++) {
+            if (substr(f, 1, length(prefixes[i])) == prefixes[i]) {
+              skip = 1
+              print f > "/dev/stderr"
+              return
+            }
+          }
+        }
         BEGIN {
           np = 0
           n = split(ENVIRON["EXCLUDE_PATHS"], raw, "\n")
@@ -284,15 +296,21 @@ runs:
           skip = 0
           next
         }
+        /^--- a\// {
+          # Deletions: +++ is /dev/null so --- a/<path> is the only real path line
+          if (!skip) check_prefix(substr($0, 7))
+          buf = buf $0 "\n"
+          next
+        }
         /^\+\+\+ b\// {
-          file = substr($0, 7)
-          for (i = 1; i <= np; i++) {
-            if (substr(file, 1, length(prefixes[i])) == prefixes[i]) {
-              skip = 1
-              print file > "/dev/stderr"
-              break
-            }
-          }
+          # Additions/modifications: skip may already be set by --- a/ above
+          if (!skip) check_prefix(substr($0, 7))
+          buf = buf $0 "\n"
+          next
+        }
+        /^rename to / {
+          # Pure renames (100% similarity): no --- or +++ lines at all
+          if (!skip) check_prefix(substr($0, 11))
           buf = buf $0 "\n"
           next
         }
@@ -312,6 +330,15 @@ runs:
         rm -f "$EXCLUDED_LIST"
 
         echo "✅ Filtered diff: $EXCLUDED_COUNT files excluded, $REMAINING_COUNT files remaining"
+
+        # When every section was excluded pr.diff is empty (0 bytes).
+        # hashFiles('pr.diff') hashes whatever content exists, even empty, so the
+        # downstream steps would still fire. Remove the file so hashFiles returns ''
+        # and Split diff / Score file risk / Generate file history are all skipped.
+        if [ "$REMAINING_COUNT" -eq 0 ]; then
+          rm -f pr.diff
+          echo "ℹ️  All files excluded — removed pr.diff so downstream diff steps are skipped"
+        fi
 
     - name: Split diff into chunks
       if: hashFiles('pr.diff') != ''
@@ -418,7 +445,11 @@ runs:
             fi
           done <<< "$EXCLUDE_PATHS"
 
-          # Check for generated-file markers in first 5 added lines
+          # Safety net: check for generated-file markers in the first 5 added lines.
+          # Note: only fires for brand-new files whose marker line appears as a
+          # "+" line. For pre-existing generated files being modified, the marker
+          # is a context line (space-prefixed in unified diff) and won't match —
+          # the exclude-paths prefix check above is the primary mechanism for those.
           if [ "$SKIP_FILE" = "false" ]; then
             GENERATED=$(awk -v f="$file" '
               /^diff --git/ { cur = $0; sub(/.*b\//, "", cur) }
