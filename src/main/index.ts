@@ -38,7 +38,7 @@ import { writeJobSummary } from './summary.js';
 // ── Paths ────────────────────────────────────────────────────────────────────
 
 /** Absolute path to the directory containing this action's files. */
-const ACTION_PATH = path.join(import.meta.dirname, '..', '..');
+const ACTION_PATH = path.join(import.meta.dirname, '..');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
