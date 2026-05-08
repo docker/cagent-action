@@ -5,18 +5,18 @@
  *   checkOrgMembership(orgToken, org, username) → boolean
  *   resolvePrAuthor(repoToken, owner, repo, prNumber) → string
  *
- * CLI (node24 action, invoked via .github/actions/check-org-membership/action.yml):
- *   Inputs (via @actions/core.getInput):
- *     org-membership-token  PAT with read:org scope (for checkMembershipForUser)
- *     github-app-token      PAT with repo scope (for pulls.get when pr-source != 'event')
- *     org                   GitHub org name (e.g. "docker")
- *     pr-source             "event" | "trigger" | "input"
- *     pr-number             PR number as string (required when pr-source != 'event')
- *     comment-author        User login (required when pr-source == 'event')
- *   Standard env vars:
- *     GITHUB_REPOSITORY     "owner/repo" (standard GitHub Actions env var)
- *   Outputs (via @actions/core.setOutput):
- *     is_member             "true" | "false"
+ * CLI (invoked as a shell run step via dist/check-org-membership.js):
+ *   All inputs are read from environment variables:
+ *     ORG_MEMBERSHIP_TOKEN   PAT with read:org scope (set by setup-credentials)
+ *     GITHUB_APP_TOKEN       PAT with repo scope (set by setup-credentials)
+ *     GITHUB_REPOSITORY      "owner/repo" (standard GitHub Actions env var)
+ *     ORG                    GitHub org name to check (e.g. "docker")
+ *     PR_SOURCE              "event" | "trigger" | "input"
+ *     PR_NUMBER              PR number as string (required when PR_SOURCE != 'event')
+ *     COMMENT_AUTHOR         User login (required when PR_SOURCE == 'event')
+ *
+ *   Outputs are written via @actions/core.setOutput (writes to $GITHUB_OUTPUT):
+ *     is_member              "true" | "false"
  *
  * Guard: the CLI entry point only executes when process.argv[1] ends with
  * "check-org-membership.js" and VITEST is not set. This prevents the CLI from
@@ -85,13 +85,22 @@ export async function resolvePrAuthor(
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  const orgToken = core.getInput('org-membership-token', { required: true });
-  const repoToken = core.getInput('github-app-token', { required: true });
-  const org = core.getInput('org', { required: true });
-  const prSource = core.getInput('pr-source', { required: true });
-  const prNumberStr = core.getInput('pr-number');
-  const commentAuthor = core.getInput('comment-author');
+  const orgToken = process.env.ORG_MEMBERSHIP_TOKEN ?? '';
+  const repoToken = process.env.GITHUB_APP_TOKEN ?? '';
+  const org = process.env.ORG ?? '';
+  const prSource = process.env.PR_SOURCE ?? '';
+  const prNumberStr = process.env.PR_NUMBER ?? '';
+  const commentAuthor = process.env.COMMENT_AUTHOR ?? '';
   const repository = process.env.GITHUB_REPOSITORY ?? '';
+
+  if (!orgToken) {
+    core.setFailed('ORG_MEMBERSHIP_TOKEN is not set — ensure setup-credentials ran successfully.');
+    return;
+  }
+  if (!repoToken) {
+    core.setFailed('GITHUB_APP_TOKEN is not set — ensure setup-credentials ran successfully.');
+    return;
+  }
 
   let username: string;
 

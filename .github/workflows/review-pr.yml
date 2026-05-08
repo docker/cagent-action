@@ -263,14 +263,13 @@ jobs:
         if: |
           steps.command.outputs.is_review != 'false' &&
           steps.draft.outputs.skip != 'true'
-        uses: docker/cagent-action/.github/actions/check-org-membership@e9a0c6af4c917f051184cfb96eb82586dcf87084 # in-branch
-        with:
-          org-membership-token: ${{ env.ORG_MEMBERSHIP_TOKEN }}
-          github-app-token: ${{ env.GITHUB_APP_TOKEN }}
-          org: docker
-          pr-source: ${{ steps.pr.outputs.source }}
-          pr-number: ${{ steps.pr.outputs.number }}
-          comment-author: ${{ github.event.comment.user.login }}
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_SOURCE: ${{ steps.pr.outputs.source }}
+          ORG: docker
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+        run: node "$CAGENT_ACTION_ROOT/dist/check-org-membership.js"
 
       - name: Create check run
         if: |
