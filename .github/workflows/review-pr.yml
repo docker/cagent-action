@@ -269,7 +269,7 @@ jobs:
           PR_SOURCE: ${{ steps.pr.outputs.source }}
           ORG: docker
           COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
-          REPO_TOKEN: ${{ env.GITHUB_APP_TOKEN || github.token }}
+          REPO_TOKEN: ${{ env.GITHUB_APP_TOKEN }}
         with:
           github-token: ${{ env.ORG_MEMBERSHIP_TOKEN }}
           script: |
