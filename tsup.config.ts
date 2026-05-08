@@ -1,6 +1,16 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'tsup';
+
+// Read the docker-agent version at build time so it can be embedded as a
+// compile-time constant.  This means the bundle never needs to locate the
+// DOCKER_AGENT_VERSION file on disk at action runtime — which would fail when
+// ACTION_PATH points at a sub-directory (e.g. review-pr/) rather than the
+// action root.
+const dockerAgentVersion = readFileSync(
+  resolve(import.meta.dirname, 'DOCKER_AGENT_VERSION'),
+  'utf-8',
+).trim();
 
 // Explicit entry list: only modules that back an actual action.yml entrypoint.
 // Pure library sub-modules (add-reaction, get-pr-meta, post-comment) are imported
@@ -25,6 +35,11 @@ const entry = {
 
 export default defineConfig({
   entry,
+  // Inject the docker-agent version as a build-time constant so the bundle
+  // never reads DOCKER_AGENT_VERSION from disk at runtime.
+  define: {
+    __DOCKER_AGENT_VERSION__: JSON.stringify(dockerAgentVersion),
+  },
   format: ['esm'],
   // Target Node.js explicitly so esbuild resolves the "node" export condition
   // in AWS SDK packages instead of the browser variant (which pulls in

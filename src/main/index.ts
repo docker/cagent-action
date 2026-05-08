@@ -4,7 +4,7 @@
  * This is the `main:` script for the `using: node24` action that replaces the
  * 872-line composite action.yml.  It orchestrates all the same steps in order:
  *
- *   1.  Read docker-agent version from DOCKER_AGENT_VERSION file
+ *   1.  Obtain docker-agent version from build-time constant
  *   2.  Validate inputs
  *   3.  Authorization check (4-tier waterfall)
  *   4.  Resolve GitHub token
@@ -21,6 +21,13 @@
  * All 24 inputs and 10 outputs are preserved verbatim (public contract).
  */
 
+// __DOCKER_AGENT_VERSION__ is injected at build time by tsup's `define` option
+// (see tsup.config.ts).  It is replaced with a string literal in the bundle, so
+// the action never needs to locate the DOCKER_AGENT_VERSION file on disk at
+// runtime — which would fail when ACTION_PATH points at a sub-directory (e.g.
+// review-pr/) rather than the action root.
+declare const __DOCKER_AGENT_VERSION__: string;
+
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -35,42 +42,7 @@ import { runAgent } from './exec.js';
 import { extractDockerAgentOutputBlock, filterAgentOutput } from './outputs.js';
 import { writeJobSummary } from './summary.js';
 
-// ── Paths ────────────────────────────────────────────────────────────────────
-
-/**
- * Resolve the action root directory.
- *
- * In production (GitHub Actions), GITHUB_ACTION_PATH is set by the runner to the
- * directory containing action.yml — the canonical and most reliable source.
- *
- * In test/dev environments (Vitest running TypeScript source directly),
- * import.meta.dirname is src/main/ and GITHUB_ACTION_PATH is not set, so we
- * walk up looking for DOCKER_AGENT_VERSION (present at the project root).
- * This handles both the bundle layout (dist/) and the source layout (src/main/).
- */
-function resolveActionRoot(): string {
-  if (process.env.GITHUB_ACTION_PATH) {
-    return process.env.GITHUB_ACTION_PATH;
-  }
-  for (const rel of ['..', '../..']) {
-    const candidate = path.resolve(import.meta.dirname, rel);
-    if (fs.existsSync(path.join(candidate, 'DOCKER_AGENT_VERSION'))) {
-      return candidate;
-    }
-  }
-  throw new Error(`Cannot locate action root from ${import.meta.dirname}`);
-}
-
-/** Absolute path to the directory containing this action's files. */
-const ACTION_PATH = resolveActionRoot();
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function readDockerAgentVersion(): string {
-  const versionFile = path.join(ACTION_PATH, 'DOCKER_AGENT_VERSION');
-  const version = fs.readFileSync(versionFile, 'utf-8').trim();
-  return version;
-}
 
 /** Return true if `s` looks like a semver version string (vX.Y.Z…). */
 function isValidVersion(s: string): boolean {
@@ -180,8 +152,11 @@ async function run(): Promise<void> {
   }
 
   try {
-    // ── Step 1: Read docker-agent version ──────────────────────────────────
-    cagentVersion = readDockerAgentVersion();
+    // ── Step 1: Obtain docker-agent version ──────────────────────────────────
+    // __DOCKER_AGENT_VERSION__ is a build-time constant injected by tsup (see
+    // tsup.config.ts).  This avoids a filesystem read at runtime that would
+    // fail when ACTION_PATH resolves to a sub-directory (e.g. review-pr/).
+    cagentVersion = __DOCKER_AGENT_VERSION__;
     core.debug(`Docker Agent version: ${cagentVersion}`);
 
     // ── Step 2: Validate inputs ───────────────────────────────────────────
