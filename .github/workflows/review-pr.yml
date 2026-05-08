@@ -263,50 +263,14 @@ jobs:
         if: |
           steps.command.outputs.is_review != 'false' &&
           steps.draft.outputs.skip != 'true'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
-          PR_SOURCE: ${{ steps.pr.outputs.source }}
-          ORG: docker
-          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
-          REPO_TOKEN: ${{ env.GITHUB_APP_TOKEN }}
+        uses: docker/cagent-action/.github/actions/check-org-membership@e9a0c6af4c917f051184cfb96eb82586dcf87084 # in-branch
         with:
-          github-token: ${{ env.ORG_MEMBERSHIP_TOKEN }}
-          script: |
-            const org = process.env.ORG;
-            const source = process.env.PR_SOURCE;
-
-            let username;
-            if (source === 'event') {
-              username = process.env.COMMENT_AUTHOR;
-            } else {
-              const repoOctokit = github.getOctokit(process.env.REPO_TOKEN);
-              const { data: pr } = await repoOctokit.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: parseInt(process.env.PR_NUMBER, 10)
-              });
-              username = pr.user.login;
-            }
-
-            try {
-              await github.rest.orgs.checkMembershipForUser({ org, username });
-              core.setOutput('is_member', 'true');
-              console.log(`✅ ${username} is a ${org} org member — proceeding with review`);
-            } catch (error) {
-              if (error.status === 404 || error.status === 302) {
-                core.setOutput('is_member', 'false');
-                console.log(`⏭️ ${username} is not a ${org} org member — skipping review`);
-              } else if (error.status === 401) {
-                core.setFailed(
-                  `❌ Org membership token is missing or invalid (HTTP 401).\n\n` +
-                  `This token is fetched automatically from AWS Secrets Manager in docker/* repos.\n` +
-                  `Ensure the workflow job has 'id-token: write' permission and OIDC is configured.`
-                );
-              } else {
-                core.setFailed(`Failed to check org membership: ${error.message}`);
-              }
-            }
+          org-membership-token: ${{ env.ORG_MEMBERSHIP_TOKEN }}
+          github-app-token: ${{ env.GITHUB_APP_TOKEN }}
+          org: docker
+          pr-source: ${{ steps.pr.outputs.source }}
+          pr-number: ${{ steps.pr.outputs.number }}
+          comment-author: ${{ github.event.comment.user.login }}
 
       - name: Create check run
         if: |
