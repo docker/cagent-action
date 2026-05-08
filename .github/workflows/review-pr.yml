@@ -84,7 +84,7 @@ jobs:
       comment-author: ${{ steps.read.outputs.comment-author }}
     steps:
       - name: Setup credentials
-        uses: docker/cagent-action/.github/actions/setup-credentials@c22076b8856ee12d9b4c4685bb49cf26eb974079 # v1.5.0
+        uses: docker/cagent-action/setup-credentials@c22076b8856ee12d9b4c4685bb49cf26eb974079 # v1.5.0
 
       - name: Verify token for cross-run artifact download
         shell: bash
@@ -256,7 +256,7 @@ jobs:
         if: |
           steps.command.outputs.is_review != 'false' &&
           steps.draft.outputs.skip != 'true'
-        uses: docker/cagent-action/.github/actions/setup-credentials@c22076b8856ee12d9b4c4685bb49cf26eb974079 # v1.5.0
+        uses: docker/cagent-action/setup-credentials@c22076b8856ee12d9b4c4685bb49cf26eb974079 # v1.5.0
 
       - name: Check if org member
         id: membership
@@ -378,7 +378,7 @@ jobs:
 
       - name: Setup credentials
         if: inputs.trigger-run-id != ''
-        uses: docker/cagent-action/.github/actions/setup-credentials@c22076b8856ee12d9b4c4685bb49cf26eb974079 # v1.5.0
+        uses: docker/cagent-action/setup-credentials@c22076b8856ee12d9b4c4685bb49cf26eb974079 # v1.5.0
 
       - name: Verify token for cross-run artifact download
         if: inputs.trigger-run-id != ''
@@ -497,7 +497,7 @@ jobs:
 
       - name: Setup credentials
         if: steps.check.outputs.is_agent == 'true'
-        uses: docker/cagent-action/.github/actions/setup-credentials@c22076b8856ee12d9b4c4685bb49cf26eb974079 # v1.5.0
+        uses: docker/cagent-action/setup-credentials@c22076b8856ee12d9b4c4685bb49cf26eb974079 # v1.5.0
 
       - name: Check authorization
         if: steps.check.outputs.is_agent == 'true'
@@ -723,7 +723,7 @@ jobs:
 
     steps:
       - name: Setup credentials
-        uses: docker/cagent-action/.github/actions/setup-credentials@c22076b8856ee12d9b4c4685bb49cf26eb974079 # v1.5.0
+        uses: docker/cagent-action/setup-credentials@c22076b8856ee12d9b4c4685bb49cf26eb974079 # v1.5.0
 
       - name: Run mention-reply handler
         id: mention-context
