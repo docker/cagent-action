@@ -269,6 +269,7 @@ jobs:
           PR_SOURCE: ${{ steps.pr.outputs.source }}
           ORG: docker
           COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          REPO_TOKEN: ${{ env.GITHUB_APP_TOKEN || github.token }}
         with:
           github-token: ${{ env.ORG_MEMBERSHIP_TOKEN }}
           script: |
@@ -279,7 +280,8 @@ jobs:
             if (source === 'event') {
               username = process.env.COMMENT_AUTHOR;
             } else {
-              const { data: pr } = await github.rest.pulls.get({
+              const repoOctokit = github.getOctokit(process.env.REPO_TOKEN);
+              const { data: pr } = await repoOctokit.rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: parseInt(process.env.PR_NUMBER, 10)
