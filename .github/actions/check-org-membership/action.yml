@@ -1,0 +1,32 @@
+name: 'Check Org Membership'
+description: >
+  Verify whether a GitHub user belongs to a GitHub org.
+  Resolves the PR author via the GitHub API (using a repo-scoped token) when
+  pr-source is not "event"; uses comment-author directly for event-sourced triggers.
+inputs:
+  org-membership-token:
+    description: 'PAT with read:org scope for org membership checks'
+    required: true
+  github-app-token:
+    description: 'PAT with repo scope; used to call pulls.get when pr-source is not "event"'
+    required: true
+  org:
+    description: 'GitHub org name to check membership against (e.g. "docker")'
+    required: true
+  pr-source:
+    description: 'Trigger source: "event" (uses comment-author) or any other value (uses pr-number + pulls.get)'
+    required: true
+  pr-number:
+    description: 'PR number as a string; required when pr-source is not "event"'
+    required: false
+    default: ''
+  comment-author:
+    description: 'GitHub login of the user who triggered the event; required when pr-source is "event"'
+    required: false
+    default: ''
+outputs:
+  is_member:
+    description: '"true" if the resolved user is a member of the org, "false" otherwise'
+runs:
+  using: 'node24'
+  main: '../../../dist/check-org-membership.js'
