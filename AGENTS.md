@@ -184,7 +184,7 @@ The action runs untrusted input (PR titles, bodies, comments, diffs) through an 
 
 ```bash
 # Install (uses pnpm via Corepack, see packageManager in package.json)
-pnpm install
+pnpm install --frozen-lockfile
 
 # Build TypeScript bundles → dist/
 pnpm build

@@ -23,6 +23,7 @@ const src = (name: string) => {
   return p;
 };
 const entry = {
+  'auto-filter-diff': src('auto-filter-diff'),
   'check-org-membership': src('check-org-membership'),
   credentials: src('credentials'),
   'filter-diff': src('filter-diff'),

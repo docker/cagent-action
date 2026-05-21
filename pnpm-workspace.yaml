@@ -1,0 +1,82 @@
+# Not using workspaces — this file exists solely for pnpm-specific settings.
+# minimumReleaseAge and minimumReleaseAgeExclude are pnpm-workspace.yaml settings
+# in pnpm 10.x, not .npmrc settings.
+packages: []
+
+# pnpm safe defaults for developer laptops and projects
+#
+# Requires pnpm >= 10.26.0 (for blockExoticSubdeps, trustPolicy)
+#
+# https://github.com/docker-security/safe-defaults
+
+# --- Supply Chain Protection ---
+
+# Refuse to install packages published less than 3 days ago.
+# Most supply chain attacks are discovered within 24-72 hours.
+# Value is in minutes: 10080 = 7 days.
+minimumReleaseAge: 10080
+
+# Packages exempt from the age gate (e.g. urgent security patches).
+# Supports exact names, scopes (@myorg/*), and pinned versions (pkg@1.2.3).
+# minimumReleaseAgeExclude:
+#   - "@myorg/*"
+
+# Block transitive dependencies from using exotic sources (git repos,
+# tarball URLs). Only direct dependencies may use these.
+# Default since v10.26.0.
+blockExoticSubdeps: true
+
+# Fail if a package's trust level has decreased compared to previous
+# releases (e.g. lost provenance or trusted-publisher status).
+trustPolicy: no-downgrade
+
+# Packages exempt from trust-policy checks.
+# trustPolicyExclude:
+#   - "some-package@1.2.3"
+
+# --- Build Script Control ---
+
+# Fail if any dependency has unreviewed build scripts.
+# Default since v10.3.0. Forces explicit decisions about which
+# packages may run preinstall/install/postinstall scripts.
+strictDepBuilds: true
+
+# Allowlist of packages permitted to run build scripts.
+# Add packages here as needed (e.g. native addons).
+allowBuilds: {}
+  # esbuild: true
+  # @swc/core: true
+  # sharp: true
+
+# --- Dependency Resolution ---
+
+# Resolve subdependencies from versions published close to the direct
+# dependency's publish date. Reduces subdependency hijacking risk.
+resolutionMode: time-based
+
+# --- Integrity & Reproducibility ---
+
+# Save exact versions (1.2.3) instead of semver ranges (^1.2.3).
+# Prevents silent minor/patch drift between installs.
+# Pair with Dependabot or Renovate for controlled updates.
+savePrefix: ""
+
+# Verify store integrity on every install.
+# Default true — made explicit.
+verifyStoreIntegrity: true
+
+# --- Peer Dependencies ---
+
+# Treat unmet peer dependencies as errors instead of warnings.
+strictPeerDependencies: true
+
+# Exempt first-party Docker packages from the age gate so internal releases
+# aren't blocked.
+minimumReleaseAgeExclude:
+  - '@docker/*'
+
+# --- Optional: stricter settings (uncomment to enable) ---
+
+# Treat engine version mismatches as errors.
+# Useful when your pnpm-workspace.yaml or package.json declares engines.
+# engineStrict: true

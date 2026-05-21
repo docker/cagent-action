@@ -246,6 +246,66 @@ describe('scoreFiles — rule 5: many hunks (>3 hunk headers) → +1', () => {
 
 // ── Rule 6: test/doc/config file → reset score to 0 ──────────────────────────
 
+describe('scoreFiles — rule 6: Rust/Ruby test/bench/spec suffixes → reset score to 0', () => {
+  it('Rust file in tests/ directory scores 0 (directory component match)', () => {
+    // Security keyword "virtiofs" not in path, but tests/ directory resets to 0
+    const diff = makeDiff('crates/vm/tests/integration/virtiofs.rs');
+    const scores = scoreFiles(diff, []);
+    expect(scores['crates/vm/tests/integration/virtiofs.rs']).toBe(0);
+  });
+
+  it('Rust bench file in benches/ directory scores 0 (directory component match)', () => {
+    const diff = makeDiff('crates/hypervisor/benches/kvm_bench.rs');
+    const scores = scoreFiles(diff, []);
+    expect(scores['crates/hypervisor/benches/kvm_bench.rs']).toBe(0);
+  });
+
+  it('Ruby spec file by suffix scores 0', () => {
+    const diff = makeDiff('spec/models/user_spec.rb');
+    const scores = scoreFiles(diff, []);
+    expect(scores['spec/models/user_spec.rb']).toBe(0);
+  });
+
+  it('file in tests/ directory with security keyword in path resets to 0 (rule 6 wins)', () => {
+    // "auth" in path would normally add +2 (rule 3), but tests/ directory resets to 0
+    const diff = makeDiff('src/auth/tests/handler_test.go');
+    const scores = scoreFiles(diff, []);
+    // Rule 7 (error handling) can still apply; rule 3 (+2) is reset by rule 6.
+    // No error-handling keywords in the default diff content, so score stays 0.
+    expect(scores['src/auth/tests/handler_test.go']).toBe(0);
+  });
+
+  it('Rust _test.rs suffix scores 0', () => {
+    const diff = makeDiff('src/vm/memory_test.rs');
+    const scores = scoreFiles(diff, []);
+    expect(scores['src/vm/memory_test.rs']).toBe(0);
+  });
+
+  it('Rust _bench.rs suffix scores 0', () => {
+    const diff = makeDiff('src/crypto/hash_bench.rs');
+    const scores = scoreFiles(diff, []);
+    expect(scores['src/crypto/hash_bench.rs']).toBe(0);
+  });
+
+  it('Rust _spec.rs suffix scores 0', () => {
+    const diff = makeDiff('src/auth/token_spec.rs');
+    const scores = scoreFiles(diff, []);
+    expect(scores['src/auth/token_spec.rs']).toBe(0);
+  });
+
+  it('__tests__/ directory component scores 0', () => {
+    const diff = makeDiff('src/auth/__tests__/handler.ts');
+    const scores = scoreFiles(diff, []);
+    expect(scores['src/auth/__tests__/handler.ts']).toBe(0);
+  });
+
+  it('specs/ directory component scores 0', () => {
+    const diff = makeDiff('lib/specs/my_spec.rb');
+    const scores = scoreFiles(diff, []);
+    expect(scores['lib/specs/my_spec.rb']).toBe(0);
+  });
+});
+
 describe('scoreFiles — rule 6: test/doc/config file → reset score to 0', () => {
   const TEST_PATHS = [
     'src/auth_test.go',

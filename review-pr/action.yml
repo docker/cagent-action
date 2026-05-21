@@ -63,6 +63,10 @@ inputs:
     description: 'Newline-separated list of path prefixes to strip from the diff before chunking. Files matching these prefixes are excluded from review entirely.'
     required: false
     default: ''
+  max-diff-lines:
+    description: "Auto-filter cap: if the diff exceeds this many lines after removing score-0 files, lowest-risk files are progressively excluded until it fits. Set to 0 to disable. Default: 3000."
+    required: false
+    default: "3000"
 
 outputs:
   exit-code:
@@ -264,6 +268,26 @@ runs:
       run: |
         node "$ACTION_PATH/../dist/filter-diff.js" pr.diff "$EXCLUDE_PATHS"
 
+    - name: Score file risk
+      if: hashFiles('pr.diff') != ''
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        EXCLUDE_PATHS: ${{ inputs.exclude-paths }}
+      run: |
+        set -euo pipefail
+        node "$ACTION_PATH/../dist/score-risk.js" pr.diff "$EXCLUDE_PATHS"
+        echo "✅ File risk scores: $(jq -c . /tmp/file_risk_scores.json)"
+
+    - name: Auto-filter low-risk files
+      if: hashFiles('pr.diff') != '' && steps.lock-check.outputs.skip != 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        MAX_DIFF_LINES: ${{ inputs.max-diff-lines }}
+      run: |
+        node "$ACTION_PATH/../dist/auto-filter-diff.js" pr.diff "$MAX_DIFF_LINES"
+
     - name: Split diff into chunks
       if: hashFiles('pr.diff') != ''
       id: chunk-diff
@@ -334,17 +358,6 @@ runs:
             echo "  Chunk $i: $LINES lines, $FILES_IN_CHUNK files"
           done
         fi
-
-    - name: Score file risk
-      if: hashFiles('pr.diff') != ''
-      shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
-        EXCLUDE_PATHS: ${{ inputs.exclude-paths }}
-      run: |
-        set -euo pipefail
-        node "$ACTION_PATH/../dist/score-risk.js" pr.diff "$EXCLUDE_PATHS"
-        echo "✅ File risk scores: $(jq -c . /tmp/file_risk_scores.json)"
 
     - name: Generate file history
       if: hashFiles('changed_files.txt') != ''

@@ -29,7 +29,7 @@ const SECURITY_PATH_RE = /auth|security|crypto|session|secret|token|password|cre
 
 /** Matches test, documentation, and config file extensions (case-insensitive). */
 const TEST_FILE_RE =
-  /_test\.go$|\.test\.[tj]sx?$|\.spec\.[tj]sx?$|test_.*\.py$|\.md$|\.ya?ml$|\.json$|\.toml$/i;
+  /_test\.go$|\.test\.[tj]sx?$|\.spec\.[tj]sx?$|test_.*\.py$|\.md$|\.ya?ml$|\.json$|\.toml$|_test\.rs$|_bench\.rs$|_spec\.rs$|_spec\.rb$|(^|\/)(tests?|benches|__tests__|specs?)\//i;
 
 /** Matches error-handling keywords in diff hunk lines (case-sensitive, matching bash awk). */
 const ERROR_PATTERN_RE = /catch|rescue|except|recover|error|panic/;

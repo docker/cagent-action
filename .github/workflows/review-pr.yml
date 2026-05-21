@@ -33,6 +33,11 @@ on:
         required: false
         type: string
         default: ''
+      max-diff-lines:
+        description: 'Auto-filter cap: if the diff exceeds this many lines after removing score-0 files, lowest-risk files are progressively excluded until it fits. Set to 0 to disable. Default: 3000.'
+        required: false
+        type: number
+        default: 3000
       trigger-run-id:
         description: "Workflow run ID from pr-review-trigger.yml — used to download the event context artifact. When set, resolve-context job downloads the artifact and routes to the appropriate job."
         required: false
@@ -339,6 +344,7 @@ jobs:
           additional-prompt: ${{ inputs.additional-prompt }}
           add-prompt-files: ${{ inputs.add-prompt-files }}
           exclude-paths: ${{ inputs.exclude-paths }}
+          max-diff-lines: ${{ inputs.max-diff-lines }}
           model: ${{ inputs.model }}
           github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           anthropic-api-key: ${{ env.ANTHROPIC_API_KEY_FROM_SSM || secrets.ANTHROPIC_API_KEY }}
