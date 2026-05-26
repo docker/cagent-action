@@ -255,15 +255,12 @@ jobs:
                 "name": "cagent-action"
               },
               "sender": { "login": $actor, "type": "User" }
-            }' > /tmp/test-event-toplevel.json
+            }' > "$GITHUB_EVENT_PATH"
 
       - name: Run mention-reply handler
         if: steps.fork-check.outputs.is_fork != 'true'
         id: mention-handler
         uses: ./.github/actions/mention-reply
-        env:
-          GITHUB_EVENT_PATH: /tmp/test-event-toplevel.json
-          GITHUB_EVENT_NAME: issue_comment
         with:
           github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           org-membership-token: ${{ env.ORG_MEMBERSHIP_TOKEN || github.token }}
@@ -422,15 +419,12 @@ jobs:
                 "name": "cagent-action"
               },
               "sender": { "login": $actor, "type": "User" }
-            }' > /tmp/test-event-inline.json
+            }' > "$GITHUB_EVENT_PATH"
 
       - name: Run mention-reply handler
         if: steps.fork-check.outputs.is_fork != 'true'
         id: mention-handler
         uses: ./.github/actions/mention-reply
-        env:
-          GITHUB_EVENT_PATH: /tmp/test-event-inline.json
-          GITHUB_EVENT_NAME: pull_request_review_comment
         with:
           github-token: ${{ env.GITHUB_APP_TOKEN || github.token }}
           org-membership-token: ${{ env.ORG_MEMBERSHIP_TOKEN || github.token }}

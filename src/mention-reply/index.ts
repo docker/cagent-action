@@ -103,7 +103,16 @@ export function parseEventContext(): EventContext {
     diff_hunk?: string;
   };
 
-  if (eventName === 'pull_request_review_comment') {
+  // Detect inline review comments either by the event name or by payload structure
+  // (the latter is needed in test environments where GITHUB_EVENT_NAME cannot be
+  // overridden for `uses:` composite actions — the real event name stays 'pull_request',
+  // but the synthetic payload we write to GITHUB_EVENT_PATH does contain raw.pull_request
+  // and comment.diff_hunk, both of which are unique to pull_request_review_comment payloads).
+  const isInlineReviewComment =
+    eventName === 'pull_request_review_comment' ||
+    (raw.pull_request !== undefined && comment.diff_hunk !== undefined);
+
+  if (isInlineReviewComment) {
     // For pull_request_review_comment events the PR lives at raw.pull_request,
     // not raw.issue. The comment is always on a PR, so isPrComment is true.
     const pullRequest = raw.pull_request as { number: number };
