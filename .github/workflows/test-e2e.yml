@@ -6,6 +6,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -188,7 +189,7 @@ jobs:
   test-mention-reply-toplevel:
     name: Mention Reply (Top-Level) E2E Test
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       id-token: write
@@ -241,7 +242,7 @@ jobs:
         run: |
           COMMENT_ID=$(gh api repos/docker/cagent-action/issues/$TEST_PR_NUMBER/comments \
             --method POST \
-            --field body="@docker-agent this is an automated e2e test — please reply with a brief acknowledgement." \
+            --raw-field body="@docker-agent this is an automated e2e test — please reply with a brief acknowledgement." \
             --jq .id)
           echo "Created test anchor comment ID: $COMMENT_ID"
           echo "test_comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
@@ -349,7 +350,7 @@ jobs:
   test-mention-reply-inline:
     name: Mention Reply (Inline) E2E Test
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       id-token: write
