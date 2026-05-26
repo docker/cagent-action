@@ -261,11 +261,12 @@ jobs:
         if: steps.fork-check.outputs.is_fork != 'true'
         id: mention-handler
         env:
-          GITHUB_EVENT_PATH: /tmp/test-event-toplevel.json
-          GITHUB_EVENT_NAME: issue_comment
           INPUT_GITHUB-TOKEN: ${{ env.GITHUB_APP_TOKEN || github.token }}
           INPUT_ORG-MEMBERSHIP-TOKEN: ${{ env.ORG_MEMBERSHIP_TOKEN || github.token }}
-        run: node "$GITHUB_WORKSPACE/dist/mention-reply.js"
+        run: |
+          export GITHUB_EVENT_PATH=/tmp/test-event-toplevel.json
+          export GITHUB_EVENT_NAME=issue_comment
+          node "$GITHUB_WORKSPACE/dist/mention-reply.js"
 
       - name: Assert should-reply output
         if: steps.fork-check.outputs.is_fork != 'true'
@@ -427,11 +428,12 @@ jobs:
         if: steps.fork-check.outputs.is_fork != 'true'
         id: mention-handler
         env:
-          GITHUB_EVENT_PATH: /tmp/test-event-inline.json
-          GITHUB_EVENT_NAME: pull_request_review_comment
           INPUT_GITHUB-TOKEN: ${{ env.GITHUB_APP_TOKEN || github.token }}
           INPUT_ORG-MEMBERSHIP-TOKEN: ${{ env.ORG_MEMBERSHIP_TOKEN || github.token }}
-        run: node "$GITHUB_WORKSPACE/dist/mention-reply.js"
+        run: |
+          export GITHUB_EVENT_PATH=/tmp/test-event-inline.json
+          export GITHUB_EVENT_NAME=pull_request_review_comment
+          node "$GITHUB_WORKSPACE/dist/mention-reply.js"
 
       - name: Assert should-reply output
         if: steps.fork-check.outputs.is_fork != 'true'
