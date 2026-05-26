@@ -233,11 +233,26 @@ jobs:
         if: steps.fork-check.outputs.is_fork != 'true'
         uses: docker/cagent-action/setup-credentials@2a43a3882401f45e3114df7f6d66eca184993a90 # v1.5.2
 
+      - name: Create anchor issue comment on current PR
+        if: steps.fork-check.outputs.is_fork != 'true'
+        id: create-anchor
+        env:
+          GH_TOKEN: ${{ env.GITHUB_APP_TOKEN || github.token }}
+        run: |
+          COMMENT_ID=$(gh api repos/docker/cagent-action/issues/$TEST_PR_NUMBER/comments \
+            --method POST \
+            --field body="@docker-agent this is an automated e2e test — please reply with a brief acknowledgement." \
+            --jq .id)
+          echo "Created test anchor comment ID: $COMMENT_ID"
+          echo "test_comment_id=$COMMENT_ID" >> $GITHUB_OUTPUT
+
       - name: Write synthetic issue_comment event
         if: steps.fork-check.outputs.is_fork != 'true'
         run: |
+          COMMENT_ID="${{ steps.create-anchor.outputs.test_comment_id }}"
           jq -n \
             --arg actor "${{ github.actor }}" \
+            --argjson comment_id "$COMMENT_ID" \
             --argjson pr_number "$TEST_PR_NUMBER" \
             '{
               "action": "created",
@@ -246,7 +261,7 @@ jobs:
                 "pull_request": { "url": ("https://api.github.com/repos/docker/cagent-action/pulls/" + ($pr_number | tostring)) }
               },
               "comment": {
-                "id": 9999999901,
+                "id": $comment_id,
                 "body": "@docker-agent this is an automated e2e test — please reply with a brief acknowledgement.",
                 "user": { "login": $actor, "type": "User" }
               },
@@ -312,10 +327,11 @@ jobs:
           echo "✅ Reply posted successfully ($FOUND comment(s) found)"
 
       - name: Cleanup test comments
-        if: always() && steps.fork-check.outputs.is_fork != 'true' && steps.mention-handler.outputs.should-reply == 'true'
+        if: always() && steps.fork-check.outputs.is_fork != 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ env.GITHUB_APP_TOKEN || github.token }}
+          ANCHOR_ID: ${{ steps.create-anchor.outputs.test_comment_id }}
         run: |
           # Delete any test reply comments posted in the last 5 minutes
           gh api repos/docker/cagent-action/issues/$TEST_PR_NUMBER/comments \
@@ -324,6 +340,11 @@ jobs:
             gh api "repos/docker/cagent-action/issues/comments/$comment_id" -X DELETE || true
             echo "Deleted comment $comment_id"
           done
+          # Delete the anchor comment itself
+          if [ -n "$ANCHOR_ID" ]; then
+            gh api "repos/docker/cagent-action/issues/comments/$ANCHOR_ID" -X DELETE || true
+            echo "Deleted anchor comment $ANCHOR_ID"
+          fi
 
   test-mention-reply-inline:
     name: Mention Reply (Inline) E2E Test
