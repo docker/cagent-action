@@ -540,13 +540,12 @@ describe('security pipeline ordering (FIX 1)', () => {
   it('sanitizeOutput scans full filtered output before block extraction narrows it', async () => {
     // This test MUST fail if FIX 1 is reverted (sanitize-after-extract order).
     // Strategy: verbose log contains a real Anthropic API key (matching
-    // /sk-ant-[a-zA-Z0-9_-]{30,}/) in conversational text BEFORE a clean
-    // docker-agent-output block.  Under the correct order (filter → sanitize →
-    // extract), sanitizeOutput sees the key → secrets-detected=true.  Under the
-    // wrong order (filter → extract → sanitize) the outputFile contains only the
-    // clean block and the key is never scanned.
-    const LEAKED_KEY =
-      'sk-ant-api03-AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKKKLLLLMMMMNNNNOOOOPPPPQQQQRRRR';
+    // /sk-ant-(api|sid|admin)NN-<93 base64url>AA/) in conversational text BEFORE
+    // a clean docker-agent-output block.  Under the correct order (filter →
+    // sanitize → extract), sanitizeOutput sees the key → secrets-detected=true.
+    // Under the wrong order (filter → extract → sanitize) the outputFile
+    // contains only the clean block and the key is never scanned.
+    const LEAKED_KEY = `sk-ant-api03-${'A'.repeat(93)}AA`;
 
     setupInputs({ prompt: 'Please review this PR' });
 

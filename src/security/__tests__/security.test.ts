@@ -335,10 +335,10 @@ describe('test-security.sh: sanitize-output', () => {
   });
 
   it('Test 4: Leaked API key (should block)', async () => {
-    // sk-ant- + 45 alphanumeric chars (> 30 required)
+    // Real Anthropic shape: sk-ant-api03-<93 base64url>AA
     const file = await writeInput(
       'leaked-output.txt',
-      'The API key is sk-ant-abc123def456ghi789jkl012mno345pqr678stu901vwx\n',
+      `The API key is sk-ant-api03-${'A'.repeat(93)}AA\n`,
     );
 
     const result = sanitizeOutput(file);
@@ -348,11 +348,8 @@ describe('test-security.sh: sanitize-output', () => {
   });
 
   it('Test 5: Leaked GitHub token (should block)', async () => {
-    // ghp_ + exactly 36 alphanumeric chars
-    const file = await writeInput(
-      'github-token.txt',
-      'Token: ghp_abc123def456ghi789jkl012mno345pqr678\n',
-    );
+    // ghp_ + 30 alnum body + 6-char base62 CRC32 = real-shape token.
+    const file = await writeInput('github-token.txt', `Token: ghp_${'A'.repeat(30)}1yBYBE\n`);
 
     const result = sanitizeOutput(file);
 
@@ -377,10 +374,11 @@ describe('test-security.sh: sanitize-output', () => {
   });
 
   it('Test 15: Real GitHub server token (should flag as leak)', async () => {
-    // ghs_ + 36 alphanumeric chars (a-z = 26, + 0-9 = 10, totals 36)
+    // ghs_ + 30-char body + 6-char base62 CRC32. Validator rejects
+    // example fixtures whose checksum doesn't match.
     const file = await writeInput(
       'real-token.txt',
-      'Token: ghs_abcdefghijklmnopqrstuvwxyz1234567890\n',
+      `Token: ghs_abcdefghijklmnopqrstuvwxyz12340qKAWU\n`,
     );
 
     const result = sanitizeOutput(file);
@@ -392,7 +390,8 @@ describe('test-security.sh: sanitize-output', () => {
     // Token contains no metacharacters so Heuristic 1 does NOT fire.
     // The sole occurrence is individually wrapped in single quotes, so
     // Heuristic 2 should suppress it — no leak reported.
-    const token = `ghp_${'A'.repeat(36)}`; // ghp_ + exactly 36 alphanumeric chars
+    // Use a CRC32-valid token so the validator wouldn't reject it.
+    const token = `ghp_${'A'.repeat(30)}1yBYBE`;
     const file = await writeInput(
       'quoted-only-token.txt',
       `// The token pattern matches '${token}' exactly.\n`,
@@ -407,7 +406,7 @@ describe('test-security.sh: sanitize-output', () => {
     // File contains BOTH a raw (bare) token AND a single-quoted copy.
     // Heuristic 2 must only suppress the individually-quoted occurrence;
     // the bare one must still be flagged — so leaked should be true.
-    const token = `ghp_${'A'.repeat(36)}`; // ghp_ + exactly 36 alphanumeric chars
+    const token = `ghp_${'A'.repeat(30)}1yBYBE`; // CRC32-valid token
     const file = await writeInput('bare-and-quoted-token.txt', `${token}\n'${token}'\n`);
 
     const result = sanitizeOutput(file);
@@ -472,10 +471,10 @@ describe('test-exploits.sh', () => {
   });
 
   it('Test 3: Output token leak (should be blocked)', async () => {
-    // ghp_ + 36 alphanumeric chars
+    // ghp_ + 30 alnum body + valid 6-char base62 CRC32.
     const file = await writeInput(
       'leak-output.txt',
-      'Here is the secret: ghp_abc123def456ghi789jkl012mno345pqr678\n',
+      `Here is the secret: ghp_${'A'.repeat(30)}1yBYBE\n`,
     );
 
     const result = sanitizeOutput(file);

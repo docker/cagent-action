@@ -1,19 +1,79 @@
 /**
  * Single source of truth for all security detection patterns.
  * Ported from security/secret-patterns.sh and security/sanitize-input.sh.
+ *
+ * Pattern shapes are derived from the portcullis catalogue
+ * (github.com/dgageot/portcullis, Apache-2.0): vendor-prefixed,
+ * fixed-length bodies, with optional structural validators that
+ * reject false positives the regex alone can't filter (e.g. the
+ * base62 CRC32 baked into every modern GitHub token).
  */
 
+import { validGitHubChecksum } from './validators.js';
+
+/**
+ * A secret pattern is a regex plus an optional structural validator.
+ * The regex is the cheap first pass; the validator is invoked on the
+ * matched span and must return true for the match to be reported.
+ */
+export interface SecretPattern {
+  /** Identifier used in error messages and logs. */
+  readonly name: string;
+  /** Regex matching the credential's shape. */
+  readonly regex: RegExp;
+  /**
+   * Optional structural check applied to the matched text.
+   * Returning false suppresses the match (no leak reported).
+   */
+  readonly validator?: (match: string) => boolean;
+}
+
 // Full regex patterns for secret detection in output scanning.
-// Require specific lengths and formats for accuracy.
-export const SECRET_PATTERNS: RegExp[] = [
-  /sk-ant-[a-zA-Z0-9_-]{30,}/, // Anthropic API keys
-  /ghp_[a-zA-Z0-9]{36}/, // GitHub personal access tokens
-  /gho_[a-zA-Z0-9]{36}/, // GitHub OAuth tokens
-  /ghu_[a-zA-Z0-9]{36}/, // GitHub user tokens
-  /ghs_[a-zA-Z0-9]{36}/, // GitHub server tokens
-  /github_pat_[a-zA-Z0-9_]+/, // GitHub fine-grained tokens
-  /sk-[a-zA-Z0-9]{48}/, // OpenAI API keys
-  /sk-proj-[a-zA-Z0-9]{48}/, // OpenAI project keys
+export const SECRET_PATTERNS: readonly SecretPattern[] = [
+  // Anthropic API keys: `sk-ant-(api|sid|admin)NN-<93 base64url>AA` (~108 chars,
+  // trailing `AA` is the standard base64 padding). `admin01` keys grant
+  // org-wide management access, so leakage is at least as serious as `api01`.
+  {
+    name: 'anthropic-api-key',
+    regex: /sk-ant-(?:api|sid|admin)\d{2}-[A-Za-z0-9_-]{93}AA/,
+  },
+  // GitHub personal / OAuth / user / server tokens. Every modern GitHub
+  // token embeds a base62-encoded CRC32 of the prefix+body in its trailing
+  // 6 chars; the validator rejects pattern literals and example fixtures.
+  {
+    name: 'github-pat',
+    regex: /ghp_[A-Za-z0-9]{36}/,
+    validator: validGitHubChecksum,
+  },
+  {
+    name: 'github-oauth',
+    regex: /gho_[A-Za-z0-9]{36}/,
+    validator: validGitHubChecksum,
+  },
+  {
+    name: 'github-user-token',
+    regex: /ghu_[A-Za-z0-9]{36}/,
+    validator: validGitHubChecksum,
+  },
+  {
+    name: 'github-server-token',
+    regex: /ghs_[A-Za-z0-9]{36}/,
+    validator: validGitHubChecksum,
+  },
+  // GitHub fine-grained PAT: `github_pat_<22 alnum>_<59 alnum>` + 6-char CRC.
+  {
+    name: 'github-fine-grained-pat',
+    regex: /github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}/,
+    validator: validGitHubChecksum,
+  },
+  // OpenAI keys (project / service-account / admin / post-2024 reissues) all
+  // embed the literal `T3BlbkFJ` (base64 of "OpenAI") between two long
+  // alphanumeric runs. The marker keeps this rule from firing on unrelated
+  // `sk-`-prefixed strings (DeepSeek, Stripe typos, random hashes).
+  {
+    name: 'openai-api-key',
+    regex: /sk-[A-Za-z0-9_-]{20,}T3BlbkFJ[A-Za-z0-9_-]{20,}/,
+  },
 ];
 
 // Simplified alternation string for quick prefix detection in prompt verification.

@@ -33,7 +33,7 @@ export function sanitizeOutput(filePath: string): SanitizeOutputResult {
 
   for (const pattern of SECRET_PATTERNS) {
     // Use a fresh global regex each time to avoid lastIndex issues.
-    const globalRe = new RegExp(pattern.source, 'g');
+    const globalRe = new RegExp(pattern.regex.source, 'g');
 
     for (const match of content.matchAll(globalRe)) {
       const matchedText = match[0];
@@ -58,10 +58,20 @@ export function sanitizeOutput(filePath: string): SanitizeOutputResult {
         continue;
       }
 
+      // Heuristic 3 (structural validator). For credentials whose shape
+      // includes a checksum or other invariant (e.g. the base62 CRC32
+      // baked into every modern GitHub token), reject matches that fail
+      // the check. This eliminates pattern literals, placeholders, and
+      // example fixtures that happen to satisfy the regex.
+      if (pattern.validator && !pattern.validator(matchedText)) {
+        core.debug(`Skipping false positive (validator rejected): ${matchedText}`);
+        continue;
+      }
+
       // This is a real secret leak.
-      core.error(`🚨 SECRET LEAK DETECTED: Pattern matched: ${pattern.source}`);
+      core.error(`🚨 SECRET LEAK DETECTED: Pattern matched: ${pattern.name}`);
       leaked = true;
-      detectedPatterns.push(pattern.source);
+      detectedPatterns.push(pattern.name);
       break; // One confirmed match per pattern is sufficient to flag.
     }
   }
