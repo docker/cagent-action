@@ -7,6 +7,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to run mention-reply E2E tests against'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -195,7 +200,7 @@ jobs:
       id-token: write
       issues: write
     env:
-      TEST_PR_NUMBER: ${{ github.event.pull_request.number }}
+      TEST_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
     steps:
       - name: Check if fork PR
         id: fork-check
@@ -356,7 +361,7 @@ jobs:
       id-token: write
       pull-requests: write
     env:
-      TEST_PR_NUMBER: ${{ github.event.pull_request.number }}
+      TEST_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
     steps:
       - name: Check if fork PR
         id: fork-check
