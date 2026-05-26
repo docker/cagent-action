@@ -139,7 +139,7 @@ runs:
     # the window is small enough that it rarely occurs in practice.
     - name: Check for concurrent review
       id: review-lock
-      uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: .cache/review-lock
         # Exact key will never match (saves include run_id), so this always
@@ -178,7 +178,7 @@ runs:
 
     - name: Save review lock
       if: steps.lock-check.outputs.skip != 'true'
-      uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: .cache/review-lock
         # Use run_id in save key so each run can save (cache keys are immutable)
@@ -195,7 +195,7 @@ runs:
     - name: Restore reviewer memory
       if: steps.lock-check.outputs.skip != 'true'
       id: restore-memory
-      uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ github.workspace }}/.cache/pr-review-memory.db
         key: pr-review-memory-${{ github.repository }}-${{ github.job }}-${{ github.run_id }}
@@ -782,7 +782,7 @@ runs:
     - name: Save reviewer memory
       if: always() && steps.lock-check.outputs.skip != 'true'
       continue-on-error: true  # Don't fail if memory file doesn't exist (first run)
-      uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ github.workspace }}/.cache/pr-review-memory.db
         key: pr-review-memory-${{ github.repository }}-${{ github.job }}-${{ github.run_id }}
