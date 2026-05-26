@@ -113,7 +113,7 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         SECRETS_DETECTED: ${{ steps.run-mention-reply.outputs.secrets-detected }}
-      run: node "$ACTION_PATH/dist/post-mention-reply.js"
+      run: node "$ACTION_PATH/../../dist/post-mention-reply.js"
     - name: Save reviewer memory
       if: always() && steps.run-mention-reply.outcome != 'skipped'
       continue-on-error: true
