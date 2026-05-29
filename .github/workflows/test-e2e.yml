@@ -237,7 +237,7 @@ jobs:
 
       - name: Setup credentials
         if: steps.fork-check.outputs.is_fork != 'true'
-        uses: docker/cagent-action/setup-credentials@2a43a3882401f45e3114df7f6d66eca184993a90 # v1.5.2
+        uses: docker/cagent-action/setup-credentials@3f5dc9969f307d3c76acb7e9ccaefdd96bd62f4b # v1.5.4
 
       - name: Create anchor issue comment on current PR
         if: steps.fork-check.outputs.is_fork != 'true'
@@ -397,7 +397,7 @@ jobs:
 
       - name: Setup credentials
         if: steps.fork-check.outputs.is_fork != 'true'
-        uses: docker/cagent-action/setup-credentials@2a43a3882401f45e3114df7f6d66eca184993a90 # v1.5.2
+        uses: docker/cagent-action/setup-credentials@3f5dc9969f307d3c76acb7e9ccaefdd96bd62f4b # v1.5.4
 
       - name: Create anchor review comment on current PR
         if: steps.fork-check.outputs.is_fork != 'true'
