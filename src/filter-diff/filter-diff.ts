@@ -1,8 +1,8 @@
 /**
  * filter-diff — core logic for stripping excluded-path sections from a unified diff.
  *
- * A section is excluded when any path-bearing line within it starts with an
- * excluded prefix.  The three path-bearing line types handled are:
+ * A section is excluded when any path-bearing line within it matches an
+ * excluded pattern.  The three path-bearing line types handled are:
  *
  *   `--- a/<path>`    present for modifications and deletions
  *                     (deletions have `+++ /dev/null` so this is the only real path)
@@ -14,6 +14,14 @@
  * the second occurrence is a no-op.
  */
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import * as nodePath from 'node:path';
+
+// path.matchesGlob landed in Node v22.5.0/v20.17.0. Not typed in
+// @types/node@22.0.0 (lockfile update blocked by exotic subdep in
+// @actions/artifact@6.2.1 — fixed upstream in 6.2.2, not yet published).
+const matchesGlob: (path: string, pattern: string) => boolean = (
+  nodePath as unknown as { matchesGlob: (path: string, pattern: string) => boolean }
+).matchesGlob;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,14 +41,29 @@ export interface FilterResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse a newline-separated exclude-paths string into trimmed, non-empty prefixes.
+ * Normalize a single exclude-paths entry to a glob pattern suitable for `path.matchesGlob`:
+ *
+ * - Entries already containing glob metacharacters (`*`, `?`, `[`) are passed through unchanged.
+ * - Entries ending with `/` are expanded to `<entry>**` so the trailing-slash directory
+ *   convention continues to work (e.g. `vendor/` → `vendor/**`).
+ * - All other entries are treated as exact path matches (e.g. `package-lock.json`).
+ */
+function toGlob(pattern: string): string {
+  if (/[*?[]/.test(pattern)) return pattern;
+  if (pattern.endsWith('/')) return `${pattern}**`;
+  return pattern;
+}
+
+/**
+ * Parse a newline-separated exclude-paths string into normalized glob patterns.
  * Strips carriage-return characters so Windows line-endings are handled correctly.
  */
 export function parseExcludePrefixes(excludePathsStr: string): string[] {
   return excludePathsStr
     .split('\n')
     .map((p) => p.replace(/\r/g, '').trim())
-    .filter((p) => p.length > 0);
+    .filter((p) => p.length > 0)
+    .map(toGlob);
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +74,8 @@ export function parseExcludePrefixes(excludePathsStr: string): string[] {
  * Filter sections from a unified diff string.  Pure function — no filesystem access.
  *
  * @param diffContent    Raw unified diff text (as produced by `gh pr diff`).
- * @param excludePrefixes Trimmed, non-empty path prefix strings.
+ * @param excludePrefixes Normalized glob patterns as returned by `parseExcludePrefixes`.
+ *                        All entries are matched with `path.matchesGlob`.
  * @returns              Filtered diff text plus metadata about what was removed.
  */
 export function filterDiff(diffContent: string, excludePrefixes: string[]): FilterResult {
@@ -64,7 +88,7 @@ export function filterDiff(diffContent: string, excludePrefixes: string[]): Filt
   }
 
   const isExcluded = (filePath: string): boolean =>
-    prefixes.some((prefix) => filePath.startsWith(prefix));
+    prefixes.some((pattern) => matchesGlob(filePath, pattern));
 
   const lines = diffContent.split('\n');
   const outputLines: string[] = [];
@@ -139,17 +163,26 @@ export function filterDiff(diffContent: string, excludePrefixes: string[]): Filt
  * All progress messages are written to stderr so they appear in the Actions log.
  *
  * @param diffPath       Absolute or relative path to the diff file.
- * @param excludePathsStr Newline-separated exclude-path prefixes.
+ * @param excludePathsStr Newline-separated exclude-path patterns (plain prefixes or globs).
  */
 export function applyFilter(diffPath: string, excludePathsStr: string): void {
   const prefixes = parseExcludePrefixes(excludePathsStr);
 
+  for (const p of prefixes) {
+    const lastSegment = p.split('/').at(-1) ?? p;
+    if (!/[*?[]/.test(p) && !lastSegment.includes('.')) {
+      process.stderr.write(
+        `⚠️  exclude-paths entry "${p}" looks like a bare directory name — did you mean "${p}/"? Without a trailing slash only an exact path match is performed.\n`,
+      );
+    }
+  }
+
   if (prefixes.length === 0) {
-    process.stderr.write('ℹ️  No valid prefixes in exclude-paths — skipping filter\n');
+    process.stderr.write('ℹ️  No valid patterns in exclude-paths — skipping filter\n');
     return;
   }
 
-  process.stderr.write(`🔍 Filtering diff against ${prefixes.length} excluded prefix(es):\n`);
+  process.stderr.write(`🔍 Filtering diff against ${prefixes.length} excluded pattern(s):\n`);
   for (const p of prefixes) {
     process.stderr.write(`   - ${p}\n`);
   }

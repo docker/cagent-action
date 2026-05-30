@@ -60,7 +60,7 @@ inputs:
     required: false
     default: "false"
   exclude-paths:
-    description: 'Newline-separated list of path prefixes to strip from the diff before chunking. Files matching these prefixes are excluded from review entirely.'
+    description: 'Newline-separated list of path patterns to exclude from review. Entries containing `*`, `?`, or `[` are matched as globs; entries ending with `/` match all files under that directory (e.g. `vendor/`); all other entries match the exact path. Example: `**/package-lock.json` excludes lock files at any depth.'
     required: false
     default: ''
   max-diff-lines:
