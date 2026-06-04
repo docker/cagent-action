@@ -32,7 +32,7 @@ This action includes **built-in security features for all agent executions**:
 - **Prompt Injection Detection**: Warns about suspicious patterns in user prompts
 - **Automatic Incident Response**: Creates security issues and fails workflows when secrets are detected
 
-To report a vulnerability, see our [Security Policy](.github/SECURITY.md).
+To report a vulnerability, see our [Security Policy](SECURITY.md).
 
 ## Usage
 
@@ -117,9 +117,6 @@ To report a vulnerability, see our [Security Policy](.github/SECURITY.md).
 | `extra-args`               | Additional arguments to pass to `docker agent run`                                   | No       | -              |
 | `add-prompt-files`         | Comma-separated list of files to append to the prompt (e.g., `AGENTS.md,CLAUDE.md`)  | No       | -              |
 | `skip-summary`             | Skip writing agent output to the job summary (useful when callers write their own)  | No       | `false`        |
-| `org-membership-token`     | PAT with `read:org` scope for org membership authorization checks                    | No       | -              |
-| `auth-org`                 | GitHub organization to check membership against (used with `org-membership-token`)   | No       | -              |
-| `skip-auth`                | Skip the built-in authorization check (when the caller already performed its own)    | No       | `false`        |
 
 ### Prompt Files (`add-prompt-files`)
 
@@ -267,7 +264,7 @@ Please also read our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 - 📖 [Documentation](README.md)
 - 🐛 [Report Issues](https://github.com/docker/docker-agent-action/issues)
-- 🔒 [Security Policy](.github/SECURITY.md)
+- 🔒 [Security Policy](SECURITY.md)
 
 ## License
 
