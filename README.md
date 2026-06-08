@@ -263,7 +263,8 @@ Please also read our [Code of Conduct](CODE_OF_CONDUCT.md).
 ## Support
 
 - 📖 [Documentation](README.md)
-- 🐛 [Report Issues](https://github.com/docker/docker-agent-action/issues)
+- 🐛 [Report Issues](https://github.com/docker/cagent-action/issues)
+- 💬 [Discussions](https://github.com/docker/cagent-action/discussions)
 - 🔒 [Security Policy](SECURITY.md)
 
 ## License

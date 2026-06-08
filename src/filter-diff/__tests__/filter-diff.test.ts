@@ -73,7 +73,7 @@ const NEW_FILE_EXCLUDED = `${[
   '+',
 ].join('\n')}\n`;
 
-const PREFIXES = ['backend/gen/'];
+const PREFIXES = ['backend/gen/**'];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -100,24 +100,39 @@ async function writeDiff(name: string, content: string): Promise<string> {
 describe('parseExcludePrefixes', () => {
   it('splits on newlines and trims whitespace', () => {
     expect(parseExcludePrefixes('  backend/gen/\n  frontend/src/gen/  \n')).toEqual([
-      'backend/gen/',
-      'frontend/src/gen/',
+      'backend/gen/**',
+      'frontend/src/gen/**',
     ]);
   });
 
   it('strips carriage-return characters (Windows line-endings)', () => {
     expect(parseExcludePrefixes('backend/gen/\r\nfrontend/src/gen/\r\n')).toEqual([
-      'backend/gen/',
-      'frontend/src/gen/',
+      'backend/gen/**',
+      'frontend/src/gen/**',
     ]);
   });
 
   it('removes blank lines', () => {
-    expect(parseExcludePrefixes('\n\nbackend/gen/\n\n')).toEqual(['backend/gen/']);
+    expect(parseExcludePrefixes('\n\nbackend/gen/\n\n')).toEqual(['backend/gen/**']);
   });
 
   it('returns empty array for empty string', () => {
     expect(parseExcludePrefixes('')).toEqual([]);
+  });
+
+  it('expands trailing-slash entries to <entry>** glob', () => {
+    expect(parseExcludePrefixes('vendor/')).toEqual(['vendor/**']);
+  });
+
+  it('passes through existing glob patterns unchanged', () => {
+    expect(parseExcludePrefixes('**/package-lock.json')).toEqual(['**/package-lock.json']);
+  });
+
+  it('leaves exact file paths unchanged', () => {
+    expect(parseExcludePrefixes('package-lock.json')).toEqual(['package-lock.json']);
+    expect(parseExcludePrefixes('alertz/tools/package-lock.json')).toEqual([
+      'alertz/tools/package-lock.json',
+    ]);
   });
 });
 
@@ -230,6 +245,98 @@ describe('filterDiff — empty diff content', () => {
   });
 });
 
+describe('filterDiff — glob pattern (**/name)', () => {
+  const lockAtRoot = `${[
+    'diff --git a/package-lock.json b/package-lock.json',
+    '--- a/package-lock.json',
+    '+++ b/package-lock.json',
+    '+updated',
+  ].join('\n')}\n`;
+
+  const lockNested = `${[
+    'diff --git a/harbor-master/tools/package-lock.json b/harbor-master/tools/package-lock.json',
+    '--- a/harbor-master/tools/package-lock.json',
+    '+++ b/harbor-master/tools/package-lock.json',
+    '+updated',
+  ].join('\n')}\n`;
+
+  const notALock = `${[
+    'diff --git a/src/index.ts b/src/index.ts',
+    '--- a/src/index.ts',
+    '+++ b/src/index.ts',
+    '+code',
+  ].join('\n')}\n`;
+
+  it('matches a lock file at the repo root', () => {
+    const result = filterDiff(lockAtRoot, ['**/package-lock.json']);
+    expect(result.excludedFiles).toEqual(['package-lock.json']);
+    expect(result.remainingCount).toBe(0);
+  });
+
+  it('matches a lock file in a nested directory', () => {
+    const result = filterDiff(lockNested, ['**/package-lock.json']);
+    expect(result.excludedFiles).toEqual(['harbor-master/tools/package-lock.json']);
+    expect(result.remainingCount).toBe(0);
+  });
+
+  it('does not match an unrelated file', () => {
+    const result = filterDiff(notALock, ['**/package-lock.json']);
+    expect(result.excludedFiles).toHaveLength(0);
+    expect(result.remainingCount).toBe(1);
+  });
+
+  it('excludes all matching files across depths while keeping non-matching files', () => {
+    const result = filterDiff(lockAtRoot + lockNested + notALock, ['**/package-lock.json']);
+    expect(result.excludedFiles).toHaveLength(2);
+    expect(result.remainingCount).toBe(1);
+    expect(result.filtered).toContain('src/index.ts');
+  });
+
+  it('directory glob and wildcard glob patterns work together', () => {
+    const result = filterDiff(MOD_EXCLUDED + lockNested + MOD_KEPT, [
+      'backend/gen/**',
+      '**/package-lock.json',
+    ]);
+    expect(result.excludedFiles).toHaveLength(2);
+    expect(result.remainingCount).toBe(1);
+  });
+});
+
+describe('filterDiff — glob pattern (? and [...] metacharacters)', () => {
+  const logFile = `${[
+    'diff --git a/src/app.log b/src/app.log',
+    '--- a/src/app.log',
+    '+++ b/src/app.log',
+    '+logged',
+  ].join('\n')}\n`;
+
+  const generatedFile = `${[
+    'diff --git a/src/generated/api.ts b/src/generated/api.ts',
+    '--- a/src/generated/api.ts',
+    '+++ b/src/generated/api.ts',
+    '+// generated',
+  ].join('\n')}\n`;
+
+  const keptFile = `${[
+    'diff --git a/src/index.ts b/src/index.ts',
+    '--- a/src/index.ts',
+    '+++ b/src/index.ts',
+    '+code',
+  ].join('\n')}\n`;
+
+  it('matches files using ? single-character wildcard', () => {
+    const result = filterDiff(logFile + keptFile, ['src/app.lo?']);
+    expect(result.excludedFiles).toEqual(['src/app.log']);
+    expect(result.remainingCount).toBe(1);
+  });
+
+  it('matches files using [...] character class', () => {
+    const result = filterDiff(generatedFile + keptFile, ['src/[gG]enerated/**']);
+    expect(result.excludedFiles).toEqual(['src/generated/api.ts']);
+    expect(result.remainingCount).toBe(1);
+  });
+});
+
 describe('filterDiff — multiple exclude prefixes', () => {
   it('excludes sections matching any of the configured prefixes', () => {
     const frontendExcluded = `${[
@@ -240,8 +347,8 @@ describe('filterDiff — multiple exclude prefixes', () => {
     ].join('\n')}\n`;
 
     const result = filterDiff(MOD_EXCLUDED + frontendExcluded + MOD_KEPT, [
-      'backend/gen/',
-      'frontend/src/gen/',
+      'backend/gen/**',
+      'frontend/src/gen/**',
     ]);
     expect(result.excludedFiles).toHaveLength(2);
     expect(result.remainingCount).toBe(1);
@@ -276,6 +383,40 @@ describe('applyFilter — no-op when exclude-paths is empty', () => {
     const p = await writeDiff('pr.diff', original);
     applyFilter(p, '');
     expect(readFileSync(p, 'utf-8')).toBe(original);
+  });
+});
+
+describe('applyFilter — warns on bare directory entries', () => {
+  it('emits a warning to stderr when an entry looks like a bare directory name', async () => {
+    const p = await writeDiff('pr.diff', MOD_KEPT);
+    const stderr: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (s: string) => {
+      stderr.push(s);
+      return true;
+    };
+    try {
+      applyFilter(p, 'vendor');
+    } finally {
+      process.stderr.write = original;
+    }
+    expect(stderr.some((s) => s.includes('"vendor"') && s.includes('trailing slash'))).toBe(true);
+  });
+
+  it('does not warn for entries with a file extension', async () => {
+    const p = await writeDiff('pr.diff', MOD_KEPT);
+    const stderr: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (s: string) => {
+      stderr.push(s);
+      return true;
+    };
+    try {
+      applyFilter(p, 'package-lock.json');
+    } finally {
+      process.stderr.write = original;
+    }
+    expect(stderr.some((s) => s.includes('trailing slash'))).toBe(false);
   });
 });
 

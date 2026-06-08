@@ -29,7 +29,7 @@ on:
         type: string
         default: ""
       exclude-paths:
-        description: 'Newline-separated list of path prefixes to strip from the diff before chunking. Files matching these prefixes are excluded from review entirely.'
+        description: 'Newline-separated list of path prefixes or glob patterns to strip from the diff before chunking. Files matching any entry are excluded from review entirely. Example: use `**/package-lock.json` to exclude lock files at any depth.'
         required: false
         type: string
         default: ''
