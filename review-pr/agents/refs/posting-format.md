@@ -71,3 +71,31 @@ jq -n \
 
 The `<!-- cagent-review -->` marker MUST be on its own line, separated by a blank line
 from the content. Do NOT include it in console output mode.
+
+# Comment Tone (REQUIRED)
+
+Write each comment body as an **observation that calls out the issue**, not as an
+instruction telling the author to make a change. The bot reports; the author decides.
+
+The rule is about intent, not keywords: describe ONLY what is wrong and its consequence,
+then stop. Do NOT describe how to resolve it, in ANY phrasing. If a sentence tells the
+reader what the code should become, delete it. None of the following may appear:
+
+- A `**Fix:**`/`**Suggestion:**` block, or "The fix is…", "To fix this…", "this must be
+  fixed consistently".
+- Imperatives: "use / replace / remove / update / change / add / rename X".
+- Passive or hedged prescriptions: "X needs to be removed", "X should be updated",
+  "you could / consider doing X".
+- Dual/multiple prescribed options: "either do X or do Y".
+- A corrected code snippet, diff, or identifier presented as the edit to make.
+- Naming a "better/safer/idiomatic/more robust/preferred" alternative API, function, or
+  construct (e.g. "`errors.Is` is safer than `os.IsNotExist`") — a directive in disguise
+  even as a comparison.
+
+You MAY explain the mechanism of the bug (e.g. "wrapping the error here means
+`os.IsNotExist` no longer matches"), strictly as the cause; never continue into the edit.
+
+**Findings whose root cause is changed code but whose remedy lands on pre-existing,
+unchanged lines:** still call out the interaction (it is caused by this PR), but never
+ask the author to edit the unchanged lines. State that the new code changes the
+behaviour the surrounding code relied on, and stop there.

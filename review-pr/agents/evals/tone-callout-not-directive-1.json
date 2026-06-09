@@ -1,0 +1,29 @@
+{
+  "id": "b2c4e6a8-1f3d-4a5b-9c7e-0d1f2a3b4c5d",
+  "title": "Call out issue without demanding changes; no directive on pre-existing lines (run 1)",
+  "evals": {
+    "setup": "apk add --no-cache github-cli",
+    "relevance": [
+      "The agent ran 'echo $GITHUB_ACTIONS' before performing the review to detect the output mode",
+      "The agent output the review to the console as formatted markdown instead of posting via gh api",
+      "The drafter response is valid JSON containing a 'findings' array, a 'summary' field, and 'review_complete' set to true",
+      "The review calls out that the new fileutil.Remove call wraps errors, which makes the surrounding os.IsNotExist(err) check stop matching the not-exist case",
+      "The review does NOT contain a '**Fix:**' block or any heading/label that prescribes a specific edit",
+      "The review does NOT tell the author what to change using imperative phrasing such as 'replace', 'you should change', 'you must change', or 'must be fixed consistently'",
+      "The review does NOT present a corrected code snippet as the required edit",
+      "The review does not ask the author to edit the os.IsNotExist(err) line, which is a pre-existing unchanged line (a context line in the diff, not a '+' line)"
+    ]
+  },
+  "messages": [
+    {
+      "message": {
+        "agentName": "",
+        "message": {
+          "role": "user",
+          "content": "Review the following PR.\n\n## PR Information\n- **Title**: Retry transient Windows filesystem errors via fileutil\n- **Author**: testauthor\n- **Branch**: feat/fileutil → main\n- **Files Changed**: 1\n\n## PR Description\nReplace os.Remove with fileutil.Remove, which retries transient Windows filesystem errors and wraps the underlying error with fmt.Errorf.\n\n## Diff\n\n```diff\ndiff --git a/common/pkg/socket/socket.go b/common/pkg/socket/socket.go\nindex 1111111..2222222 100644\n--- a/common/pkg/socket/socket.go\n+++ b/common/pkg/socket/socket.go\n@@ -50,10 +50,10 @@ func Listen(path string) (net.Listener, error) {\n \t// Remove any stale socket file left over from a previous run before we\n \t// bind. A missing file is fine — that is the normal startup case.\n-\terr := os.Remove(path)\n+\terr := fileutil.Remove(path)\n \tif err != nil && !os.IsNotExist(err) {\n \t\treturn nil, fmt.Errorf(\"failed to remove socket: %w\", err)\n \t}\n \treturn net.Listen(\"unix\", path)\n }\n```",
+          "created_at": "2026-06-09T09:00:00-05:00"
+        }
+      }
+    }
+  ]
+}

@@ -216,6 +216,40 @@ agents:
 
       Find **real bugs in the changed code**, not style issues. If the changed code works correctly, approve it.
 
+      ## CRITICAL: Call out issues, never demand changes
+
+      The bot reports problems; the author decides what to do about them. Phrase every
+      finding — in inline comments and in console output alike — as an observation that
+      calls out the issue, NOT as an instruction to make a change.
+
+      **The rule is about intent, not keywords:** describe ONLY what is wrong and what its
+      consequence is. Do NOT describe how to resolve it — in ANY phrasing. Stop the sentence
+      at the impact. There is always a way to phrase a remedy that dodges a banned word, so
+      do not pattern-match on words; if a sentence tells the reader what the code should
+      become, delete it.
+
+      Concretely, NONE of the following may appear, in inline comments, console output, the
+      drafter's `details`, or the verifier's notes:
+      - A `**Fix:**`/`**Suggestion:**` block, or "The fix is…", "To fix this…", "The
+        solution is…".
+      - Imperatives: "use / replace / remove / update / change / add / rename X".
+      - Passive or hedged imperatives that still prescribe: "X needs to be removed",
+        "X should be updated", "you could / you might / consider doing X".
+      - Dual or multiple prescribed options: "either do X or do Y", "you can do A or B".
+      - A corrected code snippet, diff, or identifier presented as the edit to make.
+      - Naming a "better / safer / idiomatic / more robust / preferred" alternative API,
+        function, or construct (e.g. "errors.Is is safer than os.IsNotExist") — that is a
+        directive in disguise even as a comparison.
+
+      You MAY explain the mechanism of the bug (e.g. "the import is aliased `t`, so the
+      identifier `fileutil` is undefined and this will not compile") — that is the call-out.
+      Just never continue into what to do about it.
+
+      When a finding's root cause is the changed code but the line that would need editing
+      is pre-existing/unchanged, still call out the interaction (it is caused by this PR)
+      but never ask the author to edit the unchanged lines, and never name the replacement
+      that would go on those lines.
+
       ## CRITICAL: File Reading Guardrails
 
       The root agent MUST NOT exhaustively explore the repository. Follow these rules strictly:
@@ -504,6 +538,23 @@ agents:
       `line` (exact, 1-indexed — see algorithm below), `severity`, `category` (one of:
       security, logic_error, resource_leak, concurrency, error_handling, data_integrity, other),
       `issue` (one-line summary), `details` (trigger + impact), `in_diff` (true if on a `+` line).
+
+      **Tone of `issue` and `details` (intent-based, not keyword-based):** describe ONLY
+      what is wrong and its consequence. Do NOT describe how to resolve it, in ANY phrasing.
+      Stop the sentence at the impact. The root agent posts these strings verbatim, so any
+      remedy you write becomes a demand on the PR. None of the following may appear in
+      `issue` or `details`:
+      - "The fix is…", "To fix this…", a `**Fix:**`/`**Suggestion:**` block.
+      - Imperatives: "use / replace / remove / update / change / add / rename X".
+      - Passive or hedged prescriptions: "X needs to be removed", "X should be updated",
+        "you could / consider doing X".
+      - Dual/multiple options: "either do X or do Y".
+      - A corrected snippet or identifier presented as the edit.
+      - Naming a "better/safer/idiomatic/preferred" alternative API or construct (e.g.
+        "errors.Is is safer than os.IsNotExist") — a directive in disguise even as a
+        comparison.
+      You MAY explain the bug's mechanism (e.g. "the import is aliased `t`, so `fileutil`
+      is undefined and this will not compile"); just never continue into what to do.
       Also include a `summary` field with a brief overall assessment.
       Set `review_complete` to `true` if you finished reviewing the entire diff chunk.
       Set it to `false` if you had to stop early for any reason (context limits, errors, etc.).
@@ -672,6 +723,12 @@ agents:
       - `issue`: Preserve or refine the one-line summary
       - `details`: Full explanation including WHY you confirmed, considered likely, or dismissed.
         Include specifics about surrounding code, safeguards, or test coverage you found.
+        **Tone:** describe only what is wrong and its consequence — never how to resolve it.
+        Do NOT write "the fix is…", imperatives (use/replace/remove/update/change), passive
+        prescriptions ("X needs to be updated"), "either X or Y" options, a corrected
+        snippet, or a "better/safer/idiomatic" alternative API. The root agent posts this
+        text verbatim, so any remedy here becomes a demand on the PR. Explaining the bug's
+        mechanism is fine; prescribing the edit is not.
       - `in_changed_code`: Set to `true` if the issue is in code actually changed by this PR,
         `false` if the issue is in existing/unchanged code.
 
