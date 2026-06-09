@@ -1,17 +1,15 @@
 {
-  "id": "c3d5f7b9-2a4e-4b6c-8d0f-1e2a3b4c5d6e",
-  "title": "Call out a real bug on changed code without prescribing the edit (run 1)",
+  "id": "251d7f2e-cbc0-4811-9e73-518d162f456b",
+  "title": "Flag a bug the PR introduces; a suggestion is allowed (run 1)",
   "evals": {
     "setup": "apk add --no-cache github-cli",
     "relevance": [
       "The agent ran 'echo $GITHUB_ACTIONS' before performing the review to detect the output mode",
       "The agent output the review to the console as formatted markdown instead of posting via gh api",
       "The drafter response is valid JSON containing a 'findings' array, a 'summary' field, and 'review_complete' set to true",
-      "The review calls out that the fileutil package is imported under the alias 't' but the new code references it as 'fileutil', which will not compile",
-      "The review does NOT contain a '**Fix:**' block or any heading/label that prescribes a specific edit",
-      "The review does NOT tell the author what to change using imperative phrasing such as 'use', 'replace', 'remove the alias', 'you should change', or 'you must change'",
-      "The review does NOT present a corrected import line or a corrected call as the required edit",
-      "The review does NOT offer two prescribed options of the form 'either do X or do Y'"
+      "The review flags that the new file imports the package under the alias 't' but the new code references it as 'fileutil', so the file will not compile",
+      "The review treats this as a problem introduced by this PR (the new file's added lines), not as a pre-existing or dismissed issue",
+      "The review is NOT penalized for including a suggested fix: offering a concrete suggestion for addressing this introduced bug is acceptable and within scope"
     ]
   },
   "messages": [
