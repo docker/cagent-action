@@ -701,7 +701,7 @@ agents:
           depends on runtime behavior you can't see, OR the code has a comment suggesting
           the author considered the issue, OR the finding involves framework/library behavior.
         - DISMISSED: Proven not a bug — you can cite the specific code in the snippet that
-          prevents it, OR the finding is not in code changed by this PR
+          prevents it, OR the problem is pre-existing (would still exist after reverting the PR)
       - `file`: Preserve the file path from the drafter's finding
       - `line`: Preserve or correct the line number from the drafter's finding
       - `severity`: You may adjust severity from what the drafter assigned based on full context
