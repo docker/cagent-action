@@ -108,6 +108,22 @@ describe('renameRefs — repin mode', () => {
     );
   });
 
+  it('migrates the legacy .github/actions/setup-credentials path when re-pinning', () => {
+    const input = `        uses: ${OLD_SLUG}/.github/actions/setup-credentials@${SHA_OLD} # v1.5.0\n`;
+    const result = renameRefs(input, { newSha: SHA_NEW, newVersion: 'v2.0.0' });
+    expect(result.content).toBe(
+      `        uses: ${NEW_SLUG}/setup-credentials@${SHA_NEW} # v2.0.0\n`,
+    );
+  });
+
+  it('keeps the legacy setup-credentials path in rename-only mode (still valid at old SHAs)', () => {
+    const input = `        uses: ${OLD_SLUG}/.github/actions/setup-credentials@${SHA_OLD} # v1.5.0\n`;
+    const result = renameRefs(input);
+    expect(result.content).toBe(
+      `        uses: ${NEW_SLUG}/.github/actions/setup-credentials@${SHA_OLD} # v1.5.0\n`,
+    );
+  });
+
   it('omits the comment when no version is given', () => {
     const input = `      - uses: ${OLD_SLUG}@${SHA_OLD} # v1.5.4\n`;
     const result = renameRefs(input, { newSha: SHA_NEW });

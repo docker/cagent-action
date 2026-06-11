@@ -32,6 +32,16 @@ import { readFileSync, writeFileSync } from 'node:fs';
 export const OLD_SLUG = 'docker/cagent-action';
 export const NEW_SLUG = 'docker/docker-agent-action';
 
+/**
+ * Sub-action paths that moved between old releases and the current tree.
+ * Applied ONLY when re-pinning (newSha set): at old SHAs the old path still
+ * exists in the renamed repo, so rename-only mode must keep it untouched —
+ * but a re-pinned ref pointing at the new tree with the old path would 404.
+ */
+const SUBPATH_MIGRATIONS: ReadonlyArray<[string, string]> = [
+  ['/.github/actions/setup-credentials', '/setup-credentials'],
+];
+
 export interface RenameOptions {
   /**
    * When set, every `uses:` reference to the renamed repo is re-pinned to
@@ -108,11 +118,15 @@ export function renameRefs(content: string, options: RenameOptions = {}): Rename
       usesCount++;
       let newRef = ref;
       let newComment = comment ?? '';
+      let newSubpath = subpath;
       if (options.newSha !== undefined) {
         newRef = options.newSha;
         newComment = options.newVersion ? ` # ${options.newVersion}` : '';
+        for (const [oldPath, newPath] of SUBPATH_MIGRATIONS) {
+          if (newSubpath === oldPath) newSubpath = newPath;
+        }
       }
-      const rebuilt = `${prefix}${NEW_SLUG}${subpath}@${newRef}${closeQuote}${newComment}`;
+      const rebuilt = `${prefix}${NEW_SLUG}${newSubpath}@${newRef}${closeQuote}${newComment}`;
       return hasCR ? `${rebuilt}\r` : rebuilt;
     }
 
