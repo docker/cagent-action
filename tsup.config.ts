@@ -30,6 +30,7 @@ const entry = {
   main: src('main'),
   'mention-reply': src('mention-reply'),
   'post-mention-reply': src('post-mention-reply'),
+  'rename-consumer-refs': src('rename-consumer-refs'),
   'score-risk': src('score-risk'),
   security: src('security'),
   'signed-commit': src('signed-commit'),
