@@ -133,6 +133,22 @@ jobs:
             exit 0
           fi
 
+          # Never migrate the action repo itself, the shim staging repo, or
+          # the shim once published at the old name — their workflow files
+          # legitimately contain old-slug strings (this workflow's own grep
+          # pattern and comments, the shim's migration instructions) that
+          # must not be rewritten.
+          REPOS=$(printf '%s\n' "$REPOS" | grep -vxF \
+            -e 'docker/cagent-action' \
+            -e 'docker/cagent-action-shim' \
+            -e 'docker/docker-agent-action' || true)
+
+          if [ -z "$REPOS" ]; then
+            echo "No consumer repos found after exclusions."
+            echo "repos=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           # Apply the allowlist filter if provided (issue #11: pilot runs).
           if [ -n "$REPO_ALLOWLIST" ]; then
             FILTERED=""
