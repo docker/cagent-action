@@ -24,9 +24,10 @@
  * but only on lines that actually contain the old slug — the rest of the
  * file is preserved byte-for-byte.
  *
- * Pure functions only — no filesystem or network access. The CLI wrapper in
- * index.ts handles I/O.
+ * Pure functions plus a thin I/O wrapper (applyRename) used by the CLI in
+ * index.ts — mirroring the filter-diff module layout.
  */
+import { readFileSync, writeFileSync } from 'node:fs';
 
 export const OLD_SLUG = 'docker/cagent-action';
 export const NEW_SLUG = 'docker/docker-agent-action';
@@ -133,4 +134,59 @@ export function renameRefs(content: string, options: RenameOptions = {}): Rename
     usesCount,
     otherCount,
   };
+}
+
+// ---------------------------------------------------------------------------
+// I/O wrapper (used by the CLI entry point)
+// ---------------------------------------------------------------------------
+
+export interface ApplyRenameResult {
+  /** Files that were rewritten on disk (in input order). */
+  changedFiles: string[];
+  /** Per-file failures (read/write errors). Files in this list were NOT partially written. */
+  errors: Array<{ file: string; message: string }>;
+}
+
+/**
+ * Apply renameRefs to each file in-place.
+ *
+ * Per-file errors (unreadable file, write failure) are collected instead of
+ * aborting the loop, so a single bad file cannot leave the caller with a
+ * silently truncated "changed files" list. Callers MUST treat a non-empty
+ * `errors` array as a failure (the CLI exits 1) — this prevents the
+ * rename-consumers workflow from committing a partial migration.
+ *
+ * Progress messages are written to stderr.
+ */
+export function applyRename(files: string[], options: RenameOptions = {}): ApplyRenameResult {
+  // Validate options once upfront so an invalid SHA fails fast instead of
+  // being reported once per file.
+  if (options.newSha !== undefined && !/^[0-9a-f]{40}$/.test(options.newSha)) {
+    throw new Error(`newSha must be a 40-char lowercase hex SHA, got: "${options.newSha}"`);
+  }
+
+  const changedFiles: string[] = [];
+  const errors: ApplyRenameResult['errors'] = [];
+
+  for (const file of files) {
+    try {
+      const before = readFileSync(file, 'utf-8');
+      const result = renameRefs(before, options);
+      if (result.changed) {
+        writeFileSync(file, result.content, 'utf-8');
+        changedFiles.push(file);
+        process.stderr.write(
+          `✅ ${file}: ${result.usesCount} uses ref(s), ${result.otherCount} other ref(s) rewritten\n`,
+        );
+      } else {
+        process.stderr.write(`ℹ️  ${file}: no old references found\n`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errors.push({ file, message });
+      process.stderr.write(`⚠️  ${file}: ${message}\n`);
+    }
+  }
+
+  return { changedFiles, errors };
 }

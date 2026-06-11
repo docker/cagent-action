@@ -116,7 +116,7 @@ jobs:
           GH_TOKEN: ${{ env.GITHUB_APP_TOKEN }}
           REPO_ALLOWLIST: ${{ inputs.repos }}
         run: |
-          set -e
+          set -euo pipefail
 
           # Search for ANY docker/cagent-action reference in workflow files.
           # GitHub code search treats the quoted string as a literal substring,
@@ -139,7 +139,11 @@ jobs:
             IFS=',' read -ra ALLOWED <<< "$REPO_ALLOWLIST"
             while IFS= read -r REPO; do
               for A in "${ALLOWED[@]}"; do
-                A_TRIMMED=$(echo "$A" | xargs)
+                # Trim surrounding whitespace via parameter expansion — unlike
+                # xargs this does not interpret backslashes or quotes, so a
+                # malformed entry cannot corrupt the filtering.
+                A_TRIMMED="${A#"${A%%[![:space:]]*}"}"
+                A_TRIMMED="${A_TRIMMED%"${A_TRIMMED##*[![:space:]]}"}"
                 if [ "$REPO" = "$A_TRIMMED" ]; then
                   FILTERED+="$REPO"$'\n'
                 fi
@@ -171,7 +175,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry-run }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          set -e
+          set -euo pipefail
 
           if [ -z "$SHA" ] || [ -z "$VERSION" ]; then
             echo "::error::SHA or VERSION is empty (SHA='$SHA', VERSION='$VERSION')"
@@ -184,6 +188,21 @@ jobs:
           SUMMARY_CHANGED=""
           SUMMARY_SKIPPED=""
 
+          # Single EXIT trap registered once, referencing a global — avoids
+          # re-registering a trap per loop iteration (traps don't stack; a
+          # single-quoted per-iteration trap would silently replace the
+          # previous handler). cleanup_workdir is also called explicitly on
+          # every skip/continue path and is a no-op when already cleaned.
+          CURRENT_WORK_DIR=""
+          cleanup_workdir() {
+            cd /
+            if [ -n "$CURRENT_WORK_DIR" ]; then
+              rm -rf "$CURRENT_WORK_DIR"
+              CURRENT_WORK_DIR=""
+            fi
+          }
+          trap cleanup_workdir EXIT
+
           while IFS= read -r REPO; do
             [ -z "$REPO" ] && continue
             echo "=========================================="
@@ -191,11 +210,11 @@ jobs:
             echo "=========================================="
 
             WORK_DIR=$(mktemp -d)
-            trap 'cd /; rm -rf "$WORK_DIR"' EXIT
+            CURRENT_WORK_DIR="$WORK_DIR"
             if ! gh repo clone "$REPO" "$WORK_DIR" -- --depth=1 2>/dev/null; then
               echo "::warning::Failed to clone $REPO — skipping (token may lack access)"
               SUMMARY_SKIPPED+="- ${REPO} (clone failed)"$'\n'
-              rm -rf "$WORK_DIR"
+              cleanup_workdir
               continue
             fi
 
@@ -207,12 +226,16 @@ jobs:
             if [ -z "$MATCHING_FILES" ]; then
               echo "No old references found in $REPO — already migrated, skipping"
               SUMMARY_SKIPPED+="- ${REPO} (already migrated)"$'\n'
-              cd /; rm -rf "$WORK_DIR"; trap - EXIT
+              cleanup_workdir
               continue
             fi
 
             # Rewrite all matching files via the tested TS tool. Build the
             # argument list as a bash array (no eval, see AGENTS.md).
+            # NOTE: pipefail (set above) is required here — without it a CLI
+            # failure would be masked by sed succeeding, and a partial
+            # CHANGED_FILES list could be committed. The CLI also exits 1 on
+            # any per-file error for the same reason.
             FILE_ARGS=()
             while IFS= read -r F; do
               FILE_ARGS+=("$F")
@@ -222,14 +245,14 @@ jobs:
               | sed 's/^changed //') || {
               echo "::warning::rename-consumer-refs failed for $REPO — skipping"
               SUMMARY_SKIPPED+="- ${REPO} (rewrite failed)"$'\n'
-              cd /; rm -rf "$WORK_DIR"; trap - EXIT
+              cleanup_workdir
               continue
             }
 
             if [ -z "$CHANGED_FILES" ] || git diff --quiet; then
               echo "No changes after rewrite — already up to date"
               SUMMARY_SKIPPED+="- ${REPO} (no changes)"$'\n'
-              cd /; rm -rf "$WORK_DIR"; trap - EXIT
+              cleanup_workdir
               continue
             fi
 
@@ -240,7 +263,7 @@ jobs:
               echo "🧪 DRY RUN — diff that would be committed:"
               git --no-pager diff
               SUMMARY_CHANGED+="- ${REPO} (dry run — $(echo "$CHANGED_FILES" | wc -l | tr -d ' ') file(s))"$'\n'
-              cd /; rm -rf "$WORK_DIR"; trap - EXIT
+              cleanup_workdir
               continue
             fi
 
@@ -262,14 +285,16 @@ jobs:
               "${ADD_ARGS[@]}") || {
               echo "::warning::Failed to create signed commit in $REPO (may lack write access)"
               SUMMARY_SKIPPED+="- ${REPO} (commit failed)"$'\n'
-              cd /; rm -rf "$WORK_DIR"; trap - EXIT
+              cleanup_workdir
               continue
             }
 
             echo "✅ Signed commit: $COMMIT_OID"
 
-            # Create or update the PR.
-            EXISTING_PR=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number')
+            # Create or update the PR. `// empty` is required: without it jq
+            # prints the literal string "null" when no PR exists, which would
+            # wrongly take the "update existing PR" branch and never create one.
+            EXISTING_PR=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
 
             printf -v PR_BODY '%s\n\n%s\n%s\n\n%s\n%s\n%s\n\n%s\n\n%s' \
               "## Summary" \
@@ -303,7 +328,7 @@ jobs:
 
             SUMMARY_CHANGED+="- ${REPO} ${PR_URL:+(${PR_URL})}"$'\n'
 
-            cd /; rm -rf "$WORK_DIR"; trap - EXIT
+            cleanup_workdir
             echo ""
           done <<< "$REPOS"
 

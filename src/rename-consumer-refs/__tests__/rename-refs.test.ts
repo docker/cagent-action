@@ -8,9 +8,14 @@
  *   - non-uses references (gh api URLs, --repo flags, markdown links)
  *   - repin mode (--sha/--version) vs rename-only mode
  *   - safety: similarly-named slugs are NOT rewritten
+ *   - applyRename I/O wrapper: in-place rewrite, per-file error collection
  */
+import { readFileSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { NEW_SLUG, OLD_SLUG, renameRefs } from '../rename-refs.js';
+import { applyRename, NEW_SLUG, OLD_SLUG, renameRefs } from '../rename-refs.js';
 
 const SHA_OLD = '3f5dc9969f307d3c76acb7e9ccaefdd96bd62f4b';
 const SHA_NEW = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -263,5 +268,84 @@ describe('renameRefs — realistic consumer workflows', () => {
     expect(result.usesCount).toBe(1);
     expect(result.otherCount).toBe(1);
     expect(result.content).not.toContain(OLD_SLUG);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// applyRename — I/O behaviour
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('applyRename — I/O behaviour', () => {
+  async function makeTmpDir(): Promise<string> {
+    return mkdtemp(join(tmpdir(), 'rename-refs-test-'));
+  }
+
+  it('rewrites files in-place and reports them as changed', async () => {
+    const dir = await makeTmpDir();
+    try {
+      const f1 = join(dir, 'review.yml');
+      const f2 = join(dir, 'unrelated.yml');
+      await writeFile(f1, `      - uses: ${OLD_SLUG}@${SHA_OLD} # v1.5.4\n`, 'utf-8');
+      await writeFile(f2, 'name: CI\non: push\n', 'utf-8');
+
+      const result = applyRename([f1, f2], { newSha: SHA_NEW, newVersion: 'v2.0.0' });
+
+      expect(result.changedFiles).toEqual([f1]);
+      expect(result.errors).toHaveLength(0);
+      expect(readFileSync(f1, 'utf-8')).toBe(`      - uses: ${NEW_SLUG}@${SHA_NEW} # v2.0.0\n`);
+      expect(readFileSync(f2, 'utf-8')).toBe('name: CI\non: push\n');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('collects per-file errors without aborting the remaining files', async () => {
+    const dir = await makeTmpDir();
+    try {
+      const good = join(dir, 'good.yml');
+      const missing = join(dir, 'does-not-exist.yml');
+      await writeFile(good, `      - uses: ${OLD_SLUG}@${SHA_OLD}\n`, 'utf-8');
+
+      // The failing file comes FIRST — the good file after it must still be processed.
+      const result = applyRename([missing, good]);
+
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].file).toBe(missing);
+      expect(result.changedFiles).toEqual([good]);
+      expect(readFileSync(good, 'utf-8')).toBe(`      - uses: ${NEW_SLUG}@${SHA_OLD}\n`);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not list unchanged files as changed', async () => {
+    const dir = await makeTmpDir();
+    try {
+      const f = join(dir, 'already-migrated.yml');
+      const content = `      - uses: ${NEW_SLUG}@${SHA_NEW} # v2.0.0\n`;
+      await writeFile(f, content, 'utf-8');
+
+      const result = applyRename([f], { newSha: SHA_NEW, newVersion: 'v2.0.0' });
+
+      expect(result.changedFiles).toHaveLength(0);
+      expect(result.errors).toHaveLength(0);
+      expect(readFileSync(f, 'utf-8')).toBe(content);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('throws upfront on an invalid SHA (before touching any file)', async () => {
+    const dir = await makeTmpDir();
+    try {
+      const f = join(dir, 'review.yml');
+      const content = `      - uses: ${OLD_SLUG}@${SHA_OLD}\n`;
+      await writeFile(f, content, 'utf-8');
+
+      expect(() => applyRename([f], { newSha: 'not-a-sha' })).toThrow(/40-char/);
+      expect(readFileSync(f, 'utf-8')).toBe(content);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -14,11 +14,16 @@
  * Without --sha, existing refs are preserved (rename-only mode).
  *
  * Output (stdout): one line per changed file:  `changed <path>`
- * Progress/diagnostics go to stderr. Exit code 0 even when nothing changed —
- * callers detect changes via the stdout lines (or `git diff`).
+ * Progress/diagnostics go to stderr.
+ *
+ * Exit codes:
+ *   0  all files processed (whether or not anything changed)
+ *   1  at least one file failed to read/write, or bad arguments.
+ *      Per-file failures do NOT abort the loop — every file is attempted —
+ *      but the non-zero exit tells callers the run is incomplete so they
+ *      must not commit a partial migration.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
-import { renameRefs } from './rename-refs.js';
+import { applyRename } from './rename-refs.js';
 
 interface ParsedArgs {
   sha?: string;
@@ -61,23 +66,23 @@ function main(): void {
     throw new Error('--version requires --sha');
   }
 
-  let totalChanged = 0;
-  for (const file of args.files) {
-    const before = readFileSync(file, 'utf-8');
-    const result = renameRefs(before, { newSha: args.sha, newVersion: args.version });
-    if (result.changed) {
-      writeFileSync(file, result.content, 'utf-8');
-      process.stdout.write(`changed ${file}\n`);
-      process.stderr.write(
-        `✅ ${file}: ${result.usesCount} uses ref(s), ${result.otherCount} other ref(s) rewritten\n`,
-      );
-      totalChanged++;
-    } else {
-      process.stderr.write(`ℹ️  ${file}: no old references found\n`);
-    }
+  const { changedFiles, errors } = applyRename(args.files, {
+    newSha: args.sha,
+    newVersion: args.version,
+  });
+
+  for (const file of changedFiles) {
+    process.stdout.write(`changed ${file}\n`);
   }
 
-  process.stderr.write(`Done: ${totalChanged}/${args.files.length} file(s) changed\n`);
+  process.stderr.write(`Done: ${changedFiles.length}/${args.files.length} file(s) changed\n`);
+
+  if (errors.length > 0) {
+    process.stderr.write(
+      `Error: ${errors.length} file(s) could not be processed — failing so callers do not commit a partial migration\n`,
+    );
+    process.exit(1);
+  }
 }
 
 try {
