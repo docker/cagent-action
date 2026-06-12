@@ -102,11 +102,13 @@ jobs:
       - name: Mask app token
         run: echo "::add-mask::$GITHUB_APP_TOKEN"
 
+      # Check out the current repo (wherever this workflow runs from) so the
+      # CLI tools can be built — github.sha is always a valid ref here, both
+      # before and after the content is copied to docker/docker-agent-action.
       - name: Checkout source for build
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          repository: docker/docker-agent-action
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Setup pnpm

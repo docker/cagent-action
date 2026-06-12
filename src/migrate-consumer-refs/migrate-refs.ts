@@ -139,13 +139,18 @@ export function migrateRefs(content: string, options: MigrateOptions = {}): Migr
       return hasCR ? `${rebuilt}\r` : rebuilt;
     }
 
-    if (PLAIN_RE.test(line)) {
-      PLAIN_RE.lastIndex = 0; // reset after .test() with /g flag
-      otherCount++;
+    // Cheap substring guard before the regex replace — .replace() with a /g
+    // regex resets lastIndex itself, so no manual lastIndex bookkeeping is
+    // needed. Compare before/after so guarded near-misses (e.g.
+    // `docker/cagent-action-fork`, excluded by the lookahead) don't inflate
+    // otherCount.
+    if (line.includes(OLD_SLUG)) {
       const rebuilt = line.replace(PLAIN_RE, NEW_SLUG);
-      return hasCR ? `${rebuilt}\r` : rebuilt;
+      if (rebuilt !== line) {
+        otherCount++;
+        return hasCR ? `${rebuilt}\r` : rebuilt;
+      }
     }
-    PLAIN_RE.lastIndex = 0;
 
     return rawLine;
   });
