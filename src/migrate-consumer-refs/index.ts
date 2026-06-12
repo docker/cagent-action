@@ -1,17 +1,17 @@
 /**
- * rename-consumer-refs CLI entrypoint.
+ * migrate-consumer-refs CLI entrypoint.
  *
  * Rewrites `docker/cagent-action` references to `docker/docker-agent-action`
  * in one or more files, in-place.
  *
  * Usage:
- *   node dist/rename-consumer-refs.js [--sha <40-hex> --version <vX.Y.Z>] <file> [<file> ...]
+ *   node dist/migrate-consumer-refs.js [--sha <40-hex> --version <vX.Y.Z>] <file> [<file> ...]
  *
  * Flags:
  *   --sha <sha>          Re-pin every `uses:` ref to this commit SHA.
  *   --version <version>  Trailing `# version` comment used with --sha.
  *
- * Without --sha, existing refs are preserved (rename-only mode).
+ * Without --sha, existing refs are preserved (slug-only mode).
  *
  * Output (stdout): one line per changed file:  `changed <path>`
  * Progress/diagnostics go to stderr.
@@ -23,7 +23,7 @@
  *      but the non-zero exit tells callers the run is incomplete so they
  *      must not commit a partial migration.
  */
-import { applyRename } from './rename-refs.js';
+import { applyMigration } from './migrate-refs.js';
 
 interface ParsedArgs {
   sha?: string;
@@ -57,7 +57,7 @@ function main(): void {
 
   if (args.files.length === 0) {
     process.stderr.write(
-      'Usage: rename-consumer-refs [--sha <40-hex> --version <vX.Y.Z>] <file> [<file> ...]\n',
+      'Usage: migrate-consumer-refs [--sha <40-hex> --version <vX.Y.Z>] <file> [<file> ...]\n',
     );
     process.exit(1);
   }
@@ -66,7 +66,7 @@ function main(): void {
     throw new Error('--version requires --sha');
   }
 
-  const { changedFiles, errors } = applyRename(args.files, {
+  const { changedFiles, errors } = applyMigration(args.files, {
     newSha: args.sha,
     newVersion: args.version,
   });

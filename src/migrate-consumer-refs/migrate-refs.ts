@@ -1,6 +1,11 @@
 /**
- * rename-consumer-refs — core logic for rewriting `docker/cagent-action`
+ * migrate-consumer-refs — core logic for rewriting `docker/cagent-action`
  * references to `docker/docker-agent-action` in consumer workflow files.
+ *
+ * The action moved to a brand new repo (`docker/docker-agent-action`) rather
+ * than renaming in place — GitHub Actions `uses:` references do not follow
+ * repository renames. The old repo stays live during the transition, so this
+ * migration is incremental and consumers run it at their own pace.
  *
  * Handles every consumer reference shape observed in the wild:
  *
@@ -14,17 +19,17 @@
  *
  * Two rewrite modes:
  *
- *   - rename-only: replace the repo slug, keep the existing ref untouched.
+ *   - slug-only: replace the repo slug, keep the existing ref untouched.
  *   - repin: replace the repo slug AND update the ref to a new SHA with a
- *     `# vX.Y.Z` trailing comment (used on rename day so consumers land on
- *     the first release published under the new name).
+ *     `# vX.Y.Z` trailing comment (the default for migration PRs, so
+ *     consumers land on a release published under the new name).
  *
  * Non-`uses:` references (e.g. `gh api repos/docker/cagent-action/...`,
  * documentation links) are also rewritten via the plain slug replacement,
  * but only on lines that actually contain the old slug — the rest of the
  * file is preserved byte-for-byte.
  *
- * Pure functions plus a thin I/O wrapper (applyRename) used by the CLI in
+ * Pure functions plus a thin I/O wrapper (applyMigration) used by the CLI in
  * index.ts — mirroring the filter-diff module layout.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -35,25 +40,25 @@ export const NEW_SLUG = 'docker/docker-agent-action';
 /**
  * Sub-action paths that moved between old releases and the current tree.
  * Applied ONLY when re-pinning (newSha set): at old SHAs the old path still
- * exists in the renamed repo, so rename-only mode must keep it untouched —
+ * exists in the new repo's history, so slug-only mode must keep it untouched —
  * but a re-pinned ref pointing at the new tree with the old path would 404.
  */
 const SUBPATH_MIGRATIONS: ReadonlyArray<[string, string]> = [
   ['/.github/actions/setup-credentials', '/setup-credentials'],
 ];
 
-export interface RenameOptions {
+export interface MigrateOptions {
   /**
-   * When set, every `uses:` reference to the renamed repo is re-pinned to
+   * When set, every `uses:` reference to the new repo is re-pinned to
    * this commit SHA (with `# version` appended as a comment).
-   * When undefined, existing refs are preserved (rename-only mode).
+   * When undefined, existing refs are preserved (slug-only mode).
    */
   newSha?: string;
   /** Human-readable version (e.g. `v2.0.0`) appended as a trailing comment when re-pinning. */
   newVersion?: string;
 }
 
-export interface RenameResult {
+export interface MigrateResult {
   /** Rewritten file content. Identical to input when no references were found. */
   content: string;
   /** True when at least one replacement was made. */
@@ -94,7 +99,7 @@ const PLAIN_RE = new RegExp(`${escapeRegExp(OLD_SLUG)}(?![A-Za-z0-9-])`, 'g');
 /**
  * Rewrite all old-slug references in a single file's content.
  */
-export function renameRefs(content: string, options: RenameOptions = {}): RenameResult {
+export function migrateRefs(content: string, options: MigrateOptions = {}): MigrateResult {
   if (options.newSha !== undefined && !/^[0-9a-f]{40}$/.test(options.newSha)) {
     throw new Error(`newSha must be a 40-char lowercase hex SHA, got: "${options.newSha}"`);
   }
@@ -154,7 +159,7 @@ export function renameRefs(content: string, options: RenameOptions = {}): Rename
 // I/O wrapper (used by the CLI entry point)
 // ---------------------------------------------------------------------------
 
-export interface ApplyRenameResult {
+export interface ApplyMigrationResult {
   /** Files that were rewritten on disk (in input order). */
   changedFiles: string[];
   /** Per-file failures (read/write errors). Files in this list were NOT partially written. */
@@ -162,17 +167,20 @@ export interface ApplyRenameResult {
 }
 
 /**
- * Apply renameRefs to each file in-place.
+ * Apply migrateRefs to each file in-place.
  *
  * Per-file errors (unreadable file, write failure) are collected instead of
  * aborting the loop, so a single bad file cannot leave the caller with a
  * silently truncated "changed files" list. Callers MUST treat a non-empty
  * `errors` array as a failure (the CLI exits 1) — this prevents the
- * rename-consumers workflow from committing a partial migration.
+ * migrate-consumers workflow from committing a partial migration.
  *
  * Progress messages are written to stderr.
  */
-export function applyRename(files: string[], options: RenameOptions = {}): ApplyRenameResult {
+export function applyMigration(
+  files: string[],
+  options: MigrateOptions = {},
+): ApplyMigrationResult {
   // Validate options once upfront so an invalid SHA fails fast instead of
   // being reported once per file.
   if (options.newSha !== undefined && !/^[0-9a-f]{40}$/.test(options.newSha)) {
@@ -180,12 +188,12 @@ export function applyRename(files: string[], options: RenameOptions = {}): Apply
   }
 
   const changedFiles: string[] = [];
-  const errors: ApplyRenameResult['errors'] = [];
+  const errors: ApplyMigrationResult['errors'] = [];
 
   for (const file of files) {
     try {
       const before = readFileSync(file, 'utf-8');
-      const result = renameRefs(before, options);
+      const result = migrateRefs(before, options);
       if (result.changed) {
         writeFileSync(file, result.content, 'utf-8');
         changedFiles.push(file);

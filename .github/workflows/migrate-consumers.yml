@@ -1,12 +1,19 @@
-name: Rename consumer repos
+name: Migrate consumer repos
 
-# One-shot migration automation for the cagent-action → docker-agent-action
-# repo rename (roadmap Phase 1B/1C).
+# Consumer migration automation for the move from `docker/cagent-action` to
+# the new `docker/docker-agent-action` repo (roadmap Phase 1B, issue #8).
 #
-# Searches org:docker for any `docker/cagent-action` reference in workflow
-# files, rewrites them to `docker/docker-agent-action` (re-pinned to the
-# first release published under the new name), and opens a PR per consumer
-# repo via signed commits.
+# The action moved to a brand new repo rather than being renamed in place:
+# GitHub Actions `uses:` references do not follow repository renames, so an
+# in-place rename would have broken all 48+ consumers at once. The old repo
+# stays live and functional during the transition — there is no shim and no
+# migration deadline. Consumers migrate at their own pace; this workflow can
+# be run on demand (or on their behalf) to open migration PRs.
+#
+# It searches org:docker for any `docker/cagent-action` reference in workflow
+# files, rewrites them to `docker/docker-agent-action` (re-pinned to a release
+# published under the new name), and opens one PR per consumer repo via
+# signed commits.
 #
 # Differences from update-consumers.yml:
 #   - matches ALL reference shapes (root action, sub-actions, reusable
@@ -16,9 +23,9 @@ name: Rename consumer repos
 #   - rewrites every matching workflow file in a repo in one PR (consumers
 #     often reference both review-pr.yml and the trigger workflow).
 #   - supports dry-run (default ON) and a repo allowlist for piloting the
-#     automation on a few repos before rename day (roadmap issue #11).
+#     automation on a few repos per tier (roadmap issue #9).
 #
-# All rewrite logic lives in src/rename-consumer-refs (TypeScript, unit
+# All rewrite logic lives in src/migrate-consumer-refs (TypeScript, unit
 # tested) — this workflow only orchestrates discovery, cloning, and PRs.
 
 on:
@@ -44,12 +51,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: rename-consumers
+  group: migrate-consumers
   cancel-in-progress: false
 
 jobs:
-  rename-consumers:
-    name: Rename consumer repo references
+  migrate-consumers:
+    name: Migrate consumer repo references
     runs-on: ubuntu-latest
     steps:
 
@@ -133,14 +140,12 @@ jobs:
             exit 0
           fi
 
-          # Never migrate the action repo itself, the shim staging repo, or
-          # the shim once published at the old name — their workflow files
-          # legitimately contain old-slug strings (this workflow's own grep
-          # pattern and comments, the shim's migration instructions) that
-          # must not be rewritten.
+          # Never migrate the action repos themselves: the old repo stays
+          # live during the transition and its workflow files legitimately
+          # reference its own slug, and the new repo contains this workflow's
+          # own grep pattern and comments — neither must be rewritten.
           REPOS=$(printf '%s\n' "$REPOS" | grep -vxF \
             -e 'docker/cagent-action' \
-            -e 'docker/cagent-action-shim' \
             -e 'docker/docker-agent-action' || true)
 
           if [ -z "$REPOS" ]; then
@@ -149,7 +154,7 @@ jobs:
             exit 0
           fi
 
-          # Apply the allowlist filter if provided (issue #11: pilot runs).
+          # Apply the allowlist filter if provided (issue #9: pilot runs).
           if [ -n "$REPO_ALLOWLIST" ]; then
             FILTERED=""
             IFS=',' read -ra ALLOWED <<< "$REPO_ALLOWLIST"
@@ -181,7 +186,7 @@ jobs:
             echo 'REPOS_EOF'
           } >> $GITHUB_OUTPUT
 
-      - name: Rename references and open PRs
+      - name: Migrate references and open PRs
         if: steps.discover.outputs.repos != ''
         env:
           GH_TOKEN: ${{ env.GITHUB_APP_TOKEN }}
@@ -198,9 +203,9 @@ jobs:
             exit 1
           fi
 
-          BRANCH="auto/rename-docker-agent-action"
+          BRANCH="auto/migrate-to-docker-agent-action"
           RELEASE_URL="https://github.com/docker/docker-agent-action/releases/tag/$VERSION"
-          RENAME_CLI="$GITHUB_WORKSPACE/dist/rename-consumer-refs.js"
+          MIGRATE_CLI="$GITHUB_WORKSPACE/dist/migrate-consumer-refs.js"
           SUMMARY_CHANGED=""
           SUMMARY_SKIPPED=""
 
@@ -257,9 +262,9 @@ jobs:
               FILE_ARGS+=("$F")
             done <<< "$MATCHING_FILES"
 
-            CHANGED_FILES=$(node "$RENAME_CLI" --sha "$SHA" --version "$VERSION" "${FILE_ARGS[@]}" \
+            CHANGED_FILES=$(node "$MIGRATE_CLI" --sha "$SHA" --version "$VERSION" "${FILE_ARGS[@]}" \
               | sed 's/^changed //') || {
-              echo "::warning::rename-consumer-refs failed for $REPO — skipping"
+              echo "::warning::migrate-consumer-refs failed for $REPO — skipping"
               SUMMARY_SKIPPED+="- ${REPO} (rewrite failed)"$'\n'
               cleanup_workdir
               continue
@@ -314,13 +319,13 @@ jobs:
 
             printf -v PR_BODY '%s\n\n%s\n%s\n\n%s\n%s\n%s\n\n%s\n\n%s' \
               "## Summary" \
-              "\`docker/cagent-action\` has been renamed to \`docker/docker-agent-action\`." \
-              "GitHub Actions \`uses:\` references **do not follow repository renames**, so this PR migrates all references and pins them to [${VERSION}](${RELEASE_URL})." \
+              "\`docker/cagent-action\` has moved to a new repository: \`docker/docker-agent-action\`." \
+              "GitHub Actions \`uses:\` references must be updated explicitly, so this PR migrates all references and pins them to [${VERSION}](${RELEASE_URL})." \
               "- **New repository**: \`docker/docker-agent-action\`" \
               "- **Pinned commit**: \`${SHA}\`" \
               "- **Version**: \`${VERSION}\`" \
-              "⚠️ A temporary shim at the old name keeps existing workflows running with deprecation warnings, but it will be sunset 30 days after the rename. Please merge promptly." \
-              "> Auto-generated by the [rename-consumers](${RUN_URL}) workflow."
+              "ℹ️ The old \`docker/cagent-action\` repo remains functional, so there is no deadline — merge whenever convenient. New features and fixes land in the new repo, which is where you'll want to be going forward." \
+              "> Auto-generated by the [migrate-consumers](${RUN_URL}) workflow."
 
             if [ -n "$EXISTING_PR" ]; then
               echo "Updating existing PR #$EXISTING_PR in $REPO"
@@ -348,9 +353,9 @@ jobs:
             echo ""
           done <<< "$REPOS"
 
-          # Job summary for triage (roadmap issue #15: monitor consumer PRs).
+          # Job summary for triage (roadmap issue #15: monitor consumer migration progress).
           {
-            echo "## Rename consumers — $([ "$DRY_RUN" = "true" ] && echo 'DRY RUN' || echo 'EXECUTED')"
+            echo "## Migrate consumers — $([ "$DRY_RUN" = "true" ] && echo 'DRY RUN' || echo 'EXECUTED')"
             echo ""
             echo "Target: \`${VERSION}\` @ \`${SHA}\`"
             echo ""
