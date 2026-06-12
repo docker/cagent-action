@@ -182,6 +182,20 @@ describe('migrateRefs — safety', () => {
     expect(result.content).toBe(input);
   });
 
+  it('does not rewrite underscore-suffixed slugs on non-uses lines', () => {
+    const input = 'gh api repos/docker/cagent-action_extended/releases\n';
+    const result = migrateRefs(input);
+    expect(result.changed).toBe(false);
+    expect(result.content).toBe(input);
+  });
+
+  it('still rewrites clone URLs ending in .git', () => {
+    const input = 'git clone https://github.com/docker/cagent-action.git\n';
+    const result = migrateRefs(input);
+    expect(result.changed).toBe(true);
+    expect(result.content).toBe(`git clone https://github.com/${NEW_SLUG}.git\n`);
+  });
+
   it('does not rewrite the new slug (idempotent)', () => {
     const input = `      - uses: ${NEW_SLUG}@${SHA_OLD} # v2.0.0\n`;
     const result = migrateRefs(input);

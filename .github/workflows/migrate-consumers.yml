@@ -96,6 +96,12 @@ jobs:
       - name: Setup credentials
         uses: ./setup-credentials
 
+      # setup-credentials already masks the token via core.setSecret, but the
+      # invariant lives in another module — re-mask explicitly here so this
+      # workflow stays safe even if that implementation detail changes.
+      - name: Mask app token
+        run: echo "::add-mask::$GITHUB_APP_TOKEN"
+
       - name: Checkout source for build
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -331,8 +337,7 @@ jobs:
               echo "Updating existing PR #$EXISTING_PR in $REPO"
               gh pr edit "$EXISTING_PR" --repo "$REPO" \
                 --title "chore: migrate cagent-action to docker-agent-action ($VERSION)" \
-                --body "$PR_BODY" \
-                --add-reviewer "derekmisler" 2>&1 || echo "::warning::Failed to update PR #$EXISTING_PR in $REPO (may be non-fatal)"
+                --body "$PR_BODY" 2>&1 || echo "::warning::Failed to update PR #$EXISTING_PR in $REPO (may be non-fatal)"
               PR_URL=$(gh pr view "$EXISTING_PR" --repo "$REPO" --json url --jq .url 2>/dev/null || echo "")
             else
               echo "Creating new PR in $REPO"
@@ -340,11 +345,19 @@ jobs:
                 --head "$BRANCH" \
                 --base "$DEFAULT_BRANCH" \
                 --title "chore: migrate cagent-action to docker-agent-action ($VERSION)" \
-                --body "$PR_BODY" \
-                --reviewer "derekmisler") || {
+                --body "$PR_BODY") || {
                 echo "::warning::Failed to create PR in $REPO"
                 PR_URL=""
               }
+            fi
+
+            # Reviewer assignment is best-effort and decoupled from PR
+            # creation: `gh pr create --reviewer` fails the ENTIRE create when
+            # the reviewer is not a collaborator of the consumer repo, which
+            # would silently drop the migration PR.
+            if [ -n "$PR_URL" ]; then
+              gh pr edit "$PR_URL" --add-reviewer "derekmisler" 2>&1 \
+                || echo "::warning::Could not add reviewer on $PR_URL (non-fatal)"
             fi
 
             SUMMARY_CHANGED+="- ${REPO} ${PR_URL:+(${PR_URL})}"$'\n'

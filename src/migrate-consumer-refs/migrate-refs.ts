@@ -92,9 +92,13 @@ const USES_RE = new RegExp(
 
 /**
  * Plain slug occurrences on non-`uses:` lines (API URLs, --repo flags, links).
- * Guarded so `docker/cagent-action-foo` is not rewritten.
+ * Guarded so `docker/cagent-action-foo` or `docker/cagent-action_foo` is not
+ * rewritten (GitHub repo names allow letters, digits, hyphens, underscores
+ * and dots — dots are excluded from the lookahead on purpose, since a slug
+ * followed by `.` is overwhelmingly a sentence/URL boundary, e.g.
+ * `docker/cagent-action.git`).
  */
-const PLAIN_RE = new RegExp(`${escapeRegExp(OLD_SLUG)}(?![A-Za-z0-9-])`, 'g');
+const PLAIN_RE = new RegExp(`${escapeRegExp(OLD_SLUG)}(?![A-Za-z0-9_-])`, 'g');
 
 /**
  * Rewrite all old-slug references in a single file's content.
