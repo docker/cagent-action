@@ -1,0 +1,44 @@
+name: Rollback
+
+on:
+
+  workflow_dispatch:
+
+  workflow_run:
+    workflows: ["release"]
+    types:
+      - completed
+
+jobs:
+
+  rollback:
+
+    if: github.event.workflow_run.conclusion == 'failure'
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch tags
+        run: git fetch --tags
+
+      - name: Get previous stable version
+        id: rollback
+        run: |
+          PREVIOUS=$(git tag --sort=-creatordate | sed -n '2p')
+          echo "previous=$PREVIOUS" >> $GITHUB_OUTPUT
+
+      - name: Restore previous release
+        run: |
+          echo "Restoring version ${{ steps.rollback.outputs.previous }}"
+          git checkout ${{ steps.rollback.outputs.previous }}
+
+      - name: Notify rollback
+        run: |
+          echo "Rollback completed"
+          echo "Version: ${{ steps.rollback.outputs.previous }}"
+          echo "User: ${{ github.actor }}"
+          echo "Date: $(date)"
