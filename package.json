@@ -7,6 +7,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit",
+    "coverage": "vitest run --project unit --coverage",
     "test:integration": "vitest run --project integration",
     "test:watch": "vitest --project unit",
     "actionlint": "pnpm build && actionlint -shellcheck=",
@@ -28,6 +29,7 @@
     "@aws-sdk/types": "3.973.7",
     "@biomejs/biome": "2.4.11",
     "@types/node": "22.0.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
     "vitest": "4.0.18"
