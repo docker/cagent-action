@@ -4,7 +4,7 @@ A GitHub Action for running [Docker Agent](https://github.com/docker/docker-agen
 
 ## Quick Start
 
-1. **Add the action to your workflow**:
+1. **Add the action to your workflowW**:
 
    ```yaml
    - uses: docker/docker-agent-action@VERSION
